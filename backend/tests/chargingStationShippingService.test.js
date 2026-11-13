@@ -146,7 +146,8 @@ test('createExport requires a request id before any inventory or shipment write'
 test('createExport returns an identical prior request without decrementing stock twice', async () => {
   const payload = {
     items: [{ commitment_id: 3, quantity: 5 }],
-    carrier: null,
+    carrier_id: 1,
+    export_date: '2026-11-13',
     transport_code: null,
     reason: null,
     total_amount: null
@@ -179,7 +180,7 @@ test('createExport returns an identical prior request without decrementing stock
   try {
     shipment = await service.createExport(
       5,
-      { request_id: 'ship-42', items: [{ commitment_id: 3, quantity: 2 }, { commitment_id: 3, quantity: 3 }] },
+      { request_id: 'ship-42', carrier_id: 1, export_date: '2026-11-13', items: [{ commitment_id: 3, quantity: 2 }, { commitment_id: 3, quantity: 3 }] },
       { id: 9, role: 'SUPER_ADMIN' }
     );
   } finally {

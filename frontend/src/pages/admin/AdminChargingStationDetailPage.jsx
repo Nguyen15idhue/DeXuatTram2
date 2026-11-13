@@ -41,6 +41,9 @@ const ACTION_LABELS = {
   progress_deleted: 'Xóa tiến độ ON trạm',
   created: 'Khởi tạo ON trạm',
   updated: 'Cập nhật thông tin',
+  overview_overridden: 'SUPER_ADMIN điều chỉnh hồ sơ ON trạm',
+  installation_updated: 'Cập nhật trạng thái và ghi chú lắp trụ',
+  portion_documents_overridden: 'Điều chỉnh hồ sơ nghiệm thu / ON từng phần trụ',
   contract_signing_started: 'Bắt đầu ký hợp đồng',
   contract_completed: 'Hoàn tất hợp đồng',
   manual_marked_active: 'SUPER_ADMIN xác nhận ON trạm trực tiếp',
@@ -150,7 +153,8 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
   const returnTo = location.state?.returnTo || `/admin/on-tram/${stage}?tab=${defaultReturnTab}`;
   const historySummary = (entry) => {
     const labels = { deployment_id: 'Phần trụ', quantity: 'Số lượng', sub_status: 'Trạng thái chi tiết',
-      acceptance_file_id: 'Biên bản', on_date: 'Ngày ON', cms_station_code: 'Mã CMS',
+      acceptance_file_id: 'Biên bản', on_date: 'Ngày ON', on_note: 'Ghi chú ON', cms_station_code: 'Mã CMS',
+      acceptance_status: 'Trạng thái nghiệm thu', reports: 'Hồ sơ nghiệm thu', stage: 'Tiến độ phần trụ',
       accept_missing: 'Chấp nhận thiếu điều kiện', missing_prerequisites: 'Hạng mục còn thiếu',
       export_id: 'Phiếu xuất', item_id: 'Dòng trụ' };
     const valueOf = (value) => {
@@ -172,6 +176,9 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
 
   return (
     <div className="space-y-5">
+      {record.workflow_override?.completed && <div className="alert alert-info">
+        Hoàn tất quy trình bằng ghi đè của SUPER_ADMIN. Số liệu kho/tài chính giữ nguyên; hồ sơ chưa đính kèm không được tự tạo.
+      </div>}
       <PageHeader
         title={`Trạm sạc ${record.ma_tram || `#${record.id}`}`}
         subtitle={(

@@ -57,7 +57,6 @@ const ChargingStationTab = ({ stage }) => {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [careStation, setCareStation] = useState(null);
   const [menu, setMenu] = useState(null);
-  const [editStation, setEditStation] = useState(null);
   const [changeStation, setChangeStation] = useState(null);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -120,21 +119,16 @@ const ChargingStationTab = ({ stage }) => {
     };
   }, [menu]);
 
-  const saveOverview = async (kind) => {
+  const saveOverview = async () => {
     if (mutationBusy) return;
     setMutationBusy(true);
     try {
-      if (kind === 'edit') await chargingStationService.update(editStation.id, {
-        description: editStation.description, note: editStation.note,
-        ...(editStation.on_date !== editStation.original_on_date ? { on_date: editStation.on_date || null } : {})
+      if (!changeStation.reason.trim()) throw new Error('Bắt buộc nhập lý do đổi trạng thái');
+      await chargingStationService.changeStatus(changeStation.row.id, {
+        to_status: changeStation.to_status, reason: changeStation.reason.trim(),
+        expected_token: changeStation.row.edit_token,
+        cms_station_code: changeStation.cms_station_code.trim(), on_date: changeStation.on_date
       }, token);
-      else {
-        if (!changeStation.reason.trim()) throw new Error('Bắt buộc nhập lý do đổi trạng thái');
-        await chargingStationService.changeStatus(changeStation.row.id, {
-          to_status: changeStation.to_status, reason: changeStation.reason.trim()
-        }, token);
-      }
-      setEditStation(null);
       setChangeStation(null);
       setToast({ message: 'Đã cập nhật ON trạm', type: 'success' });
       await load(page);
@@ -228,7 +222,8 @@ const ChargingStationTab = ({ stage }) => {
       const res = await chargingStationService.markOnStationActive(onStationDialog.row.id, {
         cms_station_code: onStationDialog.cms_station_code.trim(),
         on_date: onStationDialog.on_date,
-        reason: onStationDialog.reason.trim()
+        reason: onStationDialog.reason.trim(),
+        expected_token: onStationDialog.row.edit_token
       }, token);
       if (!res?.success) throw new Error(res?.message || 'Không thể đánh dấu ON trạm');
       setOnStationDialog({ open: false, row: null, cms_station_code: '', on_date: '', reason: '', acknowledged: false });
@@ -295,7 +290,7 @@ const ChargingStationTab = ({ stage }) => {
     },
     {
       key: 'status',
-      label: 'Trạng thái',
+      label: 'Trạng thái quy trình',
       render: (value, row) => (
         <div className="flex flex-col gap-1 items-start">
           <Badge variant={CS_STATUS_VARIANT[value]} size="sm" className="whitespace-normal h-auto py-1">{CS_STATUS_LABELS[value] || value}</Badge>
@@ -360,12 +355,11 @@ const ChargingStationTab = ({ stage }) => {
         <div role="menu" className="fixed z-[9999] w-[220px] rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl"
           style={{ left: menu.left, top: menu.top }}>
           {isSuperAdmin && <>
+            <Link role="menuitem" className="btn btn-ghost btn-sm w-full justify-start"
+              to={`/admin/on-tram/thong-tin-chung/${menu.row.id}/edit`} onClick={() => setMenu(null)}>Sửa</Link>
             <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
-              setEditStation({ id: menu.row.id, description: menu.row.description || '', note: menu.row.note || '',
-                on_date: menu.row.on_date || '', original_on_date: menu.row.on_date || '' }); setMenu(null);
-            }}>Sửa</button>
-            <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
-              setChangeStation({ row: menu.row, to_status: '', reason: '' }); setMenu(null);
+              setChangeStation({ row: menu.row, to_status: '', reason: '', cms_station_code: menu.row.cms_station_code || '',
+                on_date: menu.row.on_date || getLocalDateInput() }); setMenu(null);
             }}>Đổi trạng thái</button>
           </>}
           {user?.role !== 'ADMIN' && menu.row.can_cancel_on_station && <button role="menuitem"
@@ -376,7 +370,7 @@ const ChargingStationTab = ({ stage }) => {
             className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
               setStatusDialog({ open: true, action: 'restore', row: menu.row }); setMenu(null);
             }}>Khôi phục</button>}
-          {isSuperAdmin && menu.row.can_mark_on_station_active && !menu.row.fulfillment?.items?.length && !menu.row.deployments?.length
+          {isSuperAdmin && menu.row.can_mark_on_station_active
             && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start text-success" onClick={() => {
               openOnStationDialog(menu.row); setMenu(null);
             }}>Đã ON Trạm</button>}
@@ -384,42 +378,35 @@ const ChargingStationTab = ({ stage }) => {
             onClick={() => { setDeleteTarget(menu.row); setMenu(null); }}>Xóa ON trạm</button>}
         </div>
       </>, document.body)}
-      <Dialog isOpen={!!editStation} title="Sửa thông tin ON trạm" size="md"
-        onClose={() => { if (!mutationBusy) setEditStation(null); }}>
-        {editStation && <div className="space-y-3">
-          <Input type="date" label="Ngày ON thực tế" aria-label="Ngày ON thực tế" value={editStation.on_date}
-            disabled={mutationBusy} onChange={event => setEditStation({ ...editStation, on_date: event.target.value })} />
-          <p className="text-xs text-base-content/60">Ngày ON đã ghi nhận theo phần trụ được bảo vệ, không thể sửa qua thông tin chung.</p>
-          {['description', 'note'].map(key => <label key={key} className="block text-sm">
-            {key === 'description' ? 'Mô tả' : 'Ghi chú nội bộ'}
-            <textarea className="textarea textarea-bordered mt-1 w-full" rows={3} value={editStation[key]}
-              disabled={mutationBusy} onChange={event => setEditStation({ ...editStation, [key]: event.target.value })} />
-          </label>)}
-          <div className="flex justify-end gap-2"><Button variant="ghost" disabled={mutationBusy} onClick={() => setEditStation(null)}>Hủy</Button>
-            <Button loading={mutationBusy} onClick={() => saveOverview('edit')}>Lưu</Button></div>
-        </div>}
-      </Dialog>
       <Dialog isOpen={!!changeStation} title="Đổi trạng thái ON trạm" size="md"
         onClose={() => { if (!mutationBusy) setChangeStation(null); }}>
         {changeStation && <div className="space-y-3">
           <p className="text-sm">Trạng thái hiện tại: {CS_STATUS_LABELS[changeStation.row.status]}</p>
-          <p className="text-sm text-warning">Chỉ hỗ trợ chuyển hợp lệ cho hồ sơ legacy. Trạm có dữ liệu triển khai từng phần phải cập nhật tại từng bước nghiệp vụ.</p>
+          <p className="text-sm text-warning">SUPER_ADMIN điều chỉnh trực tiếp tiến/lùi quy trình. Kết quả các bước sau được giữ nguyên; mọi thay đổi được ghi nhật ký.</p>
           <label className="block text-sm">Trạng thái đích
             <select className="select select-bordered mt-1 w-full" value={changeStation.to_status}
               disabled={mutationBusy} onChange={event => setChangeStation({ ...changeStation, to_status: event.target.value })}>
               <option value="">Chọn trạng thái</option>
-              {changeStation.row.status === 'ONBOARDING' && changeStation.row.delivery_ready && !changeStation.row.fulfillment?.items?.length
-                && <option value="DELIVERING">{CS_STATUS_LABELS.DELIVERING}</option>}
-              {changeStation.row.status === 'ACCEPTANCE' && !changeStation.row.fulfillment?.items?.length && !changeStation.row.deployments?.length
-                && <option value="INSTALLING">{CS_STATUS_LABELS.INSTALLING}</option>}
+              {Object.entries(CS_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}
+                disabled={value === changeStation.row.status && !(value === 'OPERATING' && !changeStation.row.workflow_override?.completed)}>
+                {value === 'OPERATING' ? 'Đã ON trạm' : label}</option>)}
             </select>
           </label>
+          {changeStation.to_status === 'OPERATING' && <>
+            <div className="alert alert-warning text-sm">Hoàn tất nghiệp vụ và đóng task quy trình bằng ghi đè. Không thay đổi tồn kho, phiếu giao, tài chính/cọc; không tạo chứng từ giả. Cảnh báo đối soát vẫn giữ nguyên.</div>
+            <Input label="Mã trạm trên CMS *" value={changeStation.cms_station_code} disabled={mutationBusy}
+              onChange={event => setChangeStation({ ...changeStation, cms_station_code: event.target.value })} />
+            <Input label="Ngày ON thực tế *" type="date" value={changeStation.on_date} disabled={mutationBusy}
+              onChange={event => setChangeStation({ ...changeStation, on_date: event.target.value })} />
+          </>}
           <label className="block text-sm">Lý do *
             <textarea className="textarea textarea-bordered mt-1 w-full" rows={3} value={changeStation.reason} disabled={mutationBusy}
               onChange={event => setChangeStation({ ...changeStation, reason: event.target.value })} />
           </label>
           <div className="flex justify-end gap-2"><Button variant="ghost" disabled={mutationBusy} onClick={() => setChangeStation(null)}>Hủy</Button>
-            <Button loading={mutationBusy} disabled={mutationBusy || !changeStation.to_status || !changeStation.reason.trim()} onClick={() => saveOverview('status')}>Xác nhận</Button></div>
+            <Button loading={mutationBusy} disabled={mutationBusy || !changeStation.to_status || changeStation.reason.trim().length < 3
+              || (changeStation.to_status === 'OPERATING' && (!changeStation.cms_station_code.trim() || !changeStation.on_date))}
+              onClick={saveOverview}>Xác nhận</Button></div>
         </div>}
       </Dialog>
       {loadError && <div role="alert" className="alert alert-error">{loadError}</div>}
@@ -511,7 +498,7 @@ const ChargingStationTab = ({ stage }) => {
           <div className="modal-box max-w-lg">
             <h3 className="text-lg font-bold">Xác nhận đã ON trạm</h3>
             <div className="alert alert-warning mt-3 py-2 text-sm">
-              <span>Thao tác SUPER_ADMIN bỏ qua các bước vận hành trung gian. Trạng thái hợp đồng, hạ tầng và thanh toán sẽ giữ nguyên; bản ghi đã hủy không thể kích hoạt lại.</span>
+              <span>Hoàn tất nghiệp vụ hợp đồng, hạ tầng, giao/lắp/nghiệm thu/ON bằng ghi đè. Giữ nguyên tồn kho, phiếu giao, tài chính/cọc và cảnh báo đối soát; không tạo chứng từ giả. Bản ghi đã hủy phải khôi phục trước.</span>
             </div>
             <div className="mt-3 rounded-lg bg-base-200 p-3 text-sm">
               <div><b>Mã trạm:</b> {onStationDialog.row?.ma_tram || `#${onStationDialog.row?.id}`}</div>

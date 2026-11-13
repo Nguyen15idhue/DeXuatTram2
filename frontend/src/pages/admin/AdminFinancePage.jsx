@@ -250,7 +250,7 @@ const AdminFinancePage = () => {
     { key: 'owner_name', label: 'Chủ trạm', render: (value) => value || '—' },
     {
       key: 'status',
-      label: 'Giai đoạn ON trạm',
+      label: 'Trạng thái quy trình',
       render: (value, row) => (
         <div className="space-y-1">
           <div className="text-sm">{CS_STATUS_LABELS[value] || value}</div>

@@ -5,7 +5,6 @@ const {
   SUB_STATUS_BY_STATUS,
   INITIAL_SUB_STATUS,
   ROLLBACK_SUB_STATUS,
-  ALLOWED_TRANSITIONS,
   CONTRACT_FILE_MIME_TYPES,
   IMAGE_MAX_COUNT,
   ACCEPTANCE_PDF_MIME,
@@ -71,7 +70,6 @@ const FIELD_LABELS = {
   proposal_id: 'Đề xuất nguồn'
 };
 
-const INFRA_FIELDS = ['infra_power_status', 'infra_site_status'];
 const INFRA_FIELD_BY_TYPE = {
   power: 'infra_power_status',
   site: 'infra_site_status'
@@ -147,7 +145,7 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     DATE_FORMAT(cs.on_date, '%Y-%m-%d') AS on_date,
     cs.acceptance_file_id, cs.acceptance_user_id,
     DATE_FORMAT(cs.acceptance_date, '%Y-%m-%d') AS acceptance_date,
-    cs.status, cs.sub_status, cs.contract_status, cs.contract_file_id,
+    cs.status, cs.sub_status, cs.workflow_override, cs.contract_status, cs.contract_file_id,
     DATE_FORMAT(cs.contract_effective_date, '%Y-%m-%d') AS contract_effective_date,
     DATE_FORMAT(cs.contract_expiry_date, '%Y-%m-%d') AS contract_expiry_date,
     cs.contract_note,
@@ -566,11 +564,14 @@ const listChargingStations = async ({
       const fulfillment = await require('./chargingStationShippingService').getSummary(row.id, pool, {
         initialize: !!stage && stage !== 'thong-tin-chung', allowReview: true
       });
+      const deployments = await require('./chargingStationDeploymentService').getDeployments(row.id);
       return {
         ...record,
+        edit_token: user?.role === 'SUPER_ADMIN' ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined,
         permissions,
         fulfillment,
-        deployments: await require('./chargingStationDeploymentService').getDeployments(row.id),
+        deployments,
+        installation_status: require('./chargingStationDeploymentService').installationSummary(record, fulfillment.items, deployments, fulfillment.needs_review),
         contract_amount: Number(record.contract_amount) || 0,
         paid_total: (Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0),
         remaining_amount: Math.max(0, (Number(record.contract_amount) || 0) - ((Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0))),
@@ -594,8 +595,6 @@ const listChargingStations = async ({
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
         can_mark_on_station_active: user?.role === 'SUPER_ADMIN'
-          && !fulfillment.needs_review
-          && !fulfillment.items.length
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status)
           && !(record.status === STATUS.OPERATING
@@ -702,11 +701,12 @@ const getChargingStationDetail = async (id, user = null) => {
     contract_files: contractFiles,
     proposal,
     permissions: user ? await stationAccess.permissions(user) : {},
-    fulfillment: await require('./chargingStationShippingService').getSummary(record.id),
+    fulfillment: await require('./chargingStationShippingService').getSummary(record.id, pool, { allowReview: true }),
     deployments: await require('./chargingStationDeploymentService').getDeployments(record.id),
     images,
     delivery_export: deliveryExport,
-    timeline: timeline.map((row) => ({ ...row, changed_fields: parseJson(row.changed_fields) }))
+    timeline: timeline.map((row) => ({ ...row, changed_fields: parseJson(row.changed_fields) })),
+    edit_token: user?.role === 'SUPER_ADMIN' ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined
   };
 };
 
@@ -741,6 +741,7 @@ const cancelOnStation = async (id, user, ctx = {}) => {
     transactionStarted = true;
     const current = await loadOnStationStatusRow(connection, stationId);
     if (!current) throw err('Không tìm thấy bản ghi ON trạm', 404);
+    if (ctx.expectedToken) await require('./chargingStationOverrideService').assertToken(stationId, ctx.expectedToken, connection);
     if (current.status === 'CANCELLED') throw err('ON trạm đã ở trạng thái Đã hủy', 409);
     if (current.manual_cancelled_at) throw err('ON trạm đã được hủy thủ công', 409);
 
@@ -772,7 +773,7 @@ const cancelOnStation = async (id, user, ctx = {}) => {
       connection,
       current.proposal_id,
       'ARCHIVED',
-      { actorId: user.id, actorRole: user.role, ip: ctx.ip, stationCode: current.ma_tram }
+      { actorId: user.id, actorRole: user.role, ip: ctx.ip, stationCode: current.ma_tram, reason: ctx.reason }
     );
     await writeActivity(connection, {
       chargingStationId: stationId,
@@ -783,7 +784,7 @@ const cancelOnStation = async (id, user, ctx = {}) => {
         status: { label: 'Trạng thái ON trạm', old: current.status, new: 'CANCELLED' },
         sub_status: { label: 'Trạng thái phụ', old: current.sub_status || '', new: '' }
       },
-      reason: 'Hủy ON trạm; đề xuất được chuyển sang Đã lưu trữ',
+      reason: ctx.reason || 'Hủy ON trạm; đề xuất được chuyển sang Đã lưu trữ',
       actorId: user.id,
       actorRole: user.role,
       source: 'user',
@@ -992,87 +993,7 @@ const createDirectFromProposal = async (proposalId, user, { reason } = {}, ctx =
   }
 };
 
-const updateChargingStation = async (id, body = {}, ctx = {}) => {
-  if (ctx.actorRole !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được sửa thông tin chung', 403);
-  if (INFRA_FIELDS.some((field) => body[field] !== undefined)) {
-    throw err('Trạng thái hạ tầng chỉ được cập nhật qua quy trình Xây dựng hạ tầng', 400);
-  }
-  const stationId = normalizeId(id, 'Mã bản ghi');
-  const connection = await pool.getConnection();
-  let transactionStarted = false;
-  let station;
-  try {
-    await connection.beginTransaction();
-    transactionStarted = true;
-    const [rows] = await connection.query(
-      'SELECT * FROM charging_stations WHERE id = ? FOR UPDATE',
-      [stationId]
-    );
-    if (rows.length === 0) throw err('Không tìm thấy bản ghi ON trạm', 404);
-    const current = rows[0];
-    const patch = {};
-
-    if (body.on_date !== undefined && normalizeDate(body.on_date) !== normalizeDate(current.on_date)) {
-      const [operating] = await connection.query(
-        "SELECT id FROM charging_station_deployments WHERE charging_station_id=? AND stage='OPERATING' LIMIT 1", [stationId]);
-      if (operating.length) throw err('Ngày ON đầu tiên đã được ghi nhận; không được sửa qua thông tin chung', 409);
-    }
-    if (body.on_date !== undefined) patch.on_date = normalizeDate(body.on_date);
-    if (body.acceptance_date !== undefined) patch.acceptance_date = normalizeDate(body.acceptance_date);
-
-    if (body.payment_status !== undefined) {
-      throw err('Trạng thái tài chính chỉ được cập nhật trong trang Quản lý tài chính', 400);
-    }
-
-    if (body.contract_status !== undefined) {
-      throw err('Trạng thái hợp đồng chỉ được cập nhật qua quy trình Khởi tạo hợp đồng', 400);
-    }
-
-    if (body.description !== undefined) patch.description = body.description ? String(body.description) : null;
-    if (body.note !== undefined) patch.note = body.note ? String(body.note) : null;
-
-    if (body.sub_status !== undefined) {
-      if ([STATUS.DELIVERING, STATUS.INSTALLING, STATUS.ACCEPTANCE, STATUS.CONFIGURING, STATUS.OPERATING].includes(current.status)) {
-        throw err('Trạng thái phụ ở giai đoạn giao/lắp trụ chỉ được cập nhật qua thao tác quy trình', 400);
-      }
-      patch.sub_status = validateSubStatus(current.status, body.sub_status);
-    }
-
-    if (Object.keys(patch).length === 0) throw err('Không có dữ liệu cập nhật', 400);
-
-    const changedFields = diffFields(current, patch);
-    if (Object.keys(changedFields).length === 0) {
-      station = current;
-    } else {
-      const keys = Object.keys(patch);
-      await connection.query(
-        `UPDATE charging_stations SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`,
-        [...keys.map((key) => patch[key]), current.id]
-      );
-
-      await writeActivity(connection, {
-        chargingStationId: current.id,
-        action: 'updated',
-        changedFields,
-        actorId: ctx.actorId,
-        actorRole: ctx.actorRole,
-        source: 'user',
-        ip: ctx.ip
-      });
-
-      station = { ...current, ...patch };
-    }
-
-    await connection.commit();
-    transactionStarted = false;
-  } catch (error) {
-    if (transactionStarted) await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-  return getChargingStationDetail(station.id, { id: ctx.actorId, role: ctx.actorRole });
-};
+const updateChargingStation = (id, body = {}, ctx = {}) => require('./chargingStationOverrideService').update(id, body, ctx);
 
 const updatePaymentStatus = async (id, { payment_status: nextStatus, reason } = {}, user, ctx = {}) => {
   await assertFinanceManager(user, 'Chỉ Phòng Tài chính, Back Office hoặc quản trị viên được cập nhật trạng thái tài chính');
@@ -1843,8 +1764,7 @@ const updateAcceptanceResult = async (id, result, user, ctx = {}) => {
   return getChargingStationDetail(stationId, user);
 };
 
-const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_date: onDate, reason } = {}, user, ctx = {}) => {
-  await assertLegacyStationAction(id);
+const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_date: onDate, reason, expected_token: expectedToken } = {}, user, ctx = {}) => {
   if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
   const cleanReason = String(reason || '').trim();
   if (cleanReason.length < 3 || cleanReason.length > 5000) {
@@ -1870,6 +1790,7 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
+    await require('./chargingStationOverrideService').assertToken(stationId, expectedToken, connection);
     fromStationStatus = current.status;
 
     if (current.status === 'CANCELLED' || ['CANCELLED', 'ARCHIVED', 'PAUSED'].includes(current.proposal_status)) {
@@ -1882,6 +1803,7 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
       current.status === STATUS.OPERATING
       && current.sub_status === 'ACTIVE'
       && current.proposal_status === 'ACTIVE'
+      && current.workflow_override
     ) {
       await connection.commit();
       transactionStarted = false;
@@ -1890,25 +1812,33 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
 
     const cleanCmsCode = toText(cmsStationCode).trim() || toText(current.cms_station_code).trim();
     if (!cleanCmsCode) throw err('Mã trạm trên CMS là bắt buộc', 400);
-    let normalizedOnDate = normalizeDate(onDate);
-    if (!normalizedOnDate) {
-      const [dateRows] = await connection.query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today");
-      normalizedOnDate = dateRows[0]?.today || null;
-    }
-    if (!normalizedOnDate) throw err('Không xác định được ngày ON trạm', 400);
+    if (cleanCmsCode.length > 100) throw err('Mã CMS tối đa 100 ký tự', 400);
+    const normalizedOnDate = require('./chargingStationOverrideService').dateOf(onDate);
+    if (!normalizedOnDate) throw err('Ngày ON trạm là bắt buộc', 400);
+    const override = JSON.stringify({
+      completed: true, actor_id: user.id, at: new Date().toISOString(), reason: cleanReason,
+      previous: { status: current.status, sub_status: current.sub_status,
+        contract_status: current.contract_status, infra_power_status: current.infra_power_status,
+        infra_site_status: current.infra_site_status, workflow_override: parseJson(current.workflow_override) }
+    });
 
     await connection.query(
       `UPDATE charging_stations
-          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE'
+          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE',
+              contract_status='DONE', infra_power_status='DONE', infra_site_status='DONE', workflow_override=?
         WHERE id = ?`,
-      [cleanCmsCode, normalizedOnDate, stationId]
+      [cleanCmsCode, normalizedOnDate, override, stationId]
     );
 
     const changedFields = {
       status: { label: FIELD_LABELS.status, old: current.status, new: STATUS.OPERATING },
       sub_status: { label: FIELD_LABELS.sub_status, old: current.sub_status || '', new: 'ACTIVE' },
       cms_station_code: { label: FIELD_LABELS.cms_station_code, old: current.cms_station_code || '', new: cleanCmsCode },
-      on_date: { label: FIELD_LABELS.on_date, old: current.current_on_date || '', new: normalizedOnDate }
+      on_date: { label: FIELD_LABELS.on_date, old: current.current_on_date || '', new: normalizedOnDate },
+      contract_status: { label: FIELD_LABELS.contract_status, old: current.contract_status, new: 'DONE' },
+      infra_power_status: { label: FIELD_LABELS.infra_power_status, old: current.infra_power_status, new: 'DONE' },
+      infra_site_status: { label: FIELD_LABELS.infra_site_status, old: current.infra_site_status, new: 'DONE' },
+      workflow_override: { label: 'Hoàn tất bằng ghi đè (không đổi kho/tài chính)', old: current.workflow_override, new: JSON.parse(override) }
     };
     await writeActivity(connection, {
       chargingStationId: stationId,
@@ -2106,9 +2036,15 @@ const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_
   return getChargingStationDetail(stationId, user);
 };
 
-const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, reason } = {}, ctx = {}) => {
+const changeStatus = async (id, body = {}, ctx = {}) => {
+  const { to_status: toStatus, sub_status: subStatus, reason } = body;
   if (ctx.actorRole !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được điều chỉnh trạng thái trực tiếp', 403);
-  await assertLegacyStationAction(id);
+  const overrides = require('./chargingStationOverrideService');
+  const cleanReason = overrides.reasonOf(reason);
+  if (!body.expected_token) throw err('Thiếu phiên bản dữ liệu; hãy tải lại', 409);
+  const actor = { id: ctx.actorId, role: ctx.actorRole };
+  if (toStatus === STATUS.OPERATING) return markOnStationActive(id, body, actor, ctx);
+  if (toStatus === 'CANCELLED') return cancelOnStation(id, actor, { ...ctx, reason: cleanReason, expectedToken: body.expected_token });
   if (!Object.values(STATUS).includes(toStatus)) throw err('Trạng thái đích không hợp lệ', 400);
   const stationId = normalizeId(id, 'Mã bản ghi');
   const connection = await pool.getConnection();
@@ -2122,27 +2058,10 @@ const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, re
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
+    await overrides.assertToken(stationId, body.expected_token, connection);
+    if (current.status === 'CANCELLED') throw err('Hãy khôi phục ON trạm trước khi điều chỉnh trạng thái', 409);
     if (toStatus === current.status) throw err('Bản ghi đã ở trạng thái này', 400);
-
-    const allowedNext = ALLOWED_TRANSITIONS[current.status] || [];
-    if (!allowedNext.includes(toStatus)) {
-      throw err(`Không thể chuyển từ "${STATUS_LABELS[current.status]}" sang "${STATUS_LABELS[toStatus]}"`, 400);
-    }
-
     const backward = isBackward(current.status, toStatus);
-    const cleanReason = toText(reason).trim();
-    if (!cleanReason) throw err('Bắt buộc nhập lý do đổi trạng thái', 400);
-    if (!backward && [STATUS.INSTALLING, STATUS.ACCEPTANCE, STATUS.CONFIGURING, STATUS.OPERATING].includes(toStatus)) {
-      throw err('Hãy dùng thao tác chuyên biệt của quy trình Giao trụ / Lắp trụ để chuyển bước', 400);
-    }
-
-    if (toStatus === STATUS.DELIVERING) {
-      const model = await loadInvestmentModel(connection, current.proposal_id);
-      const { ready, missingLabels } = readiness.evaluateDeliveryReadiness(current, model);
-      if (!ready) {
-        throw err(`Chưa đủ điều kiện giao trụ, còn thiếu: ${missingLabels.join(', ')}`, 400);
-      }
-    }
 
     let nextSub = null;
     if (subStatus !== undefined && subStatus !== null && subStatus !== '') {
@@ -2154,7 +2073,7 @@ const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, re
     }
 
     await connection.query(
-      'UPDATE charging_stations SET status = ?, sub_status = ? WHERE id = ?',
+      'UPDATE charging_stations SET status = ?, sub_status = ?, workflow_override = NULL WHERE id = ?',
       [toStatus, nextSub, current.id]
     );
 
@@ -2163,11 +2082,11 @@ const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, re
       action: backward ? 'status_rolled_back' : 'status_changed',
       fromStatus: current.status,
       toStatus,
-      changedFields: diffFields(current, { status: toStatus, sub_status: nextSub }),
+      changedFields: diffFields(current, { status: toStatus, sub_status: nextSub, workflow_override: null }),
       reason: cleanReason || null,
       actorId: ctx.actorId,
       actorRole: ctx.actorRole,
-      source: 'user',
+      source: 'admin_override',
       ip: ctx.ip
     });
     if (toStatus === STATUS.DELIVERING) {

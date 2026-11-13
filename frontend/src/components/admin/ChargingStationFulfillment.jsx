@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { api, chargingStationService } from '../../services/api';
-import { Badge, Button, Dialog, Input } from '../ui';
+import { chargingStationService, shippingCarrierService } from '../../services/api';
+import { Badge, Button, Dialog, Input, Select } from '../ui';
+import ChargingStationInstallationModal from './ChargingStationInstallationModal';
+import ChargingStationAcceptanceModal from './ChargingStationAcceptanceModal';
+import ChargingStationOnModal from './ChargingStationOnModal';
+import ChargingStationAcceptanceFields from './ChargingStationAcceptanceFields';
 import ChargingStationTable from './ChargingStationTable';
 import FileViewer from '../dynamic/FileViewer';
-import { CS_STATUS_LABELS, CS_SUB_STATUS_LABELS, formatCsDate } from '../../utils/chargingStation';
+import { formatCsDate } from '../../utils/chargingStation';
 import {
   canOperateStation, deploymentActions, DEPLOYMENT_ACTION_LABELS, missingOnPrerequisites,
-  shipmentAvailable, validateShipmentQuantities, requestKeyForIntent
+  shipmentAvailable, validateShipmentQuantities, requestKeyForIntent, ACCEPTANCE_LABELS
 } from '../../utils/chargingFulfillment';
 
 const SHIPMENT_ACTIONS = {
-  receive: 'Nhận một phần / toàn bộ',
+  receive: 'Đã nhận đơn',
   'request-return': 'Yêu cầu trả hàng',
   'confirm-return': 'Xác nhận hoàn kho thực tế',
   fail: 'Giao hàng thất bại'
@@ -23,18 +27,20 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const [record, setRecord] = useState(station);
   const [fulfillment, setFulfillment] = useState(station.fulfillment || {});
   const [portions, setPortions] = useState(station.deployments || []);
+  const [carriers, setCarriers] = useState([]);
+  const [installationOpen, setInstallationOpen] = useState(false);
+  const [acceptancePortion, setAcceptancePortion] = useState(null);
+  const [onOpen, setOnOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [error, setError] = useState('');
   const [intent, setIntent] = useState(null);
   const [form, setForm] = useState({});
   const [quantities, setQuantities] = useState({});
-  const [file, setFile] = useState(null);
   const [viewingFile, setViewingFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const request = useRef(null);
-  const uploadedFile = useRef(null);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -43,7 +49,15 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         chargingStationService.getFulfillment(station.id, token),
         chargingStationService.getDeployments(station.id, token)
       ]);
+      if (!detail.success || !summary.success || !deployments.success) {
+        throw new Error(detail.message || summary.message || deployments.message || 'Không tải được tiến độ các phần trụ');
+      }
       setRecord(detail.data);
+      if (canOperateStation(user, detail.data, 'back_office')) {
+        const response = await shippingCarrierService.list(token, true);
+        if (!response.success) throw new Error(response.message || 'Không tải được đơn vị vận chuyển');
+        setCarriers(response.data || []);
+      }
       const currentPortions = Array.isArray(deployments.data) ? deployments.data : deployments.data?.items || [];
       setFulfillment({ ...summary.data, items: (summary.data?.items || []).map((item) => ({
         ...item, id: item.id || item.commitment_id, supplier: item.supplier || item.supplier_name
@@ -60,10 +74,10 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       setError('');
     } catch (loadFailure) { setError(loadFailure.message); setLoadError(true); }
     finally { setLoading(false); }
-  }, [station.id, token]);
+  }, [station.id, token, user]);
   useEffect(() => { load(); }, [load]);
   const canShip = canOperateStation(user, record, 'back_office');
-  const canSetup = canOperateStation(user, record, 'setup');
+  const canSetup = canOperateStation(user, record, 'setup') && !record.workflow_override?.completed && record.status !== 'CANCELLED';
   const canRequest = canOperateStation(user, record, 'request_early') || user?.role === 'SUPER_ADMIN';
   const missing = missingOnPrerequisites(record);
   const showShipping = !stage || stage === 'giao-tru';
@@ -78,18 +92,17 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const begin = (action, target) => {
     if (loading || loadError) return;
     if (['export', 'early'].includes(action) && shippingDisabled) return;
+    if (action === 'acceptance-passed') { setAcceptancePortion(target.id); return; }
+    if (action === 'complete-configuration') { setOnOpen(true); return; }
     setIntent({ action, target });
     request.current = null;
-    uploadedFile.current = null;
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    setForm({ carrier: '', transport_code: '', total_amount: '', transport_status: 'SHIPPING',
-      cms_station_code: record.cms_station_code || '', on_date: target?.on_date?.slice(0, 10) || today,
+    setForm({ carrier_id: '', export_date: today, suppliers: {}, transport_code: '', total_amount: '', transport_status: 'SHIPPING',
       reason: '', desired_date: '', acknowledged: false });
-    const rows = action === 'export' ? shippingOptions : target?.items || [];
+    const rows = action === 'export' ? (fulfillment.pole_requirements || []).map(row => ({ ...row, id: row.pole_id })) : target?.items || [];
     setQuantities(Object.fromEntries(rows.map((row) => [row.id, action === 'export'
       ? 0 : shipmentAvailable(row, action)])));
-    setFile(null);
     setError('');
   };
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -102,24 +115,25 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       let response;
       const { action, target } = intent;
       request.current = requestKeyForIntent(request.current, {
-        action, target: target?.id, form, quantities, file: file ? [file.name, file.size, file.lastModified] : null
+        action, target: target?.id, form, quantities
       });
       const { request_id } = request.current;
       if (['fail', 'request-return', 'acceptance-failed', 'early'].includes(action) && !form.reason.trim()) {
         throw new Error('Vui lòng nhập lý do');
       }
       if (action === 'export') {
-        const totals = new Map();
-        const items = shippingOptions.filter((row) => Number(quantities[row.id]) > 0).map((row) => {
-          const quantity = Number(quantities[row.id]);
+        const items = (fulfillment.pole_requirements || []).filter(row => Number(quantities[row.pole_id]) > 0).map((pole) => {
+          const row = shippingOptions.find(option => Number(option.pole_id) === Number(pole.pole_id)
+            && Number(option.supplier_id) === Number(form.suppliers[pole.pole_id]));
+          if (!row) throw new Error(`Chọn nhà cung cấp cho ${pole.name}`);
+          const quantity = Number(quantities[pole.pole_id]);
           if (!Number.isSafeInteger(quantity) || quantity > row.stock_quantity) throw new Error('Số lượng xuất vượt tồn kho hoặc không phải số nguyên');
-          const total = (totals.get(Number(row.pole_id)) || 0) + quantity;
-          if (total > row.remaining_quantity) throw new Error(`Tổng xuất ${row.name} vượt số lượng còn phải giao`);
-          totals.set(Number(row.pole_id), total);
+          if (quantity > pole.remaining_quantity) throw new Error(`Tổng xuất ${pole.name} vượt số lượng còn phải giao`);
           return { pole_id: Number(row.pole_id), supplier_id: Number(row.supplier_id), quantity };
         });
         if (Object.values(quantities).some((value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0)) throw new Error('Số lượng phải là số nguyên không âm');
         if (!items.length) throw new Error('Vui lòng chọn ít nhất một trụ để xuất');
+        if (!form.carrier_id || !form.export_date) throw new Error('Chọn đơn vị vận chuyển và ngày xuất kho');
         response = await chargingStationService.createShipment(record.id, {
           ...form, items, total_amount: Number(form.total_amount), request_id
         }, token);
@@ -133,29 +147,8 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           reason: form.reason, accept_missing: true, request_id
         }, token);
       } else {
-        let acceptanceFileId = target.acceptance_file_id;
-        if (action === 'acceptance-passed') {
-          if (file) {
-            if (file.type !== 'application/pdf' || file.size > 10 * 1024 * 1024) throw new Error('Biên bản phải là PDF tối đa 10 MB');
-            const fileKey = JSON.stringify([file.name, file.size, file.lastModified]);
-            if (uploadedFile.current?.key !== fileKey) {
-              const body = new FormData();
-              body.append('file', file);
-              const uploaded = await api.uploadWithAuth('/files/upload', body, token);
-              if (!uploaded.success || !uploaded.data?.id) throw new Error(uploaded.message || 'Tải biên bản thất bại');
-              uploadedFile.current = { key: fileKey, id: uploaded.data.id };
-            }
-            acceptanceFileId = uploadedFile.current.id;
-          }
-          if (!acceptanceFileId) throw new Error('Vui lòng tải biên bản nghiệm thu PDF cho phần trụ này');
-        }
-        if (action === 'complete-configuration') {
-          if (!form.cms_station_code.trim() || !form.on_date) throw new Error('Nhập mã CMS và ngày ON');
-          if (missing.length && (!form.acknowledged || !form.reason.trim())) throw new Error('Thiếu điều kiện: phải nhập lý do và xác nhận chấp nhận rủi ro');
-        }
         response = await chargingStationService.deploymentAction(record.id, target.id, {
-          action, request_id, reason: form.reason, acceptance_file_id: acceptanceFileId,
-          cms_station_code: form.cms_station_code, on_date: form.on_date, accept_missing: !!form.acknowledged
+          action, request_id, reason: form.reason, expected_version: target.workflow_version
         }, token);
       }
       if (response?.success === false) throw new Error(response.message || 'Thao tác thất bại');
@@ -179,7 +172,8 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           <Badge key={key} variant={key === 'operating' ? 'success' : 'ghost'}>{label}: {fulfillment.totals?.[key] || 0}</Badge>
         ))}
       </div>
-      {fulfillment.needs_review && <div className="alert alert-warning">Dữ liệu trụ cần đối soát. Không thay thế bằng thao tác ON toàn trạm.</div>}
+      {record.workflow_override?.completed && <div className="alert alert-info">Hoàn tất quy trình bằng ghi đè của SUPER_ADMIN. Số liệu giao/nhận và tồn kho bên dưới là số liệu thực tế, không được tự hoàn tất.</div>}
+      {fulfillment.needs_review && <div className="alert alert-warning">Dữ liệu trụ cần đối soát. {fulfillment.review_message || 'Cần kiểm tra bảng trụ chốt và các phiếu giao cũ.'} Ghi đè ON không thay đổi số liệu kho.</div>}
       {showShipping && <>
         <h3 className="font-semibold">Chốt trụ và tồn kho</h3>
         <ChargingStationTable frozenColumns={0} emptyMessage="Không có dữ liệu" data={fulfillment.pole_requirements || []} columns={[
@@ -200,7 +194,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           <details key={shipment.id} className="rounded-lg border border-base-300 p-3" open>
             <summary className="cursor-pointer font-semibold">Phiếu #{shipment.id} · {shipment.carrier || '—'} · {shipment.transport_code || '—'} · {STAGE_NAMES[shipment.transport_status] || shipment.transport_status}</summary>
             <div className="mt-2 space-y-2">
-              <span className="text-xs text-base-content/60">{shipment.created_at} · {Number(shipment.total_amount || 0).toLocaleString('vi-VN')} đ</span>
+              <span className="text-xs text-base-content/60">Ngày xuất: {formatCsDate(shipment.export_date)} · {Number(shipment.total_amount || 0).toLocaleString('vi-VN')} đ</span>
               {shipment.reason && <p className="text-xs">Lý do: {shipment.reason}</p>}
               <ChargingStationTable frozenColumns={0} emptyMessage="Không có dữ liệu" data={shipment.items || []} columns={[
                 { key: 'name', label: 'Trụ', render: (value, item) => value || item.pole_name || `#${item.commitment_id}` },
@@ -217,15 +211,23 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         ))}
       </>}
       {showPortions && <>
+        {canOperateStation(user, record, 'setup') && <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setInstallationOpen(true)}>Cập nhật trạng thái lắp trụ</Button>
+          {(!stage || stage === 'on-tram') && <Button size="sm" variant="outline" onClick={() => setOnOpen(true)}>Cập nhật ON trạm</Button>}
+        </div>}
         <h3 className="font-semibold">Các phần trụ triển khai</h3>
         {!portions.length && !loading && <p className="text-base-content/50">Chưa có phần trụ đã nhận để triển khai.</p>}
         {portions.map((portion) => (
           <details key={portion.id} className="rounded-lg border border-base-300 p-3" open>
-            <summary className="cursor-pointer font-semibold">Phần #{portion.id} · {portion.quantity} trụ · {CS_STATUS_LABELS[portion.stage] || portion.stage} / {CS_SUB_STATUS_LABELS[portion.sub_status] || portion.sub_status}</summary>
+            <summary className="cursor-pointer font-semibold">Phiếu #{portion.export_id} · Phần #{portion.id} · {portion.pole_name} · {portion.supplier_name || '—'} · {portion.quantity} trụ</summary>
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Badge variant={portion.acceptance_status === 'PASSED' ? 'success' : portion.acceptance_status === 'FAILED' ? 'error' : 'ghost'}>
+                {ACCEPTANCE_LABELS[portion.acceptance_status] || 'Chưa nghiệm thu'}</Badge>
+              <Badge variant={portion.stage === 'OPERATING' ? 'success' : 'ghost'}>{portion.stage === 'OPERATING' ? 'Đã ON' : 'Chưa ON'}</Badge>
               <span>Ngày ON: {formatCsDate(portion.on_date)}</span>
-              {portion.acceptance_file_id && <Button size="xs" variant="outline" onClick={() => setViewingFile({ id: portion.acceptance_file_id, original_name: portion.acceptance_file_name || 'Biên bản.pdf', mime_type: 'application/pdf' })}>Biên bản nghiệm thu</Button>}
-              {canSetup && deploymentActions(portion).filter((action) => !stage
+              {portion.on_note && <p className="whitespace-pre-wrap">Ghi chú ON: {portion.on_note}</p>}
+              {portion.acceptance_file_id && <Button size="xs" variant="outline" onClick={() => setViewingFile({ id: portion.acceptance_file_id, original_name: portion.acceptance_file_name || 'Biên bản.pdf', mime_type: portion.acceptance_file_mime || 'application/pdf' })}>Biên bản nghiệm thu cũ</Button>}
+              {canSetup && deploymentActions(portion).filter((action) => !action.includes('installation')).filter((action) => !stage
                 || (stage === 'lap-tru' && action.includes('installation'))
                 || (stage === 'nghiem-thu' && action.includes('acceptance'))
                 || (stage === 'on-tram' && action === 'complete-configuration')).map((action) => (
@@ -233,39 +235,60 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
               ))}
               {!canSetup && <span className="text-base-content/50">Chỉ xem</span>}
             </div>
+            {Boolean(portion.acceptance_legacy) && <p className="mt-2 text-sm text-warning">Nghiệm thu legacy — giữ kết quả và tài liệu cũ, chưa có bộ hồ sơ mới.</p>}
+            {Object.keys(portion.acceptance_reports || {}).length > 0 && <div className="mt-3">
+              <ChargingStationAcceptanceFields value={portion.acceptance_reports} readOnly /></div>}
           </details>
         ))}
       </>}
       <Dialog isOpen={!!intent} title={title || ''} onClose={() => !busy && setIntent(null)} size="lg" portal>
         {intent && <form onSubmit={submit} className="space-y-3">
-          {quantityAction && rows.map((row) => (
+          {quantityAction && intent.action !== 'export' && rows.map((row) => (
             <Input key={row.id} type="number" min="0" step="1" label={`${row.name || row.pole_name || `Trụ #${row.id}`} · ${row.supplier_name || ''} · ${intent.action === 'export' ? `còn ${row.remaining_quantity}, tồn ${row.stock_quantity}` : `có thể xử lý ${shipmentAvailable(row, intent.action)}`}`}
               value={quantities[row.id] ?? 0} onChange={(event) => setQuantities((current) => ({ ...current, [row.id]: event.target.value }))} />
           ))}
           {intent.action === 'export' && <>
-            <Input label="Đơn vị vận chuyển" value={form.carrier} onChange={(event) => setField('carrier', event.target.value)} />
+            {(fulfillment.pole_requirements || []).filter(pole => pole.remaining_quantity > 0).map(pole => {
+              const options = shippingOptions.filter(row => Number(row.pole_id) === Number(pole.pole_id));
+              return <section key={pole.pole_id} className="rounded-lg border border-base-300 p-3 space-y-2">
+                <h3 className="font-semibold">{pole.name} · Còn phải giao: {pole.remaining_quantity}</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input label="Số lượng" type="number" min="0" step="1" value={quantities[pole.pole_id] ?? 0}
+                    onChange={event => setQuantities(current => ({ ...current, [pole.pole_id]: event.target.value }))} />
+                  <Select label="Nhà cung cấp" value={form.suppliers[pole.pole_id] || ''} placeholder="Chọn nhà cung cấp"
+                    options={options.map(row => ({ value: String(row.supplier_id), label: `${row.supplier_name} · tồn ${row.stock_quantity}` }))}
+                    onChange={event => setField('suppliers', { ...form.suppliers, [pole.pole_id]: event.target.value })} />
+                </div>
+              </section>;
+            })}
+            <Select label="Đơn vị vận chuyển" value={form.carrier_id} placeholder="Chọn đơn vị vận chuyển"
+              options={carriers.map(carrier => ({ value: String(carrier.id), label: carrier.name }))}
+              onChange={event => setField('carrier_id', event.target.value)} />
+            {!carriers.length && <p className="text-warning">Chưa có đơn vị vận chuyển hoạt động. Liên hệ SUPER_ADMIN để thêm tại Quản lý kho.</p>}
             <Input label="Mã vận đơn" value={form.transport_code} onChange={(event) => setField('transport_code', event.target.value)} />
             <Input label="Tổng tiền" min="0" type="number" value={form.total_amount} onChange={(event) => setField('total_amount', event.target.value)} />
+            <Input label="Ngày xuất kho" required type="date" value={form.export_date} onChange={event => setField('export_date', event.target.value)} />
           </>}
           {intent.action === 'early' && <Input label="Ngày giao mong muốn" type="date" required value={form.desired_date} onChange={(event) => setField('desired_date', event.target.value)} />}
-          {intent.action === 'acceptance-passed' && <Input label="Biên bản nghiệm thu PDF cho phần trụ" type="file" accept="application/pdf" onChange={(event) => setFile(event.target.files?.[0])} />}
-          {intent.action === 'complete-configuration' && <>
-            <Input label="Mã trạm CMS (dùng chung)" required readOnly={!!record.cms_station_code} value={form.cms_station_code} onChange={(event) => setField('cms_station_code', event.target.value)} />
-            <Input label="Ngày ON của phần trụ này" type="date" required value={form.on_date} onChange={(event) => setField('on_date', event.target.value)} />
-            {record.on_date && <p className="text-xs text-base-content/60">Ngày ON đầu tiên của trạm giữ nguyên: {formatCsDate(record.on_date)}</p>}
-          </>}
           <Input label="Lý do / ghi chú" value={form.reason} onChange={(event) => setField('reason', event.target.value)} />
-          {(intent.action === 'early' || (intent.action === 'complete-configuration' && missing.length > 0)) && (
+          {intent.action === 'early' && (
             <div className="rounded-lg border border-warning p-3">
               <p className="mb-2 text-warning">Chưa hoàn thành: {missing.join(', ') || 'Điều kiện giao trụ'}. Giao sớm / ON thiếu điều kiện có rủi ro; các công việc còn thiếu vẫn phải thực hiện.</p>
               <label className="flex items-center gap-2"><input type="checkbox" className="checkbox checkbox-sm" checked={form.acknowledged} onChange={(event) => setField('acknowledged', event.target.checked)} /> Tôi xác nhận chấp nhận và chịu trách nhiệm</label>
             </div>
           )}
           {error && <div role="alert" className="text-error">{error}</div>}
-          <Button type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Xác nhận'}</Button>
+          <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={busy} onClick={() => setIntent(null)}>Hủy</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Xác nhận'}</Button></div>
         </form>}
       </Dialog>
       {viewingFile && <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} token={token} />}
+      {installationOpen && <ChargingStationInstallationModal station={record} onClose={() => setInstallationOpen(false)}
+        onChanged={async () => { await load(); await onChanged?.(); }} />}
+      {acceptancePortion && <ChargingStationAcceptanceModal station={record} portionId={acceptancePortion}
+        onClose={() => setAcceptancePortion(null)} onChanged={async () => { await load(); await onChanged?.(); }} />}
+      {onOpen && <ChargingStationOnModal station={record} onClose={() => setOnOpen(false)}
+        onChanged={async () => { await load(); await onChanged?.(); }} />}
     </div>
   );
 };

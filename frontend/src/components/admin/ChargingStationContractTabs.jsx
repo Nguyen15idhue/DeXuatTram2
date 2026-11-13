@@ -120,7 +120,7 @@ const ChargingStationContractTabs = () => {
     },
     {
       key: 'status',
-      label: 'Trạng thái trạm',
+      label: 'Trạng thái quy trình',
       render: (value, row) => (
         <div className="flex flex-col items-start gap-1">
           <Badge variant={CS_STATUS_VARIANT[value]} size="sm" className="h-auto whitespace-normal py-1">

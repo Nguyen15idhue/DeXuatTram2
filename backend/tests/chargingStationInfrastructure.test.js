@@ -32,6 +32,7 @@ const setup = (t, overrides = {}) => {
   t.mock.method(require('../src/services/adminProposalService'), 'getProposalWithUser', async () => ({ id: 2 }));
   t.mock.method(require('../src/services/chargingStationShippingService'), 'getSummary', async () => ({}));
   t.mock.method(require('../src/services/chargingStationDeploymentService'), 'getDeployments', async () => []);
+  t.mock.method(require('../src/services/chargingStationOverrideService'), 'getEditToken', async () => 'test-token');
   return { calls, record, connection };
 };
 

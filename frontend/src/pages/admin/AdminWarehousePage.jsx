@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { requestKeyForIntent } from '../../utils/chargingFulfillment';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supplierService, warehouseService } from '../../services/api';
+import { supplierService, warehouseService, shippingCarrierService } from '../../services/api';
+import ShippingCarriersTab from '../../components/admin/ShippingCarriersTab';
 import { Badge, Button, ConfirmDialog, DataTable, Dialog, FilterBar, Input, Loading, Pagination, Select, Toast } from '../../components/ui';
 import FileUpload from '../../components/dynamic/FileUpload';
 import WarehouseFilterBar from '../../components/admin/WarehouseFilterBar';
@@ -14,22 +15,25 @@ const TABS = [
   { key: 'imports', label: 'Nhập kho' },
   { key: 'exports', label: 'Xuất kho' },
   { key: 'poles', label: 'Loại trụ sạc' },
-  { key: 'suppliers', label: 'Nhà cung cấp' }
+  { key: 'suppliers', label: 'Nhà cung cấp' },
+  { key: 'carriers', label: 'Đơn vị vận chuyển', superOnly: true }
 ];
 
 const EMPTY_TOAST = { message: '', type: 'success' };
 
 const AdminWarehousePage = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const visibleTabs = TABS.filter(tab => !tab.superOnly || user?.role === 'SUPER_ADMIN');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'poles');
+  const [activeTab, setActiveTab] = useState(visibleTabs.some(tab => tab.key === searchParams.get('tab')) ? searchParams.get('tab') : 'poles');
   const [toast, setToast] = useState(EMPTY_TOAST);
   const closeToast = useCallback(() => setToast(EMPTY_TOAST), []);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && TABS.some((item) => item.key === tab)) setActiveTab(tab);
-  }, [searchParams]);
+    if (tab && TABS.some(item => item.key === tab && (!item.superOnly || user?.role === 'SUPER_ADMIN'))) setActiveTab(tab);
+    else setActiveTab('poles');
+  }, [searchParams, user?.role]);
 
   const changeTab = (tab) => {
     setActiveTab(tab);
@@ -51,9 +55,9 @@ const AdminWarehousePage = () => {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Quản lý kho" subtitle="Danh mục trụ sạc, nhập kho, xuất kho và tồn kho" actions={<Button size="sm" variant="outline" onClick={exportCurrentTab}>Xuất Excel</Button>} />
+      <PageHeader title="Quản lý kho" subtitle="Danh mục trụ sạc, nhập kho, xuất kho và tồn kho" actions={activeTab !== 'carriers' && <Button size="sm" variant="outline" onClick={exportCurrentTab}>Xuất Excel</Button>} />
       <div role="tablist" className="tabs tabs-boxed w-fit">
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
@@ -67,6 +71,7 @@ const AdminWarehousePage = () => {
       </div>
 
       <Toast message={toast.message} type={toast.type} onClose={closeToast} />
+      {activeTab === 'carriers' && user?.role === 'SUPER_ADMIN' && <ShippingCarriersTab token={token} />}
 
       {activeTab === 'suppliers' && <SuppliersTab token={token} onToast={(m, t = 'success') => setToast({ message: m, type: t })} />}
       {activeTab === 'poles' && <PolesTab token={token} onToast={(m, t = 'success') => setToast({ message: m, type: t })} />}
@@ -673,10 +678,18 @@ const ExportsTab = ({ token, onToast }) => {
   const [poles, setPoles] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [stations, setStations] = useState([]);
+  const [carriers, setCarriers] = useState([]);
   const [committedItems, setCommittedItems] = useState([]);
   const [dialog, setDialog] = useState({ open: false });
   const [form, setForm] = useState({ export_date: '', destination_type: 'STATION', charging_station_id: '', destination_name: '', destination_address: '', destination_note: '', reason: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }] });
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!dialog.open || form.destination_type !== 'STATION') return;
+    let active = true;
+    shippingCarrierService.list(token, true).then(response => { if (active) setCarriers(response.data || []); })
+      .catch(error => { if (active) onToast(error.message, 'error'); });
+    return () => { active = false; };
+  }, [dialog.open, form.destination_type, token]);
 
   const load = useCallback(async (targetPage = 1) => {
     if (!token) return;
@@ -788,7 +801,8 @@ const ExportsTab = ({ token, onToast }) => {
       exportRequest.current = requestKeyForIntent(exportRequest.current, form);
       await warehouseService.createExport({
         request_id: exportRequest.current.request_id,
-        export_date: form.export_date,
+        export_date: form.destination_type === 'STATION' ? form.export_date.slice(0, 10) : form.export_date,
+        carrier_id: form.destination_type === 'STATION' ? form.carrier_id : undefined,
         destination_type: form.destination_type,
         charging_station_id: form.destination_type === 'STATION' ? Number(form.charging_station_id) : null,
         destination_name: form.destination_name,
@@ -840,7 +854,12 @@ const ExportsTab = ({ token, onToast }) => {
             <Input label="Ngày xuất" type="datetime-local" value={form.export_date} onChange={(e) => setForm({ ...form, export_date: e.target.value })} required />
             <Select label="Loại nơi nhận" options={[{ value: 'STATION', label: 'Trạm sạc' }, { value: 'WAREHOUSE', label: 'Kho' }, { value: 'PROJECT', label: 'Dự án/công trình' }, { value: 'OTHER', label: 'Khác' }]} value={form.destination_type} onChange={(e) => setForm({ ...form, destination_type: e.target.value, charging_station_id: '' })} placeholder={null} />
             {form.destination_type === 'STATION' ? (
-              <Select label="Trạm nhận" options={stations.map((station) => ({ value: String(station.id), label: `${station.ma_tram || `#${station.id}`} - ${station.owner_name || ''}`.trim() }))} value={form.charging_station_id} onChange={(e) => setForm({ ...form, charging_station_id: e.target.value })} placeholder="Chọn trạm" />
+              <>
+                <Select label="Trạm nhận" options={stations.map((station) => ({ value: String(station.id), label: `${station.ma_tram || `#${station.id}`} - ${station.owner_name || ''}`.trim() }))} value={form.charging_station_id} onChange={(e) => setForm({ ...form, charging_station_id: e.target.value })} placeholder="Chọn trạm" />
+                <Select label="Đơn vị vận chuyển" value={form.carrier_id || ''} placeholder="Chọn đơn vị vận chuyển"
+                  options={carriers.map(carrier => ({ value: String(carrier.id), label: carrier.name }))}
+                  onChange={event => setForm({ ...form, carrier_id: event.target.value })} />
+              </>
             ) : (
               <>
                 <Input label="Tên nơi nhận" value={form.destination_name} onChange={(e) => setForm({ ...form, destination_name: e.target.value })} required />

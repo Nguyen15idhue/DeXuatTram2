@@ -709,7 +709,25 @@ export const chargingFinanceService = {
   }
 };
 
+export const shippingCarrierService = {
+  list(token, options = false) {
+    return api.getWithAuth(`/admin/shipping-carriers${options ? '?options=1' : ''}`, token);
+  },
+  save(id, data, token) {
+    return id ? api.putWithAuth(`/admin/shipping-carriers/${id}`, data, token) : api.postWithAuth('/admin/shipping-carriers', data, token);
+  },
+  remove(id, token) {
+    return api.deleteWithAuth(`/admin/shipping-carriers/${id}`, token);
+  }
+};
+
 export const chargingStationService = {
+  updateOnStation(id, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/on-station`, data, token));
+  },
+  updateInstallation(id, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/installation`, data, token));
+  },
   getFulfillment(id, token) {
     return api.getWithAuth(`/admin/charging-stations/${id}/fulfillment`, token);
   },

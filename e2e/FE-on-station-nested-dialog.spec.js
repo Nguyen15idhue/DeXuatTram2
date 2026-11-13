@@ -19,6 +19,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 640 
       let pagination;
       if (pathname.endsWith('/auth/me')) {
         data = { user: { id: 501, full_name: 'UI Test', role: 'SUPER_ADMIN' } };
+      } else if (pathname.endsWith('/shipping-carriers')) {
+        data = [];
       } else if (pathname.endsWith('/501/fulfillment')) {
         data = { items, pole_requirements: items, shipping_options: items, totals: { committed: 28, remaining: 28 }, shipments: [] };
       } else if (pathname.endsWith('/501/deployments')) {

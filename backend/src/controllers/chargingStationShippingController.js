@@ -6,7 +6,7 @@ const handler = (method) => async (req, res) => {
     await access.assertView(req.params.id, req.user);
     const ctx = { actorId: req.user.id, actorRole: req.user.role, ip: req.ip };
     const data = method === 'getSummary'
-      ? await shipping.getSummary(req.params.id)
+      ? await shipping.getSummary(req.params.id, undefined, { allowReview: true })
       : method === 'createExport'
         ? await shipping.createExport(req.params.id, req.body, req.user, ctx)
         : await shipping[method](req.params.id, req.params.exportId, req.body, req.user, ctx);
