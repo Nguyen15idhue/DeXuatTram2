@@ -32,7 +32,9 @@ test(`contract modal defaults today, validates dates and uploads multiple files$
   });
   await page.addInitScript(() => localStorage.setItem('token', 'contract-test'));
   await page.goto('/admin/on-tram/khoi-tao-hop-dong');
-  await page.getByRole('button', { name: 'Tải file hợp đồng', exact: true }).click();
+  await page.getByRole('button', { name: 'Hợp đồng: Đang ký', exact: true }).click();
+  await expect(page.locator('#contract-files')).toHaveCount(0);
+  await page.getByLabel('Trạng thái hợp đồng', { exact: true }).selectOption('DONE');
   const today = await page.evaluate(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
   await expect(page.getByRole('textbox', { name: 'Ghi chú', exact: true })).toBeVisible();
   await expect(page.getByLabel('Ngày hiệu lực hợp đồng', { exact: true })).toHaveValue(today);
@@ -41,19 +43,19 @@ test(`contract modal defaults today, validates dates and uploads multiple files$
     { name: 'annex.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('mock docx') }
   ]);
   await page.getByLabel('Ngày hiệu lực hợp đồng', { exact: true }).fill('2026-11-12');
-  await page.getByRole('button', { name: 'Xác nhận tải lên' }).click();
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await expect(page.getByText('Vui lòng nhập ngày hiệu lực và ngày hết hạn hợp đồng')).toBeVisible();
   await page.getByLabel('Ngày hết hạn hợp đồng', { exact: true }).fill('2026-11-12');
-  await page.getByRole('button', { name: 'Xác nhận tải lên' }).click();
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await expect(page.getByText('Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng')).toBeVisible();
   expect(uploaded).toBe(0);
   await page.getByLabel('Ngày hết hạn hợp đồng', { exact: true }).fill('2027-11-12');
   await page.getByRole('textbox', { name: 'Ghi chú', exact: true }).fill('Hợp đồng và phụ lục');
-  await page.getByRole('button', { name: 'Xác nhận tải lên' }).click();
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   if (retry) {
     await expect(page.getByText('Upload interrupted')).toBeVisible();
     expect(uploaded).toBe(1);
-    await page.getByRole('button', { name: 'Xác nhận tải lên' }).click();
+    await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   }
   await expect(page.locator('#contract-files')).toHaveCount(0);
   expect(uploaded).toBe(2);

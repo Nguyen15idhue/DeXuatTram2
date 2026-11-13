@@ -775,8 +775,8 @@ export const chargingStationService = {
   update(id, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}`, data || {}, token));
   },
-  startContractSigning(id, token) {
-    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/start`, {}, token));
+  startContractSigning(id, token, data = {}) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/start`, data, token));
   },
   completeContract(id, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/complete`, data, token));

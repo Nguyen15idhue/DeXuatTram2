@@ -44,6 +44,7 @@ const ACTION_LABELS = {
   overview_overridden: 'SUPER_ADMIN điều chỉnh hồ sơ ON trạm',
   installation_updated: 'Cập nhật trạng thái và ghi chú lắp trụ',
   portion_documents_overridden: 'Điều chỉnh hồ sơ nghiệm thu / ON từng phần trụ',
+  contract_note_updated: 'Cập nhật ghi chú hợp đồng',
   contract_signing_started: 'Bắt đầu ký hợp đồng',
   contract_completed: 'Hoàn tất hợp đồng',
   manual_marked_active: 'SUPER_ADMIN xác nhận ON trạm trực tiếp',

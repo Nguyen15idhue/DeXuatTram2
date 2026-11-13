@@ -324,7 +324,8 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  * /api/admin/charging-stations/{id}/contract/start:
  *   post:
  *     tags: [Charging Stations]
- *     summary: Bắt đầu ký hợp đồng (Back Office)
+ *     summary: Lưu ghi chú hoặc bắt đầu ký hợp đồng (Back Office)
+ *     description: NOT/DOING được giữ trạng thái để sửa ghi chú; chỉ cho tiến NOT→DOING. DONE dùng endpoint complete. Không lùi hoặc sửa hợp đồng hoàn tất tại đây.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -333,9 +334,18 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               contract_status: { type: string, enum: [NOT, DOING], default: DOING }
+ *               expected_status: { type: string, enum: [NOT, DOING] }
+ *               contract_note: { type: string, nullable: true }
  *     responses:
  *       200:
- *         description: Đã chuyển hợp đồng sang Đang ký
+ *         description: Đã lưu trạng thái và ghi chú
  *       400:
  *         description: Trạng thái hiện tại không cho phép bắt đầu ký
  *       403:

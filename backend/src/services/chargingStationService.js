@@ -1092,8 +1092,13 @@ const updatePaymentStatus = async (id, { payment_status: nextStatus, reason } = 
   return getChargingStationDetail(stationId, user);
 };
 
-const startContractSigning = async (id, user, ctx = {}) => {
+const startContractSigning = async (id, user, ctx = {}, body = {}) => {
   await assertBackOfficeManager(user);
+  const target = body.contract_status === undefined ? 'DOING' : body.contract_status;
+  if (!['NOT', 'DOING'].includes(target)) throw err('Trạng thái hợp đồng không hợp lệ', 400);
+  if (body.contract_note != null && typeof body.contract_note !== 'string') throw err('Ghi chú hợp đồng phải là văn bản', 400);
+  const note = body.contract_note === undefined ? undefined : (body.contract_note || '').trim();
+  if (note !== undefined && Buffer.byteLength(note, 'utf8') > 65535) throw err('Ghi chú hợp đồng quá dài', 400);
   const stationId = normalizeId(id, 'Mã bản ghi');
   await assertCanViewChargingStation(stationId, user);
   const connection = await pool.getConnection();
@@ -1102,23 +1107,31 @@ const startContractSigning = async (id, user, ctx = {}) => {
     await connection.beginTransaction();
     transactionStarted = true;
     const [rows] = await connection.query(
-      'SELECT id, status, contract_status FROM charging_stations WHERE id = ? FOR UPDATE',
+      'SELECT id, status, contract_status, contract_note FROM charging_stations WHERE id = ? FOR UPDATE',
       [stationId]
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
-    if (current.status === 'CANCELLED' || current.contract_status !== 'NOT') {
-      throw err('Chỉ có thể bắt đầu ký khi trạm đang hoàn thiện thủ tục và hợp đồng chưa ký', 400);
+    if (body.expected_status !== undefined && body.expected_status !== current.contract_status) {
+      throw err('Trạng thái hợp đồng đã thay đổi; hãy mở lại modal', 409);
+    }
+    if (current.status === 'CANCELLED' || !['NOT', 'DOING'].includes(current.contract_status)
+      || (current.contract_status === 'DOING' && target === 'NOT')) {
+      throw err('Chỉ được chuyển tiến tuần tự hợp đồng chưa hoàn tất', 400);
     }
 
+    const nextNote = note === undefined ? current.contract_note || null : note || null;
     await connection.query(
-      "UPDATE charging_stations SET contract_status = 'DOING' WHERE id = ?",
-      [stationId]
+      'UPDATE charging_stations SET contract_status = ?, contract_note = ? WHERE id = ?',
+      [target, nextNote, stationId]
     );
     await writeActivity(connection, {
       chargingStationId: stationId,
-      action: 'contract_signing_started',
-      changedFields: { contract_status: { label: FIELD_LABELS.contract_status, old: 'NOT', new: 'DOING' } },
+      action: target !== current.contract_status ? 'contract_signing_started' : 'contract_note_updated',
+      changedFields: {
+        contract_status: { label: FIELD_LABELS.contract_status, old: current.contract_status, new: target },
+        contract_note: { label: FIELD_LABELS.contract_note, old: current.contract_note || null, new: nextNote }
+      },
       actorId: ctx.actorId,
       actorRole: ctx.actorRole,
       source: 'user',
