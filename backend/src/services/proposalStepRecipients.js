@@ -57,8 +57,23 @@ const gradingUsers = async (proposal, departments, { requireMissingScore = true 
 const reviewUsers = async (proposal, roleKeys) => {
   const proposalReviewService = require('./proposalReviewService');
   const requestedRoles = new Set(roleKeys);
-  const region = proposalRegion(proposal);
   const users = await loadActiveUsers();
+  const allUsers = requestedRoles.has(proposalReviewService.REVIEW_ROLE.GDTTKD)
+    ? (await pool.query('SELECT id, parent_id, custom_data FROM users'))[0] : [];
+  const matchedIds = new Set();
+  for (const user of users) {
+    const roleKey = proposalReviewService.resolveRoleKey({
+      role: user.role, department: user.department, chucVu: user.chucVu
+    });
+    if (roleKey !== proposalReviewService.REVIEW_ROLE.GDTTKD || !requestedRoles.has(roleKey)) continue;
+    const reviewScope = require('./proposalReviewScope');
+    const scope = await reviewScope.build({
+      id: user.id, department: user.department,
+      region: proposalReviewService.resolveRegion(user.department)
+        || proposalReviewService.resolveRegion(user.customData.vung_mien)
+    }, allUsers);
+    if (reviewScope.matches(scope, proposal)) matchedIds.add(user.id);
+  }
 
   return users
     .filter((user) => {
@@ -71,9 +86,7 @@ const reviewUsers = async (proposal, roleKeys) => {
       });
       if (!requestedRoles.has(roleKey)) return false;
       if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) {
-        const userRegion = proposalReviewService.resolveRegion(user.department)
-          || proposalReviewService.resolveRegion(user.customData.vung_mien);
-        return !!region && userRegion === region;
+        return matchedIds.has(user.id);
       }
       return true;
     })

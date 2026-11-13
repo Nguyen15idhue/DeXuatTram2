@@ -582,14 +582,6 @@ const parseNote = (value) => {
   return text === '' ? null : text.slice(0, 5000);
 };
 
-const regionDepartment = (customData) => {
-  const region = normalizeText(parseCustomData(customData).vung_mien);
-  if (region === 'bac' || region.includes('mien bac')) return 'Trung tâm KD miền Bắc';
-  if (region === 'trung' || region.includes('mien trung')) return 'Trung tâm KD miền Trung';
-  if (region === 'nam' || region.includes('mien nam')) return 'Trung tâm KD miền Nam';
-  return null;
-};
-
 exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} } = {}) => {
   if (!['SUPER_ADMIN', 'ADMIN', 'SALES'].includes(userRole)) {
     throw Object.assign(new Error('Chỉ nhân sự phòng Quy hoạch hoặc Pháp lý được chấm điểm'), { statusCode: 403 });
@@ -984,7 +976,6 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
           requestedBy: userId || null,
           previousStatus: isGrading ? GRADING_STATUS : current.status,
           currentStatus: 'GDTTKD_EVALUATING',
-          targetDepartment: regionDepartment(current.custom_data),
           targetTitle: 'Giám đốc Trung tâm Kinh doanh',
           note
         });

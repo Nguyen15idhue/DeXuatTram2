@@ -97,6 +97,9 @@ const resolveReviewer = async (user) => {
   const region = roleKey === REVIEW_ROLE.GDTTKD
     ? (resolveRegion(profile.department) || resolveRegion(profile.customData.vung_mien))
     : null;
+  const managementScope = roleKey === REVIEW_ROLE.GDTTKD
+    ? await require('./proposalReviewScope').build({ id: user.id, department: profile.department, region })
+    : null;
   return {
     isAdmin: ['SUPER_ADMIN', 'ADMIN'].includes(user && user.role),
     isSuperAdmin: user?.role === 'SUPER_ADMIN',
@@ -107,7 +110,8 @@ const resolveReviewer = async (user) => {
     regionLabel: REGION_LABELS[region] || null,
     department: profile.department,
     chucVu: profile.chucVu,
-    customData: profile.customData
+    customData: profile.customData,
+    managementScope
   };
 };
 
@@ -129,7 +133,7 @@ const regionClause = (region, params) => {
 
 const permissionsFor = (scope, proposal) => {
   const isGdttkd = scope.isSuperAdmin || (scope.roleKey === REVIEW_ROLE.GDTTKD
-    && !!scope.region && scope.region === proposalRegion(proposal.custom_data));
+    && require('./proposalReviewScope').matches(scope.managementScope, proposal));
   const isTgd = scope.isSuperAdmin || scope.roleKey === REVIEW_ROLE.TGD;
   const level = Number(proposal.review_level);
   return {
@@ -211,8 +215,6 @@ const listReviews = async ({
     } else if (scope.roleKey === REVIEW_ROLE.GDTTKD) {
       where.push(`((p.status = ? AND p.review_level = 1) OR (p.status = ? AND p.review_level = 2))`);
       params.push('GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING');
-      const clause = regionClause(scope.region, params);
-      where.push(clause ? clause.replace(/^ AND /, '') : '1 = 0');
     } else if (scope.roleKey === REVIEW_ROLE.QH || scope.roleKey === REVIEW_ROLE.PL) {
       where.push('p.status = ?');
       params.push(REGRADING_STATUS);
@@ -242,8 +244,10 @@ const listReviews = async ({
     params.push('GDTTKD_EVALUATING');
   }
   if (scope.roleKey === REVIEW_ROLE.GDTTKD && !scope.isAdmin && safeTab !== 'pending') {
-    const clause = regionClause(scope.region, params);
-    where.push(clause ? clause.replace(/^ AND /, '') : '1 = 0');
+    where.push(require('./proposalReviewScope').sql(scope.managementScope, params));
+  }
+  if (scope.roleKey === REVIEW_ROLE.GDTTKD && safeTab === 'pending') {
+    where.push(require('./proposalReviewScope').sql(scope.managementScope, params));
   }
 
   if (search) {
@@ -427,8 +431,8 @@ const assertStatus = (proposal, allowed) => {
 
 const assertBranch = (scope, proposal) => {
   if (scope.isSuperAdmin || scope.roleKey !== REVIEW_ROLE.GDTTKD) return;
-  if (!scope.region || proposalRegion(proposal.custom_data) !== scope.region) {
-    throw err('Đề xuất không thuộc miền phụ trách của bạn', 403);
+  if (!require('./proposalReviewScope').matches(scope.managementScope, proposal)) {
+    throw err('Đề xuất không thuộc phạm vi quản lý của bạn', 403);
   }
 };
 

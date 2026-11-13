@@ -407,9 +407,11 @@ exports.getRequestById = async (id) => {
   return rows[0] || null;
 };
 
-const requestAssignedToUser = (request, user) => {
+const requestAssignedToUser = async (request, user) => {
   if (!request || !user) return false;
-  if (Number(request.target_user_id) === Number(user.id)) return true;
+  const isGdttkdReview = request.request_type === 'RE_GRADE'
+    && request.target_title === 'Giám đốc Trung tâm Kinh doanh';
+  if (!isGdttkdReview && Number(request.target_user_id) === Number(user.id)) return true;
   const types = assignedTypesForUser(user);
   if (!types.includes(request.request_type)) return false;
   if (request.request_type === 'RE_GRADE') {
@@ -420,12 +422,10 @@ const requestAssignedToUser = (request, user) => {
     }
     const reviewProfile = getReviewProfile(user);
     if (reviewProfile.roleKey === require('./proposalReviewService').REVIEW_ROLE.GDTTKD
-      && request.target_title === 'Giám đốc Trung tâm Kinh doanh'
-      && reviewProfile.region) {
-      const proposalRegion = require('./proposalReviewService').resolveRegion(
-        parseCustomData(request.proposal_custom_data).vung_mien
-      );
-      return proposalRegion === reviewProfile.region;
+      && request.target_title === 'Giám đốc Trung tâm Kinh doanh') {
+      const reviewScope = require('./proposalReviewScope');
+      const scope = await reviewScope.build({ id: user.id, department: user.department, region: reviewProfile.region });
+      return reviewScope.matches(scope, { user_id: request.owner_id, custom_data: request.proposal_custom_data });
     }
     return false;
   }
@@ -455,7 +455,7 @@ const canManageProposalOwner = async (user, request) => {
 const canActOnRequest = async (user, request) => {
   if (!user || !request) return false;
   if (user.role === 'SUPER_ADMIN') return true;
-  if (requestAssignedToUser(request, await loadUserById(user.id))) return true;
+  if (await requestAssignedToUser(request, await loadUserById(user.id))) return true;
   if (Number(request.target_user_id) === Number(request.owner_id)) {
     return canManageProposalOwner(user, request);
   }
