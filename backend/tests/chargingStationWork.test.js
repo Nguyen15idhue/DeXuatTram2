@@ -6,19 +6,54 @@ const pool = require('../src/utils/db');
 
 test.after(async () => pool.end());
 
-test('ADMIN is read-only even when department names an operating team', async () => {
-  for (const department of ['Back Office', 'Phòng Setup và Vận hành', 'Phòng Tài chính']) {
-    const user = { id: 1, role: 'ADMIN', custom_data: { department } };
+test('ADMIN can perform only the workflow steps assigned to their department', async (t) => {
+  let department;
+  t.mock.method(pool, 'query', async () => [[{ custom_data: { department } }]]);
+  for (const [name, backOffice, setup] of [
+    ['Back Office', true, false],
+    ['Phòng Setup và Vận hành', false, true],
+    ['Phòng Tài chính', false, false],
+    ['Phòng khác', false, false]
+  ]) {
+    department = name;
+    const user = { id: 1, role: 'ADMIN' };
     assert.deepEqual(await access.permissions(user), {
-      back_office: false, setup: false, finance: false, request_early: false
+      back_office: backOffice, setup, finance: false, request_early: false
     });
     const { expressions } = await work.actionable(user);
-    for (const key of ['contract', 'infrastructure', 'installation', 'acceptance', 'on_station', 'finance']) {
-      assert.equal(expressions[key], '0');
+    for (const key of ['contract', 'infrastructure']) {
+      assert.equal(expressions[key] !== '0', backOffice, `${name}: ${key}`);
     }
-    await assert.rejects(() => access.assertBackOffice(user), { statusCode: 403 });
+    for (const key of ['installation', 'acceptance', 'on_station']) {
+      assert.equal(expressions[key] !== '0', setup, `${name}: ${key}`);
+    }
+    assert.equal(expressions.finance, '0');
+    if (backOffice) await access.assertBackOffice(user);
+    else await assert.rejects(() => access.assertBackOffice(user), { statusCode: 403 });
+    if (setup) await access.assertSetup(user);
+    else await assert.rejects(() => access.assertSetup(user), { statusCode: 403 });
+    await assert.rejects(() => access.assertFinance(user), { statusCode: 403 });
     await access.assertFinanceViewer(user);
   }
+});
+
+test('setup ADMIN receives installation notifications but not finance notifications', async () => {
+  const deployments = require('../src/services/chargingStationDeploymentService');
+  const inserted = [];
+  const connection = { query: async (sql, params) => {
+    if (sql.startsWith('SELECT')) return [[
+      { id: 1, role: 'ADMIN', custom_data: { department: 'Phòng Setup và Vận hành' } },
+      { id: 2, role: 'ADMIN', custom_data: { department: 'Back Office' } },
+      { id: 3, role: 'SUPER_ADMIN', custom_data: {} }
+    ]];
+    inserted.push(params[0]);
+    return [{}];
+  } };
+  await deployments.notifyProgress(connection, { id: 1 }, {}, 'Test', 'Test');
+  assert.deepEqual(inserted, [1, 3]);
+  inserted.length = 0;
+  await deployments.notifyProgress(connection, { id: 1 }, {}, 'Test', 'Test', true);
+  assert.deepEqual(inserted, [3]);
 });
 
 test('SUPER_ADMIN can perform each department step', async () => {

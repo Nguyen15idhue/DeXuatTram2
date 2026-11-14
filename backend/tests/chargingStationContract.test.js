@@ -23,7 +23,8 @@ test('requires files and valid dates, with expiry strictly after effective date'
   }
 });
 
-test('ADMIN cannot complete contracts solely by role', async () => {
+test('ADMIN cannot complete contracts solely by role', async t => {
+  t.mock.method(pool, 'query', async () => [[{ custom_data: { department: 'Phòng khác' } }]]);
   await assert.rejects(service.completeContract(1, body, { id: 2, role: 'ADMIN' }), { statusCode: 403 });
 });
 
@@ -46,6 +47,7 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
   };
   t.mock.method(pool, 'getConnection', async () => connection);
   t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('SELECT custom_data FROM users')) return [[{ custom_data: { department: 'Back Office' } }]];
     if (sql.includes('SELECT cs.id')) return [[record]];
     if (sql.includes('charging_station_contract_files')) return [files];
     return [[]];
@@ -57,6 +59,12 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
   t.mock.method(require('../src/services/chargingStationOverrideService'), 'getEditToken', async () => 'test-token');
   return { calls, connection, files };
 };
+
+test('Back Office ADMIN can start signing a contract', async t => {
+  const { calls } = setup(t, {}, 'NOT');
+  await service.startContractSigning(1, { id: 2, role: 'ADMIN' }, {}, { contract_status: 'DOING' });
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+});
 
 test('saves notes without advancing an unsigned contract', async t => {
   const { calls } = setup(t, {}, 'NOT');

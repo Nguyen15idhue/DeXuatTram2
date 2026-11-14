@@ -28,7 +28,7 @@ const notify = async (connection, station, ctx, title, details, finance = false)
   const [users] = await connection.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
   const normalize = (s) => text(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
   for (const user of users) {
-    if (user.role === 'ADMIN') continue;
+    if (user.role === 'ADMIN' && finance) continue;
     const department = normalize((json(user.custom_data) || {}).department);
     const matches = finance
       ? department.includes('tai chinh') || department.includes('back office')

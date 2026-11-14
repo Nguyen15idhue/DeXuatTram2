@@ -169,7 +169,7 @@ const ChargingStationContractTabs = () => {
             <span className={`text-xs ${expired ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>
-            {canExtend && canOperateStation(user, row, 'back_office') && (
+            {canExtend && user?.role !== 'ADMIN' && canOperateStation(user, row, 'back_office') && (
               <Button
                 variant="outline-warning"
                 size="xs"

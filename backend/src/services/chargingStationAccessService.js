@@ -10,14 +10,14 @@ const isSetup = (department) => {
 };
 
 const permissions = async (user) => {
-  if (!user?.id || user.role === 'ADMIN') return { back_office: false, setup: false, finance: false, request_early: false };
+  if (!user?.id) return { back_office: false, setup: false, finance: false, request_early: false };
   if (user.role === 'SUPER_ADMIN') return { back_office: true, setup: true, finance: true, request_early: true };
   const scope = await reports.resolveScope(user);
   const superAdmin = user?.role === 'SUPER_ADMIN';
   const readOnly = user?.role === 'ADMIN';
   return {
-    back_office: superAdmin || (!readOnly && scope.isBackOffice),
-    setup: superAdmin || (!readOnly && isSetup(scope.department)),
+    back_office: superAdmin || scope.isBackOffice,
+    setup: superAdmin || isSetup(scope.department),
     finance: superAdmin || (!readOnly && (scope.isFinance || scope.isBackOffice)),
     request_early: !readOnly && (superAdmin || !scope.isBackOffice)
   };

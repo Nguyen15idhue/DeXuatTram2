@@ -28,7 +28,7 @@ router.use(requireAuth);
  *     tags: [Charging Stations]
  *     summary: Tiến hành lắp đặt, nghiệm thu hoặc ON một phần trụ đã nhận
  *     description: >
- *       Chỉ SUPER_ADMIN và Setup/Vận hành; ADMIN chỉ đọc.
+ *       Chỉ SUPER_ADMIN và Setup/Vận hành, kể cả ADMIN thuộc phòng này.
  *       request_id duy nhất theo trạm bảo đảm không lặp ghi log/thông báo.
  *       Lắp xong mở hai công việc nghiệm thu và ON song song.
  *       Nghiệm thu đạt yêu cầu equipment và infrastructure, mỗi bộ có file PDF/Word và ít nhất 2 ảnh.

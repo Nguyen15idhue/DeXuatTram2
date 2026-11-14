@@ -79,10 +79,17 @@ test('stale status and cancelled station fail without updates', async t => {
   assert.equal(calls.some(([sql]) => sql.startsWith('UPDATE')), false);
 });
 
-test('ADMIN and unrelated SALES cannot update infrastructure', async () => {
+test('ADMIN and SALES outside Back Office cannot update infrastructure', async t => {
+  t.mock.method(pool, 'query', async () => [[{ custom_data: { department: 'Phòng khác' } }]]);
   for (const role of ['ADMIN', 'SALES']) {
     await assert.rejects(service.updateInfrastructureStatus(1, 'power', body, { id: 9, role, custom_data: {} }), { statusCode: 403 });
   }
+});
+
+test('Back Office ADMIN can update infrastructure', async t => {
+  const { calls } = setup(t);
+  await service.updateInfrastructureStatus(1, 'power', body, { ...backOffice, role: 'ADMIN' });
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
 });
 
 test('invalid status, date, expected status and note fail before transactions', async () => {

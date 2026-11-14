@@ -31,7 +31,7 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [station.id, token]);
-  const canEdit = user?.role === 'SUPER_ADMIN' || (user?.role !== 'ADMIN' && permissions.setup && !overridden);
+  const canEdit = user?.role === 'SUPER_ADMIN' || (permissions.setup && !overridden);
   const patch = (id, values) => setRows(current => current.map(row => row.id === id ? { ...row, ...values } : row));
   const save = async () => {
     if (saving.current) return;

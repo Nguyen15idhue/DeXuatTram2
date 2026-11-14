@@ -30,7 +30,7 @@ let portions = [
 
 async function main() {
   const helper = await import('./src/utils/chargingFulfillment.js');
-  assert.equal(helper.canOperateStation({ role: 'ADMIN', department: 'Back Office Setup Vận hành' }, station, 'setup'), false);
+  assert.equal(helper.canOperateStation({ role: 'ADMIN', department: 'Back Office Setup Vận hành' }, station, 'setup'), true);
   assert.equal(helper.canOperateStation({ role: 'SUPER_ADMIN' }, {}, 'finance'), true);
   assert.deepEqual(helper.deploymentActions(portions[1]), ['start-installation']);
   assert.equal(helper.shipmentAvailable(fulfillment.shipments[0].items[0], 'request-return'), 1);
@@ -53,7 +53,7 @@ async function main() {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace(/^\/api/, '');
     let data = [];
-    if (path === '/auth/me') data = { user: { id: 7, role, full_name: 'Kiểm thử', department: 'Back Office Setup Vận hành' } };
+    if (path === '/auth/me') data = { user: { id: 7, role, full_name: 'Kiểm thử', department: role === 'ADMIN' ? 'Phòng khác' : 'Back Office Setup Vận hành' } };
     else if (path === '/assistant/status') data = { enabled: false };
     else if (path === '/admin/charging-stations/task-counts') {
       countCalls++;
@@ -221,6 +221,7 @@ async function main() {
     await page.getByRole('link', { name: 'Chi tiết', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Đã ON Trạm', exact: true }).count(), 0);
     role = 'ADMIN';
+    station.permissions = { back_office: false, setup: false, finance: false, request_early: false };
     await page.goto(`${BASE}/admin/on-tram/giao-tru?tab=all`);
     await page.getByRole('button', { name: 'Các phần trụ / thao tác' }).click();
     await page.getByText('Lịch sử các chuyến giao', { exact: true }).waitFor();
@@ -240,7 +241,7 @@ async function main() {
     await page.getByRole('button', { name: 'Thanh toán', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Hoàn tất', exact: true }).count(), 0);
     assert.deepEqual(errors, []);
-    console.log('PASS ON UI: multiple shipments; partial receipt/return; stock errors; stable retries and distinct keys; failure reason; leftover portion actions after first ON; missing-prerequisite acknowledgement; ADMIN read-only; task counts refreshed; no runtime errors.');
+    console.log('PASS ON UI: multiple shipments; partial receipt/return; stock errors; stable retries and distinct keys; failure reason; leftover portion actions after first ON; missing-prerequisite acknowledgement; unrelated ADMIN read-only; task counts refreshed; no runtime errors.');
   } finally { await browser.close(); }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });
