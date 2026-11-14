@@ -54,8 +54,37 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
   t.mock.method(require('../src/services/adminProposalService'), 'getProposalWithUser', async () => ({ id: 2 }));
   t.mock.method(require('../src/services/chargingStationShippingService'), 'getSummary', async () => ({}));
   t.mock.method(require('../src/services/chargingStationDeploymentService'), 'getDeployments', async () => []);
+  t.mock.method(require('../src/services/chargingStationOverrideService'), 'getEditToken', async () => 'test-token');
   return { calls, connection, files };
 };
+
+test('saves notes without advancing an unsigned contract', async t => {
+  const { calls } = setup(t, {}, 'NOT');
+  await service.startContractSigning(1, user, { actorId: 1, actorRole: 'SUPER_ADMIN' }, {
+    contract_status: 'NOT', expected_status: 'NOT', contract_note: ' Preparing '
+  });
+  const update = calls.find(([sql]) => sql.includes('SET contract_status'));
+  assert.deepEqual(update[1], ['NOT', 'Preparing', 1]);
+});
+
+test('saves signing status and note together', async t => {
+  const { calls } = setup(t, {}, 'NOT');
+  await service.startContractSigning(1, user, { actorId: 1, actorRole: 'SUPER_ADMIN' }, {
+    contract_status: 'DOING', expected_status: 'NOT', contract_note: ' Sent for signing '
+  });
+  assert.deepEqual(calls.find(([sql]) => sql.includes('SET contract_status'))[1], ['DOING', 'Sent for signing', 1]);
+});
+
+test('rejects moving signing backwards and stale status without writes', async t => {
+  const { calls } = setup(t);
+  await assert.rejects(service.startContractSigning(1, user, {}, {
+    contract_status: 'NOT', expected_status: 'DOING'
+  }), { statusCode: 400 });
+  await assert.rejects(service.startContractSigning(1, user, {}, {
+    contract_status: 'DOING', expected_status: 'NOT'
+  }), { statusCode: 409 });
+  assert.equal(calls.some(([sql]) => sql.includes('SET contract_status')), false);
+});
 
 test('completes with multiple files, dates, trimmed note and audit in the same transaction', async t => {
   const { calls } = setup(t);

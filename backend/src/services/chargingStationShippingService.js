@@ -270,18 +270,24 @@ const writeStationExport = async (connection, stationId, body, actor, ctx = {}) 
     : normalizedRows(body.items, 'commitment_id', 'Danh sách trụ xuất');
   const payload = {
     items: requestedItems,
-    carrier: text(body.carrier) || null,
+    carrier_id: idOf(body.carrier_id, 'Chọn đơn vị vận chuyển'),
+    export_date: require('./chargingStationOverrideService').dateOf(body.export_date),
     transport_code: text(body.transport_code) || null,
     reason: text(body.reason) || null,
     total_amount: body.total_amount === null || body.total_amount === undefined || body.total_amount === ''
       ? null
       : Number(body.total_amount)
   };
+  if (!payload.export_date) throw fail('Ngày xuất kho là bắt buộc');
+  if (supplierSelection && new Set(requestedItems.map(item => item.pole_id)).size !== requestedItems.length) {
+    throw fail('Mỗi loại trụ chỉ chọn một nhà cung cấp trong một phiếu');
+  }
   if (payload.total_amount !== null && (!Number.isFinite(payload.total_amount) || payload.total_amount < 0)) {
     throw fail('Tổng số tiền vận chuyển phải là số không âm');
   }
   const existing = await eventForRequest(connection, stationId, requestId, 'SHIPPING_CREATE_EXPORT', payload);
   if (existing) return existing;
+  const carrier = await require('./shippingCarrierService').resolve(connection, payload.carrier_id);
 
   await ensureCommitments(connection, stationId);
   const [lockedCommitments] = await connection.query(
@@ -348,12 +354,12 @@ const writeStationExport = async (connection, stationId, body, actor, ctx = {}) 
     if (quantity > stock.get(key)) throw fail(`Số lượng xuất vượt tồn kho nhà cung cấp cho trụ ${key}`, 409);
   }
 
-  const exportDate = new Date();
+  const exportDate = `${payload.export_date} 00:00:00`;
   const [header] = await connection.query(
     `INSERT INTO warehouse_exports
-      (exporter_user_id, export_date, reason, charging_station_id, destination_type, carrier, transport_code, transport_status, total_amount)
-     VALUES (?, ?, ?, ?, 'STATION', ?, ?, 'SHIPPING', ?)`,
-    [actor.id, exportDate, text(body.reason) || null, stationId, payload.carrier, payload.transport_code, payload.total_amount]
+      (exporter_user_id, export_date, reason, charging_station_id, destination_type, carrier, carrier_id, transport_code, transport_status, total_amount)
+     VALUES (?, ?, ?, ?, 'STATION', ?, ?, ?, 'SHIPPING', ?)`,
+    [actor.id, exportDate, text(body.reason) || null, stationId, carrier.name, carrier.id, payload.transport_code, payload.total_amount]
   );
   const exportId = Number(header.insertId);
   await connection.query(
@@ -496,12 +502,11 @@ const receive = async (stationId, exportId, body = {}, user, ctx = {}) => {
     }
     const deployment = require('./chargingStationDeploymentService');
     await deployment.refreshStationProgress(connection, stationId, actorContext(actor, ctx));
-    await deployment.notifySetupOperations(
-      connection,
-      stations[0],
-      actorContext(actor, ctx),
-      'Đã tiếp nhận một phần hoặc toàn bộ trụ — cần lắp đặt'
-    );
+    if (!parseJson(stations[0].workflow_override)?.completed) {
+      await deployment.notifySetupOperations(
+        connection, stations[0], actorContext(actor, ctx), 'Đã tiếp nhận một phần hoặc toàn bộ trụ — cần lắp đặt'
+      );
+    }
     const shipment = await getShipment(connection, exportId);
     await saveEvent(connection, stationId, requestId, 'SHIPPING_RECEIVE', actor, payload, shipment);
     await connection.commit();
@@ -758,7 +763,7 @@ const getSummary = async (stationId, executor = pool, { initialize = true, allow
   const [shipments] = await executor.query(
     `SELECT we.id, we.exporter_user_id, we.export_date, we.reason, we.charging_station_id,
             we.destination_type, we.destination_name, we.destination_address, we.destination_note,
-            we.carrier, we.transport_code, we.transport_status, we.total_amount, we.created_at,
+            we.carrier, we.carrier_id, we.transport_code, we.transport_status, we.total_amount, we.created_at,
             u.full_name AS exporter_name
        FROM warehouse_exports we
        LEFT JOIN users u ON u.id = we.exporter_user_id

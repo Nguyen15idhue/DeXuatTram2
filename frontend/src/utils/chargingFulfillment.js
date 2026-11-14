@@ -57,9 +57,25 @@ export const deploymentActions = (portion) => {
   const stage = portion.stage;
   if (stage === 'INSTALLING' && portion.sub_status === 'NOT_INSTALLED') return ['start-installation'];
   if (stage === 'INSTALLING' && portion.sub_status === 'INSTALLING') return ['complete-installation'];
-  if (stage === 'ACCEPTANCE' && ['NOT_ACCEPTED', 'ACCEPT_FAILED'].includes(portion.sub_status)) return ['acceptance-passed', 'acceptance-failed'];
-  if (stage === 'CONFIGURING' && portion.sub_status === 'NOT_CONFIGURED') return ['complete-configuration'];
-  return [];
+  if (portion.installation_status !== 'DONE') return [];
+  return [
+    ...(portion.acceptance_status !== 'PASSED' ? ['acceptance-passed', 'acceptance-failed'] : []),
+    ...(stage !== 'OPERATING' ? ['complete-configuration'] : [])
+  ];
+};
+
+export const ACCEPTANCE_LABELS = { NOT: 'Chưa nghiệm thu', FAILED: 'Nghiệm thu không đạt', PASSED: 'Nghiệm thu đạt' };
+
+export const onStationStatus = station => {
+  if (station.workflow_override?.completed && station.status === 'OPERATING') return 'DONE';
+  const fulfillment = station.fulfillment || {};
+  const items = fulfillment.items || [];
+  const portions = station.deployments || [];
+  if (!fulfillment.needs_review && items.length && items.every(item => portions.filter(portion =>
+    Number(portion.commitment_id) === Number(item.commitment_id) && portion.stage === 'OPERATING')
+    .reduce((sum, portion) => sum + Number(portion.quantity), 0) >= Number(item.committed_quantity))) return 'DONE';
+  if (!items.length && !portions.length && !fulfillment.needs_review && station.status === 'OPERATING') return 'DONE';
+  return portions.some(portion => portion.stage === 'OPERATING') ? 'DOING' : 'NOT';
 };
 
 export const DEPLOYMENT_ACTION_LABELS = {

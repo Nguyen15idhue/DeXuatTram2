@@ -216,18 +216,13 @@ const listReviews = async ({
       where.push(`((p.status = ? AND p.review_level = 1) OR (p.status = ? AND p.review_level = 2))`);
       params.push('GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING');
     } else if (scope.roleKey === REVIEW_ROLE.QH || scope.roleKey === REVIEW_ROLE.PL) {
-      where.push('p.status = ?');
-      params.push(REGRADING_STATUS);
-      where.push(`EXISTS (SELECT 1 FROM proposal_requests r WHERE r.proposal_id = p.id
-        AND r.request_type = 'RE_GRADE' AND r.status = 'OPEN'
-        AND (r.target_department = ? OR r.target_title = 'Hai phòng chấm điểm'))`);
-      params.push(scope.roleKey);
+      where.push('1 = 0');
     } else if (scope.roleKey === REVIEW_ROLE.TGD) {
       where.push('p.status = ?');
       params.push(TGD_STATUS);
     } else {
-      where.push(`p.status IN (${[...GDTTKD_STATUSES, REGRADING_STATUS, TGD_STATUS].map(() => '?').join(',')})`);
-      params.push(...GDTTKD_STATUSES, REGRADING_STATUS, TGD_STATUS);
+      where.push(`p.status IN (${[...GDTTKD_STATUSES, TGD_STATUS].map(() => '?').join(',')})`);
+      params.push(...GDTTKD_STATUSES, TGD_STATUS);
     }
   } else {
     if (scope.roleKey === REVIEW_ROLE.QH || scope.roleKey === REVIEW_ROLE.PL) {

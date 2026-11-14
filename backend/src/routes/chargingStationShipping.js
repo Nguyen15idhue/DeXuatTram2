@@ -29,10 +29,11 @@ router.use(requireAuth, requireChargingStationViewer);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [request_id, carrier, transport_code, total_amount, items]
+ *             required: [request_id, carrier_id, export_date, items]
  *             properties:
  *               request_id: { type: string }
- *               carrier: { type: string }
+ *               carrier_id: { type: integer }
+ *               export_date: { type: string, format: date }
  *               transport_code: { type: string }
  *               total_amount: { type: number, minimum: 0 }
  *               items:

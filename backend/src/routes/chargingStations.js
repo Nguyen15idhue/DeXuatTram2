@@ -246,7 +246,8 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  * /api/admin/charging-stations/{id}:
  *   put:
  *     tags: [Charging Stations]
- *     summary: Cập nhật thông tin chung, thanh toán và trạng thái phụ
+ *     summary: SUPER_ADMIN điều chỉnh toàn bộ hồ sơ ON trạm
+ *     description: Whitelist thông tin, ngày/hạn, trạng thái hợp đồng/hạ tầng/tài chính/cọc, trạng thái phụ, người nghiệm thu và tài liệu. Không sửa ID/mã trạm, đề xuất nguồn, giao dịch kho, hóa đơn hay nhật ký. Ghi nguồn admin_override; không tạo chứng từ khi ghi đè trạng thái. expected_token lấy từ chi tiết.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -261,7 +262,44 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [expected_token, reason]
  *             properties:
+ *               expected_token: { type: string }
+ *               reason: { type: string, minLength: 3, maxLength: 5000 }
+ *               contract_status: { type: string, enum: [NOT, DOING, DONE, CANCELLED] }
+ *               infra_power_status: { type: string, enum: [NOT, DOING, DONE] }
+ *               infra_site_status: { type: string, enum: [NOT, DOING, DONE] }
+ *               payment_status: { type: string, enum: [NOT_REQUIRED, NOT, DOING, DONE] }
+ *               deposit_status: { type: string, enum: [NOT_REQUIRED, NOT_RECEIVED, RECEIVED, REFUND_PENDING, REFUNDED] }
+ *               contract_file_ids: { type: array, items: { type: integer } }
+ *               image_ids: { type: array, items: { type: integer } }
+ *               acceptance_file_id: { type: integer, nullable: true }
+ *               deployment_updates:
+ *                 type: array
+ *                 description: SUPER_ADMIN sửa hồ sơ nghiệm thu đã đạt hoặc ngày/ghi chú phần trụ đã ON; cùng transaction với hồ sơ trạm, bắt buộc reason chung.
+ *                 items:
+ *                   type: object
+ *                   required: [id, expected_version]
+ *                   properties:
+ *                     id: { type: integer }
+ *                     expected_version: { type: integer, minimum: 0 }
+ *                     on_date: { type: string, format: date }
+ *                     on_note: { type: string, nullable: true, maxLength: 5000 }
+ *                     equipment:
+ *                       type: object
+ *                       required: [file_id, image_ids]
+ *                       properties:
+ *                         file_id: { type: integer }
+ *                         image_ids: { type: array, minItems: 2, items: { type: integer } }
+ *                         note: { type: string, nullable: true }
+ *                     infrastructure:
+ *                       type: object
+ *                       required: [file_id, image_ids]
+ *                       properties:
+ *                         file_id: { type: integer }
+ *                         image_ids: { type: array, minItems: 2, items: { type: integer } }
+ *                         note: { type: string, nullable: true }
+ *               cms_station_code: { type: string }
  *               on_date:
  *                 type: string
  *                 format: date
@@ -286,7 +324,8 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  * /api/admin/charging-stations/{id}/contract/start:
  *   post:
  *     tags: [Charging Stations]
- *     summary: Bắt đầu ký hợp đồng (Back Office)
+ *     summary: Lưu ghi chú hoặc bắt đầu ký hợp đồng (Back Office)
+ *     description: NOT/DOING được giữ trạng thái để sửa ghi chú; chỉ cho tiến NOT→DOING. DONE dùng endpoint complete. Không lùi hoặc sửa hợp đồng hoàn tất tại đây.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -295,9 +334,18 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               contract_status: { type: string, enum: [NOT, DOING], default: DOING }
+ *               expected_status: { type: string, enum: [NOT, DOING] }
+ *               contract_note: { type: string, nullable: true }
  *     responses:
  *       200:
- *         description: Đã chuyển hợp đồng sang Đang ký
+ *         description: Đã lưu trạng thái và ghi chú
  *       400:
  *         description: Trạng thái hiện tại không cho phép bắt đầu ký
  *       403:
@@ -672,7 +720,7 @@ router.post('/:id/configuration/complete', requireChargingStationViewer, chargin
  *   post:
  *     tags: [Charging Stations]
  *     summary: SUPER_ADMIN xác nhận ON trạm và chuyển đề xuất sang ACTIVE
- *     description: Bỏ qua các bước ON trạm thông thường; không tự thay đổi trạng thái hợp đồng, hạ tầng hoặc thanh toán. Không thể kích hoạt lại bản ghi đã hủy.
+ *     description: Hoàn tất hợp đồng/hạ tầng và task giao/lắp/nghiệm thu/ON bằng workflow_override, kể cả dữ liệu trụ cần đối soát. Không thay đổi kho, phiếu giao, tài chính/cọc/hoàn cọc, không tự tạo tài liệu. Giữ cảnh báo đối soát. Không thể kích hoạt lại bản ghi đã hủy.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -685,11 +733,12 @@ router.post('/:id/configuration/complete', requireChargingStationViewer, chargin
  *         application/json:
  *           schema:
  *             type: object
- *             required: [cms_station_code, on_date, reason]
+ *             required: [cms_station_code, on_date, reason, expected_token]
  *             properties:
  *               cms_station_code: { type: string }
  *               on_date: { type: string, format: date }
  *               reason: { type: string, minLength: 3, maxLength: 5000 }
+ *               expected_token: { type: string }
  *     responses:
  *       200: { description: ON trạm và đề xuất đã chuyển sang Hoạt động }
  *       403: { description: Chỉ SUPER_ADMIN được sử dụng }
@@ -702,7 +751,8 @@ router.post('/:id/on-station/mark-active', requireSuperAdmin, chargingStationCon
  * /api/admin/charging-stations/{id}/status:
  *   post:
  *     tags: [Charging Stations]
- *     summary: Chuyển trạng thái ON trạm (lùi bước bắt buộc lý do)
+ *     summary: SUPER_ADMIN ghi đè trạng thái quy trình ON trạm, tiến/lùi tùy ý
+ *     description: OPERATING dùng chung nghiệp vụ mark-active và yêu cầu mã CMS/ngày ON. CANCELLED dùng nghiệp vụ hủy và lưu trữ đề xuất. Hồ sơ đã hủy phải khôi phục trước. Các trạng thái khác không xóa kết quả đã lưu ở bước sau.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -717,11 +767,14 @@ router.post('/:id/on-station/mark-active', requireSuperAdmin, chargingStationCon
  *         application/json:
  *           schema:
  *             type: object
- *             required: [to_status]
+ *             required: [to_status, reason, expected_token]
  *             properties:
  *               to_status:
  *                 type: string
- *                 enum: [ONBOARDING, DELIVERING, INSTALLING, ACCEPTANCE, CONFIGURING, OPERATING]
+ *                 enum: [ONBOARDING, DELIVERING, INSTALLING, ACCEPTANCE, CONFIGURING, OPERATING, CANCELLED]
+ *               expected_token: { type: string }
+ *               cms_station_code: { type: string }
+ *               on_date: { type: string, format: date }
  *               sub_status:
  *                 type: string
  *               reason:

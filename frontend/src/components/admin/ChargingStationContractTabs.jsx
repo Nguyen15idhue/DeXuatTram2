@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api, chargingStationService } from '../../services/api';
@@ -7,7 +8,6 @@ import { canOperateStation } from '../../utils/chargingFulfillment';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import ChargingStationTable from './ChargingStationTable';
 import {
-  CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
@@ -17,7 +17,6 @@ import {
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
-  formatCsDate,
   getCsDeadlineLabel,
   isCsDeadlineStopped
 } from '../../utils/chargingStation';
@@ -29,6 +28,7 @@ const CONTRACT_MIME_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ];
+const SIGNING_LABELS = { NOT: 'Chưa ký', DOING: 'Đang ký', DONE: 'Đã ký xong', CANCELLED: 'Đã hủy' };
 const TABS = [
   { key: 'need', label: 'Trạm sạc cần thực hiện' },
   { key: 'completed', label: 'Trạm sạc đã hoàn thành' },
@@ -60,6 +60,9 @@ const ChargingStationContractTabs = () => {
   const [contractEffectiveDate, setContractEffectiveDate] = useState('');
   const [contractExpiryDate, setContractExpiryDate] = useState('');
   const [contractNote, setContractNote] = useState('');
+  const [contractStatus, setContractStatus] = useState('NOT');
+  const [modalError, setModalError] = useState('');
+  const saving = useRef(false);
   const [extendStation, setExtendStation] = useState(null);
   const [extendReason, setExtendReason] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -77,6 +80,7 @@ const ChargingStationContractTabs = () => {
       });
       if (debouncedSearch) params.set('search', debouncedSearch);
       const response = await chargingStationService.getAll(params.toString(), token);
+      if (!response?.success) throw new Error(response?.message || 'Không tải được danh sách hợp đồng');
       setItems(response?.data || []);
       setPagination(response?.pagination || {
         page: targetPage,
@@ -96,6 +100,17 @@ const ChargingStationContractTabs = () => {
     setPage(1);
     load(1);
   }, [load]);
+
+  const openContract = row => {
+    setContractFiles([]);
+    setUploadedContractIds([]);
+    setContractStatus(row.contract_status || 'NOT');
+    setContractEffectiveDate(row.contract_effective_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    setContractExpiryDate(row.contract_expiry_date || '');
+    setContractNote(row.contract_note || '');
+    setModalError('');
+    setUploadStation(row);
+  };
 
   const columns = useMemo(() => [
     {
@@ -120,7 +135,7 @@ const ChargingStationContractTabs = () => {
     },
     {
       key: 'status',
-      label: 'Trạng thái trạm',
+      label: 'Trạng thái quy trình',
       render: (value, row) => (
         <div className="flex flex-col items-start gap-1">
           <Badge variant={CS_STATUS_VARIANT[value]} size="sm" className="h-auto whitespace-normal py-1">
@@ -136,14 +151,21 @@ const ChargingStationContractTabs = () => {
       key: 'contract_status',
       label: 'Hợp đồng',
       render: (value, row) => {
-        if (value === 'DONE' || isCsDeadlineStopped(row)) {
-          return <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>;
-        }
+        const editable = row.status !== 'CANCELLED' && ['NOT', 'DOING'].includes(value)
+          && canOperateStation(user, row, 'back_office');
+        const statusChip = editable ? <button type="button" aria-haspopup="dialog"
+          aria-label={`Hợp đồng: ${SIGNING_LABELS[value]}`} disabled={busyId !== null || uploading}
+          className={`inline-flex w-full items-center justify-between gap-2 rounded-full border px-3 py-1 text-xs font-medium
+            ${value === 'DOING' ? 'border-info/30 bg-info/15 text-info' : 'border-base-300 bg-base-200 text-base-content'}
+            hover:brightness-95 disabled:opacity-50`}
+          onClick={() => openContract(row)}>{SIGNING_LABELS[value]}<ChevronDown size={14} /></button>
+          : <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{SIGNING_LABELS[value] || '—'}</Badge>;
+        if (value === 'DONE' || isCsDeadlineStopped(row)) return statusChip;
         const expired = row.contract_deadline_at && new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now();
         const canExtend = expired && Number(row.deadline_extension_count || 0) < 3;
         return (
           <div className="flex flex-col items-start gap-1">
-            <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+            {statusChip}
             <span className={`text-xs ${expired ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>
@@ -187,7 +209,7 @@ const ChargingStationContractTabs = () => {
 
     { key: 'created_at', label: 'Ngày tạo', render: formatDateTime },
 
-  ], [location.pathname, location.search, user, busyId]);
+  ], [location.pathname, location.search, user, busyId, uploading]);
 
   const selectTab = (nextTab) => {
     const next = new URLSearchParams(searchParams);
@@ -195,42 +217,47 @@ const ChargingStationContractTabs = () => {
     setSearchParams(next);
   };
 
-  const startSigning = async (station) => {
-    setBusyId(station.id);
-    try {
-      const response = await chargingStationService.startContractSigning(station.id, token);
-      if (!response?.success) throw new Error(response?.message || 'Không thể bắt đầu ký hợp đồng');
-      setToast({ message: response.message || 'Đã chuyển hợp đồng sang trạng thái Đang ký', type: 'success' });
-      await load(page);
-    } catch (error) {
-      setToast({ message: error?.message || 'Không thể bắt đầu ký hợp đồng', type: 'error' });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   const completeContract = async () => {
+    if (!uploadStation || saving.current) return;
+    setModalError('');
+    if (contractStatus !== 'DONE') {
+      saving.current = true;
+      setUploading(true);
+      try {
+        const response = await chargingStationService.startContractSigning(uploadStation.id, token, {
+          contract_status: contractStatus, expected_status: uploadStation.contract_status,
+          contract_note: contractNote.trim()
+        });
+        if (!response?.success) throw new Error(response?.message || 'Không lưu được hợp đồng');
+        setUploadStation(null);
+        setToast({ message: response.message, type: 'success' });
+        await load(page);
+      } catch (error) { setModalError(error.message || 'Không lưu được hợp đồng'); }
+      finally { saving.current = false; setUploading(false); }
+      return;
+    }
     if (!uploadStation || !contractFiles.length) {
-      setToast({ message: 'Vui lòng chọn file hợp đồng', type: 'error' });
+      setModalError('Vui lòng chọn file hợp đồng');
       return;
     }
     if (contractFiles.some(file => !CONTRACT_MIME_TYPES.includes(file.type))) {
-      setToast({ message: 'File hợp đồng phải có định dạng PDF hoặc DOCX', type: 'error' });
+      setModalError('File hợp đồng phải có định dạng PDF hoặc DOCX');
       return;
     }
     if (contractFiles.some(file => file.size > FILE_MAX_SIZE)) {
-      setToast({ message: 'File hợp đồng không được vượt quá 10 MB', type: 'error' });
+      setModalError('File hợp đồng không được vượt quá 10 MB');
       return;
     }
     if (!contractEffectiveDate || !contractExpiryDate) {
-      setToast({ message: 'Vui lòng nhập ngày hiệu lực và ngày hết hạn hợp đồng', type: 'error' });
+      setModalError('Vui lòng nhập ngày hiệu lực và ngày hết hạn hợp đồng');
       return;
     }
     if (contractExpiryDate <= contractEffectiveDate) {
-      setToast({ message: 'Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng', type: 'error' });
+      setModalError('Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng');
       return;
     }
 
+    saving.current = true;
     setUploading(true);
     try {
       const fileIds = [...uploadedContractIds];
@@ -259,8 +286,9 @@ const ChargingStationContractTabs = () => {
       setToast({ message: completed.message || 'Đã tải hợp đồng và hoàn tất thủ tục', type: 'success' });
       await load(page);
     } catch (error) {
-      setToast({ message: error?.message || 'Không thể hoàn tất hợp đồng', type: 'error' });
+      setModalError(error?.message || 'Không thể hoàn tất hợp đồng');
     } finally {
+      saving.current = false;
       setUploading(false);
     }
   };
@@ -280,32 +308,6 @@ const ChargingStationContractTabs = () => {
     } finally {
       setBusyId(null);
     }
-  };
-
-  const renderActions = (row) => {
-    if (row.status === 'CANCELLED' || !canOperateStation(user, row, 'back_office')) return <span className="text-base-content/50">Chỉ xem</span>;
-    if (row.contract_status === 'NOT') {
-      return (
-        <Button size="xs" loading={busyId === row.id} disabled={busyId !== null} onClick={() => startSigning(row)}>
-          Đang ký hợp đồng
-        </Button>
-      );
-    }
-    if (row.contract_status === 'DOING') {
-      return (
-        <Button variant="primary" size="xs" disabled={busyId !== null || uploading} onClick={() => {
-          setContractFiles([]);
-          setUploadedContractIds([]);
-          setContractEffectiveDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
-          setContractExpiryDate('');
-          setContractNote('');
-          setUploadStation(row);
-        }}>
-          Tải file hợp đồng
-        </Button>
-      );
-    }
-    return <span className="text-base-content/50">—</span>;
   };
 
   return (
@@ -351,7 +353,6 @@ const ChargingStationContractTabs = () => {
         loading={loading}
         emptyMessage={tab === 'need' ? 'Không có trạm sạc cần thực hiện' : 'Không có trạm sạc'}
         startIndex={(pagination.page - 1) * PAGE_SIZE}
-        actions={renderActions}
       />
 
       <Pagination
@@ -367,10 +368,26 @@ const ChargingStationContractTabs = () => {
       <Dialog
         isOpen={!!uploadStation}
         onClose={() => { if (!uploading) setUploadStation(null); }}
-        title={uploadStation ? `Tải hợp đồng — ${uploadStation.ma_tram || `#${uploadStation.id}`}` : 'Tải hợp đồng'}
+        title={uploadStation ? `Cập nhật hợp đồng — ${uploadStation.ma_tram || `#${uploadStation.id}`}` : 'Cập nhật hợp đồng'}
         size="md"
+        portal
       >
         <div className="space-y-4">
+          {modalError && <div role="alert" className="alert alert-error">{modalError}</div>}
+          <label className="block text-sm font-medium">Trạng thái hợp đồng
+            <select className="select select-bordered mt-2 w-full" disabled={uploading} value={contractStatus}
+              onChange={event => setContractStatus(event.target.value)}>
+              {['NOT', 'DOING', 'DONE'].map(status => <option key={status} value={status}
+                disabled={uploadStation?.contract_status === 'NOT' ? status === 'DONE' : status === 'NOT'}>
+                {SIGNING_LABELS[status]}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-medium">
+            Ghi chú
+            <textarea className="textarea textarea-bordered mt-2 w-full" rows={3} value={contractNote}
+              disabled={uploading} onChange={event => setContractNote(event.target.value)} />
+          </label>
+          {contractStatus === 'DONE' && <>
           <p className="text-sm text-base-content/70">
             Chọn một hoặc nhiều file PDF/DOCX (tối đa 10 MB mỗi file). Xác nhận sẽ lưu thông tin và chuyển hợp đồng sang Đã ký.
           </p>
@@ -392,17 +409,13 @@ const ChargingStationContractTabs = () => {
             value={contractEffectiveDate} disabled={uploading} onChange={event => setContractEffectiveDate(event.target.value)} />
           <Input label="Ngày hết hạn hợp đồng" aria-label="Ngày hết hạn hợp đồng" type="date" required
             value={contractExpiryDate} disabled={uploading} onChange={event => setContractExpiryDate(event.target.value)} />
-          <label className="block text-sm font-medium">
-            Ghi chú
-            <textarea className="textarea textarea-bordered mt-2 w-full" rows={3} value={contractNote}
-              disabled={uploading} onChange={event => setContractNote(event.target.value)} />
-          </label>
+          </>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={uploading} onClick={() => setUploadStation(null)}>
               Hủy
             </Button>
-            <Button variant="primary" loading={uploading} disabled={!contractFiles.length || uploading} onClick={completeContract}>
-              Xác nhận tải lên
+            <Button variant="primary" loading={uploading} disabled={uploading || (contractStatus === 'DONE' && !contractFiles.length)} onClick={completeContract}>
+              Lưu
             </Button>
           </div>
         </div>

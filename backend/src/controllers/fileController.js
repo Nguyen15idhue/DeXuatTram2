@@ -183,8 +183,13 @@ const canAccessFile = async (file, req) => {
     const [linkedCharging] = await pool.query(
       `SELECT id AS charging_station_id FROM charging_stations WHERE acceptance_file_id = ?
        UNION SELECT charging_station_id FROM charging_station_images WHERE file_id = ?
-       UNION SELECT charging_station_id FROM charging_station_deployments WHERE acceptance_file_id = ?`,
-      [file.id, file.id, file.id]
+       UNION SELECT charging_station_id FROM charging_station_deployments WHERE acceptance_file_id = ?
+       UNION SELECT d.charging_station_id FROM charging_station_acceptance_documents a
+         JOIN charging_station_deployments d ON d.id=a.deployment_id WHERE a.file_id=?
+       UNION SELECT d.charging_station_id FROM charging_station_acceptance_images i
+         JOIN charging_station_acceptance_documents a ON a.id=i.acceptance_document_id
+         JOIN charging_station_deployments d ON d.id=a.deployment_id WHERE i.file_id=?`,
+      [file.id, file.id, file.id, file.id, file.id]
     );
     for (const station of linkedCharging) {
       if (await require('../services/chargingStationService').canViewChargingStation(
@@ -497,8 +502,10 @@ exports.delete = async (req, res) => {
       `SELECT id FROM charging_station_deployments WHERE acceptance_file_id=?
        UNION SELECT id FROM charging_stations WHERE acceptance_file_id=? OR contract_file_id=?
        UNION SELECT id FROM charging_station_contract_files WHERE file_id=?
-       UNION SELECT id FROM charging_station_invoices WHERE evidence_file_id=? LIMIT 1`,
-      [file.id, file.id, file.id, file.id, file.id]);
+       UNION SELECT id FROM charging_station_invoices WHERE evidence_file_id=?
+       UNION SELECT id FROM charging_station_acceptance_documents WHERE file_id=?
+       UNION SELECT id FROM charging_station_acceptance_images WHERE file_id=? LIMIT 1`,
+      [file.id, file.id, file.id, file.id, file.id, file.id, file.id]);
     if (linkedOnFiles.length) {
       return res.status(409).json({ success: false, message: 'Không được xóa chứng từ hợp đồng, nghiệm thu hoặc hóa đơn ON trạm đang sử dụng' });
     }

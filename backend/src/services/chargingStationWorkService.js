@@ -1,8 +1,6 @@
 const access = require('./chargingStationAccessService');
 const readiness = require('./chargingStationReadiness');
 
-const portion = (stage) => `EXISTS(SELECT 1 FROM charging_station_deployments d
-  WHERE d.charging_station_id=cs.id AND d.stage='${stage}')`;
 const after = (stages) => `EXISTS(SELECT 1 FROM charging_station_deployments d
   WHERE d.charging_station_id=cs.id AND d.stage IN (${stages.map(s => `'${s}'`).join(',')}))`;
 const noPortions = 'NOT EXISTS(SELECT 1 FROM charging_station_deployments d WHERE d.charging_station_id=cs.id)';
@@ -16,14 +14,35 @@ const everyOperating = `NOT EXISTS(SELECT 1 FROM charging_station_commitments c
     (SELECT COALESCE(SUM(d.quantity),0) FROM charging_station_deployments d
       JOIN warehouse_export_items i ON i.id=d.export_item_id
       WHERE i.commitment_id=c.id AND d.charging_station_id=cs.id AND d.stage='OPERATING'))`;
-const deliveryComplete = `((${committed}>0 AND cs.fulfillment_review_required=0 AND ${everyReceived})
+const overridden = "(cs.status='OPERATING' AND JSON_EXTRACT(cs.workflow_override,'$.completed')=true)";
+const deliveryComplete = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0 AND ${everyReceived})
   OR (${noCommitments} AND cs.fulfillment_review_required=0 AND cs.status IN ('INSTALLING','ACCEPTANCE','CONFIGURING','OPERATING')))`;
-const allOperating = `((${committed}>0 AND cs.fulfillment_review_required=0 AND ${everyOperating})
+const allOperating = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0
+  AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
+  AND ${everyOperating})
   OR (${noCommitments} AND cs.fulfillment_review_required=0 AND ${noPortions} AND cs.status='OPERATING'))`;
 const financialOpen = `(cs.deposit_status IN ('NOT_RECEIVED','REFUND_PENDING')
   OR cs.payment_status IN ('NOT','DOING'))`;
 const complete = `(${allOperating} AND cs.contract_status='DONE'
   AND cs.infra_power_status='DONE' AND cs.infra_site_status='DONE' AND NOT ${financialOpen})`;
+const installationExists = after(['INSTALLING', 'ACCEPTANCE', 'CONFIGURING', 'OPERATING']);
+const allInstalled = `(${overridden} OR (
+  ${committed}>0 AND cs.fulfillment_review_required=0
+  AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
+  AND NOT EXISTS(SELECT 1 FROM charging_station_commitments c WHERE c.charging_station_id=cs.id AND c.quantity >
+    (SELECT COALESCE(SUM(d.quantity),0) FROM charging_station_deployments d
+      JOIN warehouse_export_items i ON i.id=d.export_item_id
+      WHERE i.commitment_id=c.id AND d.charging_station_id=cs.id AND d.installation_status='DONE'))))`;
+const acceptancePending = `EXISTS(SELECT 1 FROM charging_station_deployments d WHERE d.charging_station_id=cs.id
+  AND d.installation_status='DONE' AND d.acceptance_status<>'PASSED')`;
+const onPending = `EXISTS(SELECT 1 FROM charging_station_deployments d WHERE d.charging_station_id=cs.id
+  AND d.installation_status='DONE' AND d.stage<>'OPERATING')`;
+const allAccepted = `(${committed}>0 AND cs.fulfillment_review_required=0
+  AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
+  AND NOT EXISTS(SELECT 1 FROM charging_station_commitments c WHERE c.charging_station_id=cs.id AND c.quantity >
+    (SELECT COALESCE(SUM(d.quantity),0) FROM charging_station_deployments d
+      JOIN warehouse_export_items i ON i.id=d.export_item_id
+      WHERE i.commitment_id=c.id AND d.charging_station_id=cs.id AND d.acceptance_status='PASSED')))`;
 
 const stageFilters = {
   'khoi-tao-hop-dong': {
@@ -39,19 +58,20 @@ const stageFilters = {
     completed: deliveryComplete, all: '1=1'
   },
   'lap-tru': {
-    need: `(${portion('INSTALLING')} OR (${noPortions} AND cs.status='INSTALLING'))`,
-    completed: `(${after(['ACCEPTANCE', 'CONFIGURING', 'OPERATING'])} AND NOT ${portion('INSTALLING')})`,
+    need: `(NOT ${allInstalled} AND (${installationExists} OR cs.status IN ('INSTALLING','ACCEPTANCE','CONFIGURING','OPERATING')))`,
+    completed: allInstalled,
     all: `(${after(['INSTALLING', 'ACCEPTANCE', 'CONFIGURING', 'OPERATING'])} OR cs.status IN ('INSTALLING','ACCEPTANCE','CONFIGURING','OPERATING'))`
   },
   'nghiem-thu': {
-    need: `(${portion('ACCEPTANCE')} OR (${noPortions} AND cs.status='ACCEPTANCE'))`,
-    completed: `(${after(['CONFIGURING', 'OPERATING'])} AND NOT ${portion('ACCEPTANCE')})`,
+    need: `(NOT ${overridden} AND (${acceptancePending} OR (${noPortions} AND cs.status='ACCEPTANCE')))`,
+    completed: `(${overridden} OR ${allAccepted}
+      OR (${noCommitments} AND ${noPortions} AND cs.fulfillment_review_required=0 AND cs.status IN ('CONFIGURING','OPERATING')))`,
     all: `(${after(['ACCEPTANCE', 'CONFIGURING', 'OPERATING'])} OR cs.status IN ('ACCEPTANCE','CONFIGURING','OPERATING'))`
   },
   'on-tram': {
-    need: `(${portion('CONFIGURING')} OR (${noPortions} AND cs.status='CONFIGURING'))`,
+    need: `(NOT ${overridden} AND (${onPending} OR (${noPortions} AND cs.status='CONFIGURING')))`,
     completed: `(${allOperating})`,
-    all: `(${after(['CONFIGURING', 'OPERATING'])} OR cs.status IN ('CONFIGURING','OPERATING'))`
+    all: `(${after(['ACCEPTANCE', 'CONFIGURING', 'OPERATING'])} OR cs.status IN ('CONFIGURING','OPERATING'))`
   },
   'tai-chinh': {
     need: financialOpen,

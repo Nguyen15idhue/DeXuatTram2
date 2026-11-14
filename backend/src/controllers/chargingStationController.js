@@ -108,8 +108,8 @@ exports.restoreOnStation = async (req, res) => {
 
 exports.startContract = async (req, res) => {
   try {
-    const data = await chargingStationService.startContractSigning(req.params.id, req.user, actorOf(req));
-    res.json({ success: true, data, message: 'Đã chuyển hợp đồng sang trạng thái Đang ký' });
+    const data = await chargingStationService.startContractSigning(req.params.id, req.user, actorOf(req), req.body || {});
+    res.json({ success: true, data, message: 'Đã lưu trạng thái và ghi chú hợp đồng' });
   } catch (error) {
     sendError(res, error);
   }

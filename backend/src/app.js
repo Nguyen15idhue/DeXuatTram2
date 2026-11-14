@@ -160,6 +160,7 @@ app.use('/api/admin/suppliers', adminLimiter, supplierRoutes);
 app.use('/api/admin/charging-stations', chargingStationCareRoutes);
 app.use('/api/admin/charging-finance', adminLimiter, chargingFinanceRoutes);
 app.use('/api/admin/warehouse', adminLimiter, warehouseRoutes);
+app.use('/api/admin/shipping-carriers', adminLimiter, require('./routes/shippingCarriers'));
 app.use('/api/my-proposals', myProposalsRoutes);
 app.use('/api/admin/users', adminLimiter, adminUsersRoutes);
 app.use('/api/admin/leads', adminLimiter, adminLeadsRoutes);

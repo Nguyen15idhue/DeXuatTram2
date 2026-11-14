@@ -63,6 +63,7 @@ const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage')
 const AdminCrmPage = lazy(() => import('./pages/admin/AdminCrmPage'));
 const AdminChargingStationsPage = lazy(() => import('./pages/admin/AdminChargingStationsPage'));
 const AdminChargingStationDetailPage = lazy(() => import('./pages/admin/AdminChargingStationDetailPage'));
+const AdminChargingStationEditPage = lazy(() => import('./pages/admin/AdminChargingStationEditPage'));
 const AdminComingSoonPage = lazy(() => import('./pages/admin/AdminComingSoonPage'));
 const AdminWarehousePage = lazy(() => import('./pages/admin/AdminWarehousePage'));
 const AdminWarehouseStockDetailPage = lazy(() => import('./pages/admin/AdminWarehouseStockDetailPage'));
@@ -314,6 +315,10 @@ function App() {
             <Route
               path="/admin/on-tram/thong-tin-chung"
               element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="thong-tin-chung" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/thong-tin-chung/:id/edit"
+              element={<RoleRoute allowed={SUPER_ONLY}><AdminChargingStationEditPage /></RoleRoute>}
             />
             <Route
               path="/admin/on-tram/thong-tin-chung/:id"

@@ -244,11 +244,35 @@ test('signed-document upload tasks appear only for SUPER_ADMIN/Back Office, not 
   }
 });
 
-test('grading pending denies non-graders and leaves regrading to its dedicated worklist', async () => {
+test('grading pending denies non-graders', async () => {
   await grading.listProposals({ tab: 'pending', scope: { all: true, role: 'ADMIN', gradeRole: null } });
   const count = queries.find((entry) => /COUNT\(\*\) AS total/.test(entry.sql));
   assert.match(count.sql, /1\s*=\s*0/);
-  assert.match(count.sql, /p\.status <> 'RE_GRADING'/);
+});
+
+test('review pending excludes submitted regrading for every role while retaining review tasks', async () => {
+  for (const id of [1, 3, 5, 7, 10]) {
+    queries = [];
+    await review.listReviews({ user: profiles.find((item) => item.id === id), tab: 'pending' });
+    const count = queries.find((entry) => /COUNT\(\*\) AS total/.test(entry.sql));
+    assert.ok(!count.params.includes('RE_GRADING'), `role ${id} must not list submitted regrades`);
+    if ([3, 10].includes(id)) assert.match(count.sql, /1\s*=\s*0/);
+    if ([1, 5].includes(id)) assert.ok(count.params.includes('GDTTKD_EVALUATING'));
+    if ([1, 7].includes(id)) assert.ok(count.params.includes('TGD_REVIEW'));
+  }
+});
+
+test('grading pending includes open regrading tasks for the grader department', async () => {
+  for (const [gradeRole, alias, department] of [['QH', 'rq', 'QH'], ['PL', 'rp', 'PL']]) {
+    queries = [];
+    await grading.listProposals({ tab: 'pending', scope: { all: true, role: 'ADMIN', gradeRole } });
+    const count = queries.find((entry) => /COUNT\(\*\) AS total/.test(entry.sql));
+    assert.doesNotMatch(count.sql, /p\.status <> 'RE_GRADING'/);
+    assert.ok(count.params.includes('RE_GRADING'));
+    assert.match(count.sql, new RegExp(`${alias}\\.status = 'OPEN'`));
+    assert.match(count.sql, new RegExp(`${alias}\\.target_department = '${department}'`));
+    assert.match(count.sql, /request_type = 'SUPPLEMENT' AND rs\.status = 'OPEN'/);
+  }
 });
 
 test('generic API denies unrelated owner writes and workflow-state shortcuts', async () => {
