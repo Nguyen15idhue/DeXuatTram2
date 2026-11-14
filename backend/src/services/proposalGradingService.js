@@ -285,7 +285,6 @@ exports.listProposals = async ({
   const plDone = `(p.phap_ly_score IS NOT NULL AND NOT ${plRegradeExists})`;
 
   if (safeTab === 'pending') {
-    where.push("p.status <> 'RE_GRADING'");
     if (dept === QH_ROLE) {
       where.push(`(((p.status IN (?, ?, ?) AND p.quy_hoach_score IS NULL) OR (p.status = ? AND ${qhRegradeExists})) AND NOT ${supplementExists})`);
       params.push(GRADING_STATUS, 'GDTTKD_EVALUATING', REGRADING_STATUS, REGRADING_STATUS);
