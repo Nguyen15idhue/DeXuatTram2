@@ -44,6 +44,7 @@ const rollbackFixture = t => {
       calls.push([sql, params]);
       if (sql.includes('SELECT * FROM charging_stations')) return [[{ id: 1, status: 'OPERATING', sub_status: 'ACTIVE' }]];
       if (sql.includes('SELECT * FROM charging_station_deployments')) return [[portion]];
+      if (sql.includes('SELECT we.transport_status')) return [[{ transport_status: 'DELIVERED', return_pending_quantity: 0 }]];
       if (sql.includes('SELECT d.id')) return [[portion]];
       return [[]];
     }

@@ -69,6 +69,55 @@ export const deploymentActions = (portion) => {
 };
 
 export const ACCEPTANCE_LABELS = { NOT: 'Chưa nghiệm thu', FAILED: 'Nghiệm thu không đạt', PASSED: 'Nghiệm thu đạt' };
+export const ACCEPTANCE_SUMMARY_LABELS = { NOT: 'Chưa nghiệm thu', DOING: 'Đã nghiệm thu một phần', DONE: 'Đã nghiệm thu' };
+export const INTEGRATION_LABELS = { NOT: 'Chưa tích hợp', DOING: 'Đã tích hợp một phần', DONE: 'Đã tích hợp xong' };
+export const SHIPMENT_STATUS_LABELS = {
+  PENDING: 'Đang vận chuyển', SHIPPING: 'Đang vận chuyển', DELIVERED: 'Đã giao hàng thành công',
+  RETURN_PENDING: 'Chờ hoàn hàng', RETURNED: 'Đã hoàn', FAILED: 'Giao thất bại'
+};
+export const shipmentNextStatuses = status => ({
+  PENDING: ['DELIVERED', 'RETURN_PENDING'], SHIPPING: ['DELIVERED', 'RETURN_PENDING'],
+  DELIVERED: ['RETURN_PENDING'], FAILED: ['RETURN_PENDING'], RETURN_PENDING: ['RETURNED'], RETURNED: []
+}[status] || []);
+export const portionUnavailable = portion => Boolean(portion.returned_at)
+  || ['RETURN_PENDING', 'RETURNED'].includes(portion.shipment_status);
+
+export const formatDeploymentScale = rows => {
+  const grouped = new Map();
+  for (const row of rows) {
+    const name = row.pole_name || row.name || 'Chưa rõ loại trụ';
+    const supplier = row.supplier_name || '';
+    const key = `${row.pole_id || name}:${row.supplier_id || supplier}`;
+    const group = grouped.get(key) || { name, supplier, quantity: 0 };
+    group.quantity += Number(row.quantity);
+    grouped.set(key, group);
+  }
+  return [...grouped.values()].map(row => `${row.name}${row.supplier ? ` · ${row.supplier}` : ''} · ${row.quantity} trụ`).join(' + ');
+};
+
+export const groupDeployments = (rows, stage) => {
+  const groups = new Map();
+  for (const row of rows.filter(row => !row.returned_at)) {
+    const status = stage === 'nghiem-thu' ? row.acceptance_status || 'NOT' : row.stage === 'OPERATING' ? 'DONE' : 'NOT';
+    const group = groups.get(status) || { id: status, status, rows: [], quantity: 0 };
+    group.rows.push(row);
+    group.quantity += Number(row.quantity);
+    groups.set(status, group);
+  }
+  return [...groups.values()].map(group => ({ ...group, scale: formatDeploymentScale(group.rows) }));
+};
+
+export const acceptanceSummary = station => {
+  if (station.workflow_override?.completed && station.status === 'OPERATING') return 'DONE';
+  const fulfillment = station.fulfillment || {};
+  const items = fulfillment.items || [];
+  const portions = station.deployments || [];
+  if (!fulfillment.needs_review && items.length && items.every(item => portions.filter(portion =>
+    !portion.returned_at && Number(portion.commitment_id) === Number(item.commitment_id) && portion.acceptance_status === 'PASSED')
+    .reduce((sum, portion) => sum + Number(portion.quantity), 0) >= Number(item.committed_quantity))) return 'DONE';
+  if (!items.length && !portions.length && !fulfillment.needs_review && ['CONFIGURING', 'OPERATING'].includes(station.status)) return 'DONE';
+  return portions.some(portion => !portion.returned_at && portion.acceptance_status === 'PASSED') ? 'DOING' : 'NOT';
+};
 
 export const onStationStatus = station => {
   if (station.workflow_override?.completed && station.status === 'OPERATING') return 'DONE';
@@ -76,10 +125,10 @@ export const onStationStatus = station => {
   const items = fulfillment.items || [];
   const portions = station.deployments || [];
   if (!fulfillment.needs_review && items.length && items.every(item => portions.filter(portion =>
-    Number(portion.commitment_id) === Number(item.commitment_id) && portion.stage === 'OPERATING')
+    !portion.returned_at && Number(portion.commitment_id) === Number(item.commitment_id) && portion.stage === 'OPERATING')
     .reduce((sum, portion) => sum + Number(portion.quantity), 0) >= Number(item.committed_quantity))) return 'DONE';
   if (!items.length && !portions.length && !fulfillment.needs_review && station.status === 'OPERATING') return 'DONE';
-  return portions.some(portion => portion.stage === 'OPERATING') ? 'DOING' : 'NOT';
+  return portions.some(portion => !portion.returned_at && portion.stage === 'OPERATING') ? 'DOING' : 'NOT';
 };
 
 export const DEPLOYMENT_ACTION_LABELS = {

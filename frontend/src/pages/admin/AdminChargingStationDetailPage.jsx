@@ -67,6 +67,7 @@ const ACTION_LABELS = {
   shipment_return_confirmed: 'Xác nhận hoàn kho thực tế',
   shipment_failed: 'Giao hàng thất bại',
   shipment_created: 'Tạo chuyến giao trụ',
+  shipment_status_changed: 'Cập nhật trạng thái đơn vận chuyển',
   portion_start_installation: 'Bắt đầu lắp phần trụ',
   portion_complete_installation: 'Hoàn tất lắp phần trụ',
   portion_acceptance_failed: 'Nghiệm thu phần trụ không đạt',

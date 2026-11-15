@@ -10,6 +10,7 @@ import ChargingStationAcceptanceModal from "./ChargingStationAcceptanceModal";
 import ChargingStationOnModal from "./ChargingStationOnModal";
 import ChargingStationAcceptanceFields from "./ChargingStationAcceptanceFields";
 import ChargingStationTable from "./ChargingStationTable";
+import ChargingStationShipmentHistory from "./ChargingStationShipmentHistory";
 import FileViewer from "../dynamic/FileViewer";
 import { formatCsDate } from "../../utils/chargingStation";
 import {
@@ -17,26 +18,10 @@ import {
   deploymentActions,
   DEPLOYMENT_ACTION_LABELS,
   missingOnPrerequisites,
-  shipmentAvailable,
-  validateShipmentQuantities,
   requestKeyForIntent,
   ACCEPTANCE_LABELS,
+  portionUnavailable,
 } from "../../utils/chargingFulfillment";
-
-const SHIPMENT_ACTIONS = {
-  receive: "Đã nhận đơn",
-  "request-return": "Yêu cầu trả hàng",
-  "confirm-return": "Xác nhận hoàn kho thực tế",
-  fail: "Giao hàng thất bại",
-};
-const STAGE_NAMES = {
-  SHIPPING: "Đang vận chuyển",
-  RECEIVED: "Đã nhận",
-  DELIVERED: "Đã nhận",
-  FAILED: "Giao thất bại",
-  RETURN_PENDING: "Chờ hoàn kho",
-  RETURNED: "Đã hoàn kho",
-};
 
 const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const { token, user } = useAuth();
@@ -91,31 +76,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           ...item,
           id: item.id || item.commitment_id,
           supplier: item.supplier || item.supplier_name,
-        })),
-        shipments: (summary.data?.shipments || []).map((shipment) => ({
-          ...shipment,
-          items: (shipment.items || []).map((item) => {
-            if (
-              !currentPortions.some(
-                (portion) => Number(portion.export_item_id) === Number(item.id),
-              )
-            )
-              return item;
-            const eligible = currentPortions
-              .filter(
-                (portion) =>
-                  portion.stage === "INSTALLING" &&
-                  Number(portion.export_item_id) === Number(item.id),
-              )
-              .reduce((sum, portion) => sum + Number(portion.quantity), 0);
-            return {
-              ...item,
-              returnable_quantity: Math.max(
-                0,
-                eligible - Number(item.return_pending_quantity || 0),
-              ),
-            };
-          }),
         })),
       });
       setPortions(currentPortions);
@@ -188,12 +148,12 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
             ...row,
             id: row.pole_id,
           }))
-        : target?.items || [];
+        : [];
     setQuantities(
       Object.fromEntries(
         rows.map((row) => [
           row.id,
-          action === "export" ? 0 : shipmentAvailable(row, action),
+          0,
         ]),
       ),
     );
@@ -274,23 +234,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           },
           token,
         );
-      } else if (Object.hasOwn(SHIPMENT_ACTIONS, action)) {
-        const items =
-          action === "fail"
-            ? []
-            : validateShipmentQuantities(
-                target.items || [],
-                quantities,
-                false,
-                action,
-              );
-        response = await chargingStationService.shipmentAction(
-          record.id,
-          target.id,
-          action,
-          { items, reason: form.reason, request_id },
-          token,
-        );
       } else if (action === "early") {
         if (!form.desired_date || !form.acknowledged)
           throw new Error("Chọn ngày mong muốn và xác nhận cảnh báo giao sớm");
@@ -330,19 +273,12 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       setBusy(false);
     }
   };
-  const rows =
-    intent?.action === "export" ? shippingOptions : intent?.target?.items || [];
-  const quantityAction =
-    intent?.action === "export" ||
-    (intent?.action !== "fail" &&
-      Object.hasOwn(SHIPMENT_ACTIONS, intent?.action || ""));
   const title =
     intent?.action === "export"
       ? "Tạo phiếu xuất kho"
       : intent?.action === "early"
         ? "Đề xuất giao trụ sớm"
-        : SHIPMENT_ACTIONS[intent?.action] ||
-          DEPLOYMENT_ACTION_LABELS[intent?.action];
+        : DEPLOYMENT_ACTION_LABELS[intent?.action];
   return (
     <div className="space-y-4 text-sm">
       {error && (
@@ -356,21 +292,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         </Button>
       )}
       {loading && <span className="loading loading-spinner loading-sm" />}
-      <div className="flex flex-wrap gap-2">
-        {Object.entries({
-          committed: "Chốt",
-          exported: "Đã xuất",
-          received: "Đã nhận",
-          returned: "Hoàn kho",
-          in_transit: "Đang giao",
-          remaining: "Chưa xuất",
-          operating: "Đã ON",
-        }).map(([key, label]) => (
-          <Badge key={key} variant={key === "operating" ? "success" : "ghost"}>
-            {label}: {fulfillment.totals?.[key] || 0}
-          </Badge>
-        ))}
-      </div>
       {record.workflow_override?.completed && (
         <div className="alert alert-info">
           Hoàn tất quy trình bằng ghi đè của SUPER_ADMIN. Số liệu giao/nhận và
@@ -395,17 +316,13 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
             columns={[
               {
                 key: "name",
-                label: "Trụ",
+                label: "Loại trụ",
                 render: (value, row) => value || row.pole_name || `#${row.id}`,
               },
-              { key: "committed_quantity", label: "Chốt" },
-              { key: "stock_quantity", label: "Tồn kho" },
-              { key: "exported_quantity", label: "Đã xuất" },
-              { key: "received_quantity", label: "Đã nhận" },
-              { key: "returned_quantity", label: "Hoàn kho" },
-              { key: "in_transit_quantity", label: "Đang giao" },
-              { key: "remaining_quantity", label: "Chưa xuất" },
-              { key: "operating_quantity", label: "Đã ON" },
+              { key: "committed_quantity", label: "Số lượng chốt" },
+              { key: "delivery_status", label: "Trạng thái giao", render: (_, row) =>
+                Number(row.received_quantity) >= Number(row.committed_quantity) ? "Đã giao"
+                  : Number(row.exported_quantity) > Number(row.returned_quantity) ? "Đang giao" : "Chưa giao" },
             ]}
           />
           <div className="flex gap-2">
@@ -438,69 +355,9 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
             <p className="text-base-content/60">{shippingDisabledReason}</p>
           )}
           <h3 className="font-semibold">Lịch sử các chuyến giao</h3>
-          {(fulfillment.shipments || []).map((shipment) => (
-            <details
-              key={shipment.id}
-              className="rounded-lg border border-base-300 p-3"
-              open
-            >
-              <summary className="cursor-pointer font-semibold">
-                Phiếu #{shipment.id} · {shipment.carrier || "—"} ·{" "}
-                {shipment.transport_code || "—"} ·{" "}
-                {STAGE_NAMES[shipment.transport_status] ||
-                  shipment.transport_status}
-              </summary>
-              <div className="mt-2 space-y-2">
-                <span className="text-xs text-base-content/60">
-                  Ngày xuất: {formatCsDate(shipment.export_date)} ·{" "}
-                  {Number(shipment.total_amount || 0).toLocaleString("vi-VN")} đ
-                </span>
-                {shipment.reason && (
-                  <p className="text-xs">Lý do: {shipment.reason}</p>
-                )}
-                <ChargingStationTable
-                  frozenColumns={0}
-                  emptyMessage="Không có dữ liệu"
-                  data={shipment.items || []}
-                  columns={[
-                    {
-                      key: "name",
-                      label: "Trụ",
-                      render: (value, item) =>
-                        value || item.pole_name || `#${item.commitment_id}`,
-                    },
-                    { key: "quantity", label: "Xuất" },
-                    { key: "received_quantity", label: "Nhận" },
-                    { key: "return_pending_quantity", label: "Chờ hoàn" },
-                    { key: "returned_quantity", label: "Đã hoàn" },
-                  ]}
-                />
-                {canShip && (
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(SHIPMENT_ACTIONS).map(([action, label]) => (
-                      <Button
-                        key={action}
-                        size="xs"
-                        variant="outline"
-                        disabled={
-                          action === "fail"
-                            ? ["DELIVERED", "RETURNED"].includes(
-                                shipment.transport_status,
-                              )
-                            : !(shipment.items || []).some(
-                                (item) => shipmentAvailable(item, action) > 0,
-                              )
-                        }
-                        onClick={() => begin(action, shipment)}
-                      >
-                        {label}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </details>
-          ))}
+          <ChargingStationShipmentHistory station={record} shipments={fulfillment.shipments}
+            canEdit={canShip && record.status !== "CANCELLED" && !loading && !loadError}
+            onChanged={async () => { await load(); onChanged?.(); }} />
         </>
       )}
       {showPortions && (
@@ -531,7 +388,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
               open
             >
               <summary className="cursor-pointer font-semibold">
-                Phiếu #{portion.export_id} · Phần #{portion.id} ·{" "}
                 {portion.pole_name} · {portion.supplier_name || "—"} ·{" "}
                 {portion.quantity} trụ
               </summary>
@@ -576,7 +432,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
                     Biên bản nghiệm thu cũ
                   </Button>
                 )}
-                {canSetup &&
+                {canSetup && !portionUnavailable(portion) &&
                   deploymentActions(portion)
                     .filter((action) => !action.includes("installation"))
                     .filter(
@@ -634,24 +490,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       >
         {intent && (
           <form onSubmit={submit} className="space-y-3">
-            {quantityAction &&
-              intent.action !== "export" &&
-              rows.map((row) => (
-                <Input
-                  key={row.id}
-                  type="number"
-                  min="0"
-                  step="1"
-                  label={`${row.name || row.pole_name || `Trụ #${row.id}`} · ${row.supplier_name || ""} · ${intent.action === "export" ? `còn ${row.remaining_quantity}, tồn ${row.stock_quantity}` : `có thể xử lý ${shipmentAvailable(row, intent.action)}`}`}
-                  value={quantities[row.id] ?? 0}
-                  onChange={(event) =>
-                    setQuantities((current) => ({
-                      ...current,
-                      [row.id]: event.target.value,
-                    }))
-                  }
-                />
-              ))}
             {intent.action === "export" && (
               <>
                 {(fulfillment.pole_requirements || [])
@@ -824,6 +662,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         <ChargingStationAcceptanceModal
           station={record}
           portionId={acceptancePortion}
+          initialStatus="PASSED"
           onClose={() => setAcceptancePortion(null)}
           onChanged={async () => {
             await load();

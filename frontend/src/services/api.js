@@ -725,6 +725,12 @@ export const shippingCarrierService = {
 };
 
 export const chargingStationService = {
+  updateAcceptance(id, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/acceptance`, data, token));
+  },
+  updateShipmentStatus(id, exportId, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/shipments/${exportId}/status`, data, token));
+  },
   updateOnStation(id, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/on-station`, data, token));
   },

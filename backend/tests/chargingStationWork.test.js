@@ -65,8 +65,11 @@ test('SUPER_ADMIN can perform each department step', async () => {
 test('receipt, installation, acceptance and operation filter separate progress', () => {
   assert.match(work.stageFilters['giao-tru'].completed, /received_quantity/);
   assert.match(work.stageFilters['lap-tru'].need, /installation_status='DONE'/);
-  assert.match(work.stageFilters['nghiem-thu'].need, /stage='ACCEPTANCE'/);
-  assert.match(work.stageFilters['on-tram'].need, /stage='CONFIGURING'/);
+  assert.match(work.stageFilters['nghiem-thu'].need, /acceptance_status<>'PASSED'/);
+  assert.match(work.stageFilters['on-tram'].need, /stage<>'OPERATING'/);
+  for (const stage of ['lap-tru', 'nghiem-thu', 'on-tram']) {
+    assert.match(work.stageFilters[stage].need, /returned_at IS NULL/);
+  }
   assert.match(work.stageFilters['xay-dung-ha-tang'].need, /infra_power_status/);
 });
 

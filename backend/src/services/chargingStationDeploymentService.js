@@ -48,16 +48,18 @@ const getDeployments = async (stationId, executor = pool) => {
     `SELECT d.id, d.charging_station_id, d.export_item_id, d.quantity, d.stage, d.sub_status,
             d.installation_status, d.installation_note, d.installation_version,
             d.acceptance_status, d.acceptance_legacy, d.acceptance_user_id, d.workflow_version, d.on_note,
+            we.transport_status AS shipment_status,
             i.export_id, i.commitment_id, i.pole_id, i.supplier_id, cp.name AS pole_name, s.name AS supplier_name,
             d.acceptance_file_id, DATE_FORMAT(d.acceptance_date, '%Y-%m-%d') AS acceptance_date,
             DATE_FORMAT(d.on_date, '%Y-%m-%d') AS on_date, d.created_at, d.updated_at,
             f.original_name AS acceptance_file_name, f.mime_type AS acceptance_file_mime
        FROM charging_station_deployments d
        JOIN warehouse_export_items i ON i.id=d.export_item_id
+       JOIN warehouse_exports we ON we.id=i.export_id
        JOIN charging_poles cp ON cp.id=i.pole_id
        LEFT JOIN suppliers s ON s.id=i.supplier_id
        LEFT JOIN files f ON f.id = d.acceptance_file_id
-      WHERE d.charging_station_id = ? ORDER BY d.id`,
+      WHERE d.charging_station_id = ? AND d.returned_at IS NULL ORDER BY d.id`,
     [idOf(stationId)]
   );
   if (!rows.length) return rows;
@@ -109,6 +111,17 @@ const configurationMissing = (station, model) => {
   if (requirements.requiresDeposit && !readiness.isDepositReceived(station.deposit_status)) missing.push('Tiền cọc');
   if (requirements.requiresPayment && !['DOING', 'DONE'].includes(station.payment_status)) missing.push('Thanh toán');
   return missing;
+};
+
+const assertDeploymentAvailable = async (connection, portion) => {
+  if (portion.returned_at) throw fail('Phần trụ đã hoàn kho; hãy tải lại', 409);
+  const [rows] = await connection.query(`SELECT we.transport_status, i.return_pending_quantity
+    FROM warehouse_export_items i JOIN warehouse_exports we ON we.id=i.export_id WHERE i.id=?`,
+  [portion.export_item_id]);
+  if (!rows.length) throw fail('Không tìm thấy chuyến giao của phần trụ', 409);
+  if (['RETURN_PENDING', 'RETURNED'].includes(rows[0].transport_status) || Number(rows[0].return_pending_quantity) > 0) {
+    throw fail('Chuyến giao đang chờ hoàn hoặc đã hoàn kho; không thể cập nhật phần trụ', 409);
+  }
 };
 
 const updatePortion = async (stationId, deploymentId, body = {}, user, ctx = {}) => {
@@ -168,6 +181,7 @@ const updatePortion = async (stationId, deploymentId, body = {}, user, ctx = {})
     );
     if (!portions.length) throw fail('Không tìm thấy phần trụ tại ON trạm này', 404);
     const portion = portions[0];
+    await assertDeploymentAvailable(connection, portion);
     if (portion.stage !== rule.stage || !rule.sub.includes(portion.sub_status)) {
       throw fail('Phần trụ không ở bước phù hợp; hãy tải lại dữ liệu', 409);
     }
@@ -262,6 +276,7 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
     if (portions.length !== items.length) throw fail('Phần trụ không thuộc trạm này', 409);
     for (const item of items) {
       const current = portions.find(portion => Number(portion.id) === item.id);
+      await assertDeploymentAvailable(connection, current);
       if (Number(current.installation_version) !== item.expected_version) throw fail('Dữ liệu lắp đặt đã thay đổi; hãy mở lại modal', 409);
       const delta = ranks.indexOf(item.status) - ranks.indexOf(current.installation_status);
       if (item.status === current.installation_status && item.note === text(current.installation_note)) continue;
@@ -297,4 +312,4 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
 };
 
 module.exports = { getDeployments, refreshStationProgress, updatePortion, notifySetupOperations, updateInstallation,
-  installationSummary, configurationMissing, notifyProgress: notify };
+  installationSummary, configurationMissing, assertDeploymentAvailable, notifyProgress: notify };

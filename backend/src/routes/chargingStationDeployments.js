@@ -125,6 +125,64 @@ router.get('/:id/deployments', controller.list);
 router.put('/:id/installation', controller.installation);
 /**
  * @swagger
+ * /api/admin/charging-stations/{id}/acceptance:
+ *   put:
+ *     tags: [Charging Stations]
+ *     summary: Cập nhật nghiệm thu nhiều phần trụ bằng một bộ hồ sơ chung
+ *     description: >
+ *       Setup/Vận hành hoặc SUPER_ADMIN. Lưu nguyên tử, chống gửi lặp.
+ *       Mỗi phần cần id và expected_version; lỗi một phần hủy toàn bộ lần lưu.
+ *       Nghiệm thu đạt yêu cầu đã lắp xong và hai bộ hồ sơ thiết bị/hạ tầng,
+ *       mỗi bộ có file PDF/Word cùng từ 2 đến 100 ảnh. Hồ sơ dùng chung cho nhóm.
+ *       Không đạt hoặc trở về Chưa nghiệm thu bắt buộc lý do. Giữ nguyên kết quả ON.
+ *       Phần trụ đang hoàn hoặc đã hoàn kho bị chặn.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [request_id, action, items]
+ *             properties:
+ *               request_id: { type: string, maxLength: 100 }
+ *               action: { type: string, enum: [acceptance-passed, acceptance-failed, acceptance-reset] }
+ *               reason: { type: string, maxLength: 5000 }
+ *               items:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 1000
+ *                 items:
+ *                   type: object
+ *                   required: [id, expected_version]
+ *                   properties:
+ *                     id: { type: integer, minimum: 1 }
+ *                     expected_version: { type: integer, minimum: 0 }
+ *               equipment:
+ *                 type: object
+ *                 required: [file_id, image_ids]
+ *                 properties:
+ *                   file_id: { type: integer }
+ *                   image_ids: { type: array, minItems: 2, maxItems: 100, uniqueItems: true, items: { type: integer } }
+ *                   note: { type: string, nullable: true }
+ *               infrastructure:
+ *                 type: object
+ *                 required: [file_id, image_ids]
+ *                 properties:
+ *                   file_id: { type: integer }
+ *                   image_ids: { type: array, minItems: 2, maxItems: 100, uniqueItems: true, items: { type: integer } }
+ *                   note: { type: string, nullable: true }
+ *     responses:
+ *       200: { description: Đã lưu toàn bộ nhóm và nhật ký từng phần }
+ *       400: { description: Hồ sơ hoặc lý do không hợp lệ }
+ *       403: { description: Không có quyền }
+ *       409: { description: Phần trụ chưa sẵn sàng hoặc đã thay đổi }
+ */
+router.put('/:id/acceptance', controller.acceptance);
+/**
+ * @swagger
  * /api/admin/charging-stations/{id}/on-station:
  *   put:
  *     tags: [Charging Stations]

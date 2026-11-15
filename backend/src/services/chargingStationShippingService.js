@@ -444,6 +444,146 @@ const lockShipmentItems = async (connection, stationId, exportId, items) => {
   return byId;
 };
 
+const restockShipmentItems = async (connection, items) => {
+  const inventory = new Map();
+  for (const item of items) {
+    const key = `${item.supplier_id}:${item.pole_id}`;
+    inventory.set(key, (inventory.get(key) || 0) + Number(item.quantity));
+  }
+  const keys = [...inventory.keys()].sort((a, b) => {
+    const [as, ap] = a.split(':').map(Number);
+    const [bs, bp] = b.split(':').map(Number);
+    return as - bs || ap - bp;
+  });
+  const [stock] = await connection.query(`SELECT supplier_id, charging_pole_id FROM supplier_charging_poles
+    WHERE ${keys.map(() => '(supplier_id = ? AND charging_pole_id = ?)').join(' OR ')}
+    ORDER BY supplier_id, charging_pole_id FOR UPDATE`, keys.flatMap(key => key.split(':').map(Number)));
+  const existing = new Set(stock.map(row => `${row.supplier_id}:${row.charging_pole_id}`));
+  for (const key of keys) {
+    if (!existing.has(key)) throw fail(`Không tìm thấy kho nhà cung cấp cho trụ ${key}`, 409);
+  }
+  for (const key of keys) {
+    const [supplierId, poleId] = key.split(':').map(Number);
+    await connection.query('UPDATE supplier_charging_poles SET quantity = quantity + ? WHERE supplier_id = ? AND charging_pole_id = ?',
+      [inventory.get(key), supplierId, poleId]);
+    await connection.query(`UPDATE charging_poles SET quantity = (
+      SELECT COALESCE(SUM(quantity), 0) FROM supplier_charging_poles WHERE charging_pole_id = ?) WHERE id = ?`, [poleId, poleId]);
+  }
+};
+
+const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = {}) => {
+  stationId = idOf(stationId, 'Mã ON trạm');
+  exportId = idOf(exportId, 'Mã phiếu xuất');
+  const requestId = normalizeRequestId(body.request_id);
+  const status = body.status;
+  if (!['DELIVERED', 'RETURN_PENDING', 'RETURNED'].includes(status)) throw fail('Trạng thái chuyển đến không hợp lệ');
+  const reason = text(body.reason);
+  if (reason.length > 5000) throw fail('Ghi chú tối đa 5000 ký tự');
+  if (['RETURN_PENDING', 'RETURNED'].includes(status) && !reason) throw fail('Bắt buộc nhập lý do hoàn hàng');
+  if (!['PENDING', 'SHIPPING', 'DELIVERED', 'FAILED', 'RETURN_PENDING'].includes(body.expected_status)) {
+    throw fail('Thiếu trạng thái hiện tại của đơn; hãy tải lại');
+  }
+  const payload = { export_id: exportId, status, expected_status: body.expected_status, reason: reason || null };
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const actor = await assertOperationsAccess(stationId, user, connection);
+    const [stations] = await connection.query('SELECT * FROM charging_stations WHERE id = ? FOR UPDATE', [stationId]);
+    if (!stations.length) throw fail('Không tìm thấy ON trạm', 404);
+    const previous = await eventForRequest(connection, stationId, requestId, 'SHIPPING_STATUS', payload);
+    if (previous) { await connection.commit(); return previous; }
+    if (stations[0].status === 'CANCELLED') throw fail('ON trạm đã hủy', 409);
+    const [headers] = await connection.query(`SELECT * FROM warehouse_exports
+      WHERE id=? AND charging_station_id=? AND destination_type='STATION' FOR UPDATE`, [exportId, stationId]);
+    if (!headers.length) throw fail('Không tìm thấy đơn vận chuyển của trạm', 404);
+    const before = headers[0].transport_status;
+    if (before !== body.expected_status) throw fail('Đơn vận chuyển đã thay đổi; hãy mở lại modal', 409);
+    const allowed = {
+      PENDING: ['DELIVERED', 'RETURN_PENDING'], SHIPPING: ['DELIVERED', 'RETURN_PENDING'],
+      FAILED: ['RETURN_PENDING'], DELIVERED: ['RETURN_PENDING'], RETURN_PENDING: ['RETURNED']
+    };
+    if (!allowed[before]?.includes(status)) throw fail('Không được lùi hoặc bỏ qua bước trạng thái giao hàng', 409);
+    const [items] = await connection.query('SELECT * FROM warehouse_export_items WHERE export_id=? ORDER BY id FOR UPDATE', [exportId]);
+    if (!items.length || items.some(item => !item.commitment_id)) throw fail('Đơn chưa được đối soát với số lượng trụ chốt', 409);
+    const [portions] = await connection.query(`SELECT d.* FROM charging_station_deployments d
+      JOIN warehouse_export_items i ON i.id=d.export_item_id
+      WHERE i.export_id=? AND d.returned_at IS NULL ORDER BY d.id FOR UPDATE`, [exportId]);
+    if (status !== 'DELIVERED' && portions.some(portion =>
+      portion.installation_status !== 'NOT' || portion.stage !== 'INSTALLING'
+      || portion.acceptance_status !== 'NOT' || portion.on_date || portion.acceptance_date)) {
+      throw fail('Không thể hoàn đơn đã bắt đầu lắp, nghiệm thu hoặc ON trạm', 409);
+    }
+    if (status !== 'DELIVERED' && portions.length) {
+      const [history] = await connection.query(`SELECT id FROM charging_station_activity_logs
+        WHERE charging_station_id=? AND JSON_UNQUOTE(JSON_EXTRACT(changed_fields,'$.deployment_id')) IN (?)
+          AND (action IN ('portion_start_installation','portion_complete_installation')
+            OR (action='installation_updated' AND (
+              JSON_UNQUOTE(JSON_EXTRACT(changed_fields,'$.installation_status.old')) IN ('DOING','DONE')
+              OR JSON_UNQUOTE(JSON_EXTRACT(changed_fields,'$.installation_status.new')) IN ('DOING','DONE'))))
+        LIMIT 1`, [stationId, portions.map(portion => String(portion.id))]);
+      if (history.length) throw fail('Đơn có trụ đã từng bắt đầu lắp; không thể hoàn hàng dù trạng thái đã lùi', 409);
+    }
+    const remaining = items.map(item => ({ ...item, quantity: Number(item.quantity) - Number(item.returned_quantity) }));
+    if (remaining.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0
+      || Number(item.received_quantity) < 0 || Number(item.received_quantity) > item.quantity
+      || Number(item.returned_quantity) < 0 || Number(item.return_pending_quantity) < 0
+      || Number(item.return_pending_quantity) > item.quantity)) {
+      throw fail('Đơn có lượng hoàn cũ không đồng nhất; cần đối soát trước khi xử lý toàn bộ', 409);
+    }
+    if (status === 'DELIVERED') {
+      if (items.some(item => Number(item.return_pending_quantity) > 0)) throw fail('Đơn đang chờ hoàn hàng', 409);
+      for (const item of items) {
+        const quantity = Number(item.quantity) - Number(item.received_quantity) - Number(item.returned_quantity);
+        if (quantity < 0) throw fail('Số lượng nhận/hoàn không hợp lệ', 409);
+        if (!quantity) continue;
+        await connection.query('UPDATE warehouse_export_items SET received_quantity=received_quantity+? WHERE id=?', [quantity, item.id]);
+        await connection.query(`INSERT INTO charging_station_deployments(charging_station_id,export_item_id,quantity,stage,sub_status)
+          VALUES(?,?,?,'INSTALLING','NOT_INSTALLED')`, [stationId, item.id, quantity]);
+      }
+    } else if (status === 'RETURN_PENDING') {
+      for (const item of remaining) {
+        const received = portions.filter(portion => Number(portion.export_item_id) === Number(item.id))
+          .reduce((sum, portion) => sum + Number(portion.quantity), 0);
+        const original = items.find(row => row.id === item.id);
+        if (received !== Number(original.received_quantity)) throw fail('Phần trụ đã nhận chưa được đối soát đầy đủ', 409);
+        await connection.query('UPDATE warehouse_export_items SET return_pending_quantity=? WHERE id=?', [item.quantity, item.id]);
+      }
+    } else {
+      if (remaining.some(item => Number(item.return_pending_quantity) !== item.quantity)) {
+        throw fail('Đơn chưa có yêu cầu hoàn toàn bộ số còn lại; cần đối soát', 409);
+      }
+      await restockShipmentItems(connection, remaining);
+      for (const item of remaining) {
+        await connection.query(`UPDATE warehouse_export_items SET returned_quantity=returned_quantity+?,
+          received_quantity=0,return_pending_quantity=0 WHERE id=?`, [item.quantity, item.id]);
+      }
+      for (const portion of portions) {
+        await connection.query(`UPDATE charging_station_deployments SET returned_at=NOW(),
+          workflow_version=workflow_version+1,installation_version=installation_version+1 WHERE id=?`, [portion.id]);
+      }
+    }
+    await connection.query('UPDATE warehouse_exports SET transport_status=? WHERE id=?', [status, exportId]);
+    await logActivity(connection, stations[0], 'shipment_status_changed', actor, ctx, {
+      export_id: exportId, transport_status: { old: before, new: status },
+      items: items.map(item => ({ id: item.id, received_before: Number(item.received_quantity),
+        returned_before: Number(item.returned_quantity), quantity: Number(item.quantity) })),
+      deployment_ids: portions.map(portion => portion.id)
+    }, reason);
+    const deployments = require('./chargingStationDeploymentService');
+    await deployments.refreshStationProgress(connection, stationId, actorContext(actor, ctx));
+    if (status === 'DELIVERED' && !parseJson(stations[0].workflow_override)?.completed) {
+      await deployments.notifySetupOperations(connection, stations[0], actorContext(actor, ctx));
+    }
+    const result = await getShipment(connection, exportId);
+    await saveEvent(connection, stationId, requestId, 'SHIPPING_STATUS', actor, payload, result);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally { connection.release(); }
+};
+
 const receive = async (stationId, exportId, body = {}, user, ctx = {}) => {
   stationId = idOf(stationId, 'Mã ON trạm');
   exportId = idOf(exportId, 'Mã phiếu xuất');
@@ -590,9 +730,9 @@ const confirmReturn = async (stationId, exportId, body = {}, user, ctx = {}) => 
       return previous;
     }
     const itemMap = await lockShipmentItems(connection, stationId, exportId, items);
-    const inventoryMap = new Map();
     for (const item of items) {
       const row = itemMap.get(item.item_id);
+      if (row.transport_status === 'RETURN_PENDING') throw fail('Đơn đang hoàn toàn bộ; hãy cập nhật trạng thái của cả đơn', 409);
       if (item.quantity > Number(row.return_pending_quantity)) {
         throw fail(`Số lượng xác nhận vượt yêu cầu trả đang chờ ở dòng #${row.id}`, 409);
       }
@@ -601,25 +741,8 @@ const confirmReturn = async (stationId, exportId, body = {}, user, ctx = {}) => 
       if (item.quantity > undelivered) {
         throw fail(`Không thể trả phần trụ đã nhận ở dòng #${row.id}`, 409);
       }
-      const key = `${row.supplier_id}:${row.pole_id}`;
-      inventoryMap.set(key, (inventoryMap.get(key) || 0) + item.quantity);
     }
-    const inventoryKeys = [...inventoryMap.keys()].sort((a, b) => {
-      const [as, ap] = a.split(':').map(Number);
-      const [bs, bp] = b.split(':').map(Number);
-      return as - bs || ap - bp;
-    });
-    const clauses = inventoryKeys.map(() => '(supplier_id = ? AND charging_pole_id = ?)').join(' OR ');
-    const params = inventoryKeys.flatMap((key) => key.split(':').map(Number));
-    const [stockRows] = await connection.query(
-      `SELECT supplier_id, charging_pole_id FROM supplier_charging_poles
-        WHERE ${clauses} ORDER BY supplier_id, charging_pole_id FOR UPDATE`,
-      params
-    );
-    const existingStock = new Set(stockRows.map((row) => `${row.supplier_id}:${row.charging_pole_id}`));
-    for (const key of inventoryKeys) {
-      if (!existingStock.has(key)) throw fail(`Không tìm thấy kho nhà cung cấp cho trụ ${key}`, 409);
-    }
+    await restockShipmentItems(connection, items.map(item => ({ ...itemMap.get(item.item_id), quantity: item.quantity })));
     for (const item of items) {
       await connection.query(
         `UPDATE warehouse_export_items
@@ -633,19 +756,6 @@ const confirmReturn = async (stationId, exportId, body = {}, user, ctx = {}) => 
         item_id: item.item_id,
         quantity: item.quantity
       });
-    }
-    for (const [key, quantity] of inventoryMap) {
-      const [supplierId, poleId] = key.split(':').map(Number);
-      await connection.query(
-        'UPDATE supplier_charging_poles SET quantity = quantity + ? WHERE supplier_id = ? AND charging_pole_id = ?',
-        [quantity, supplierId, poleId]
-      );
-      await connection.query(
-        `UPDATE charging_poles
-            SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM supplier_charging_poles WHERE charging_pole_id = ?)
-          WHERE id = ?`,
-        [poleId, poleId]
-      );
     }
     const [remainingRows] = await connection.query(
       `SELECT COALESCE(SUM(quantity - received_quantity - returned_quantity), 0) AS remaining,
@@ -694,7 +804,7 @@ const markFailed = async (stationId, exportId, body = {}, user, ctx = {}) => {
       [exportId, stationId]
     );
     if (!exports.length) throw fail('Không tìm thấy phiếu xuất của trạm', 404);
-    if (['DELIVERED', 'RETURNED'].includes(exports[0].transport_status)) {
+    if (['DELIVERED', 'RETURNED', 'RETURN_PENDING'].includes(exports[0].transport_status)) {
       throw fail('Không thể đánh dấu thất bại phiếu đã giao hoặc đã hoàn trả', 409);
     }
     await connection.query("UPDATE warehouse_exports SET transport_status = 'FAILED' WHERE id = ?", [exportId]);
@@ -752,7 +862,7 @@ const getSummary = async (stationId, executor = pool, { initialize = true, allow
        LEFT JOIN (
          SELECT wei.commitment_id, SUM(d.quantity) AS quantity
            FROM warehouse_export_items wei
-           JOIN charging_station_deployments d ON d.export_item_id = wei.id AND d.stage = 'OPERATING'
+           JOIN charging_station_deployments d ON d.export_item_id = wei.id AND d.stage = 'OPERATING' AND d.returned_at IS NULL
           WHERE wei.commitment_id IS NOT NULL
           GROUP BY wei.commitment_id
        ) operating ON operating.commitment_id = c.id
@@ -908,6 +1018,7 @@ module.exports = {
   getSummary,
   createExport,
   createExportWithinTransaction,
+  updateShipmentStatus,
   receive,
   requestReturn,
   confirmReturn,

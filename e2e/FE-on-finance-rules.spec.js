@@ -124,7 +124,7 @@ test('Setup resets acceptance after ON and confirms again using retained reports
     else if (pathname.endsWith('/charging-stations/501')) data = station;
     else if (pathname.endsWith('/fulfillment')) data = station.fulfillment;
     else if (pathname.endsWith('/deployments')) data = [portion];
-    else if (pathname.endsWith('/deployments/31/actions')) {
+    else if (pathname.endsWith('/acceptance')) {
       const body = request.postDataJSON();
       requests.push(body);
       portion.acceptance_status = body.action === 'acceptance-reset' ? 'NOT' : 'PASSED';
@@ -136,16 +136,17 @@ test('Setup resets acceptance after ON and confirms again using retained reports
   await page.addInitScript(() => localStorage.setItem('token', 'acceptance-test'));
   await page.goto('/admin/on-tram/nghiem-thu?tab=all');
   await page.getByRole('button', { name: 'Cập nhật trạng thái', exact: true }).click();
-  await page.getByRole('button', { name: 'Chuyển về Chưa nghiệm thu', exact: true }).click();
-  await page.locator('form').last().getByRole('textbox').fill('Recheck installation');
-  await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
+  await page.getByLabel('Trạng thái nghiệm thu').selectOption('NOT');
+  await page.getByLabel('Lý do / Ghi chú').fill('Recheck installation');
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0]).toMatchObject({ action: 'acceptance-reset', expected_version: 5, reason: 'Recheck installation' });
-  await page.getByRole('button', { name: 'Nghiệm thu đạt', exact: true }).click();
+  expect(requests[0]).toMatchObject({ action: 'acceptance-reset', items: [{ id: 31, expected_version: 5 }], reason: 'Recheck installation' });
+  await page.getByRole('button', { name: 'Cập nhật trạng thái', exact: true }).click();
+  await page.getByLabel('Trạng thái nghiệm thu').selectOption('PASSED');
   await expect(page.getByRole('heading', { name: 'Nghiệm thu lắp đặt', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);
-  expect(requests[1]).toMatchObject({ action: 'acceptance-passed', expected_version: 6,
+  expect(requests[1]).toMatchObject({ action: 'acceptance-passed', items: [{ id: 31, expected_version: 6 }],
     equipment: { file_id: 11, image_ids: [12, 13], note: 'Retained note' },
     infrastructure: { file_id: 21, image_ids: [22, 23], note: 'Retained note' } });
   expect(portion.stage).toBe('OPERATING');

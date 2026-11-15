@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import { Button, Dialog, Input } from '../ui';
-import { requestKeyForIntent } from '../../utils/chargingFulfillment';
+import { portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
 
 export const INSTALLATION_LABELS = { NOT: 'Chưa lắp trụ', DOING: 'Đang lắp trụ', DONE: 'Đã lắp xong' };
 const RANKS = ['NOT', 'DOING', 'DONE'];
@@ -38,7 +38,7 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
     saving.current = true;
     setBusy(true);
     try {
-      const items = rows.filter(row => row.status !== row.initialStatus || row.note !== (row.installation_note || ''))
+      const items = rows.filter(row => !portionUnavailable(row) && (row.status !== row.initialStatus || row.note !== (row.installation_note || '')))
         .map(row => ({ id: Number(row.id), status: row.status, note: row.note, expected_version: row.installation_version }));
       if (!items.length) { onClose(); return; }
       request.current = requestKeyForIntent(request.current, items);
@@ -56,14 +56,15 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
       {overridden && <div className="alert alert-info">Trạm đã hoàn tất bằng ghi đè; số liệu kho vẫn giữ nguyên.</div>}
       {!loading && !rows.length && <p>Chưa có phần trụ đã nhận để lắp đặt.</p>}
       {rows.map(row => <section key={row.id} className="rounded-lg border border-base-300 p-3 space-y-2">
-        <h3 className="font-semibold">Phiếu #{row.export_id} · Phần #{row.id} · {row.pole_name} · {row.supplier_name || '—'} · {row.quantity} trụ</h3>
+        <h3 className="font-semibold">{row.pole_name} · {row.supplier_name || '—'} · {row.quantity} trụ</h3>
+        {portionUnavailable(row) && <p className="text-warning">Đang hoàn hàng — không được cập nhật lắp đặt</p>}
         {row.stage !== 'INSTALLING' && row.status !== 'DONE' && <p className="text-xs text-warning">Lắp đặt đã điều chỉnh; kết quả nghiệm thu/cấu hình/ON vẫn giữ nguyên.</p>}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm">Trạng thái lắp trụ<select aria-label={`Trạng thái phần ${row.id}`} className="select select-bordered w-full mt-1"
-            disabled={!canEdit || busy} value={row.status} onChange={event => patch(row.id, { status: event.target.value })}>
+            disabled={!canEdit || busy || portionUnavailable(row)} value={row.status} onChange={event => patch(row.id, { status: event.target.value })}>
             {RANKS.map(status => <option key={status} value={status}>{INSTALLATION_LABELS[status]}</option>)}
           </select></label>
-          <Input label="Ghi chú" disabled={!canEdit || busy} maxLength={5000} value={row.note}
+          <Input label="Ghi chú" disabled={!canEdit || busy || portionUnavailable(row)} maxLength={5000} value={row.note}
             onChange={event => patch(row.id, { note: event.target.value })} />
         </div>
       </section>)}

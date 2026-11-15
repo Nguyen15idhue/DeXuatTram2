@@ -141,7 +141,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
         COALESCE(SUM(CASE WHEN d.stage='OPERATING' THEN d.quantity ELSE 0 END),0) AS operating
         FROM charging_station_commitments c
         LEFT JOIN warehouse_export_items i ON i.commitment_id=c.id
-        LEFT JOIN charging_station_deployments d ON d.export_item_id=i.id AND d.charging_station_id=c.charging_station_id
+        LEFT JOIN charging_station_deployments d ON d.export_item_id=i.id AND d.charging_station_id=c.charging_station_id AND d.returned_at IS NULL
         WHERE c.charging_station_id=? GROUP BY c.id,c.quantity`, [id]);
       if (station.fulfillment_review_required || !progress.length
         || progress.some((row) => Number(row.operating) < Number(row.quantity))) {
