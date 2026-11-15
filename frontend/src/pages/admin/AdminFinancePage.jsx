@@ -23,31 +23,37 @@ const INVOICE_TYPES = [
 const INVOICE_LABELS = Object.fromEntries(INVOICE_TYPES.map(({ value, label }) => [value, label]));
 const PAYMENT_VARIANTS = { NOT_REQUIRED: 'ghost', NOT: 'ghost', DOING: 'warning', DONE: 'success' };
 const FLOW_LABELS = { NOT: 'Chưa làm', DOING: 'Đang làm', DONE: 'Hoàn thành' };
-const EMPTY_INVOICE_FORM = { invoice_type: 'DEPOSIT', amount: '', content: '' };
+const EMPTY_INVOICE_FORM = { invoice_type: 'DEPOSIT', amount: '', content: '', deposit_refund_required: false };
 const EMPTY_TOAST = { message: '', type: 'success' };
 
 const isFinanceFinished = (station) => (
   ['RECEIVED', 'REFUNDED', 'NOT_REQUIRED'].includes(station.deposit_status)
   && ['DONE', 'NOT_REQUIRED'].includes(station.payment_status)
+  && !(Number(station.deposit_refund_required) === 1 && Number(station.refund_total || 0) < Number(station.deposit_total || 0))
 );
 
 const getInvoiceTypeOptions = (station) => {
   if (!station.requires_deposit) return [];
-  const types = ['DEPOSIT', 'PAYMENT'];
-  if (String(station.mo_hinh_dau_tu || '').toUpperCase() === 'LK' && (
-    station.deposit_status === 'REFUND_PENDING'
-    || (Number(station.fulfillment?.totals?.committed) > 0
-      && Number(station.fulfillment?.totals?.operating) >= Number(station.fulfillment?.totals?.committed))
-  )) {
+  const hasDeposit = Number(station.deposit_total) > 0;
+  const types = ['REFUND_PENDING', 'REFUNDED'].includes(station.deposit_status) ? [] : ['DEPOSIT'];
+  if (hasDeposit) types.push('PAYMENT');
+  if (hasDeposit && Number(station.deposit_refund_required) === 1
+    && String(station.mo_hinh_dau_tu || '').toUpperCase() === 'LK'
+    && station.status === 'OPERATING' && station.sub_status === 'ACTIVE'
+    && !station.fulfillment?.needs_review
+    && Number(station.fulfillment?.totals?.committed) > 0
+    && Number(station.fulfillment?.totals?.operating) >= Number(station.fulfillment?.totals?.committed)
+    && ['RECEIVED', 'REFUND_PENDING'].includes(station.deposit_status)) {
     types.push('REFUND');
   }
   return INVOICE_TYPES.filter((item) => types.includes(item.value));
 };
 
 const getDefaultInvoiceType = (station) => {
-  if (['REFUND_PENDING'].includes(station.deposit_status)) return 'REFUND';
-  if (station.deposit_status === 'RECEIVED') return 'PAYMENT';
-  return 'DEPOSIT';
+  const options = getInvoiceTypeOptions(station);
+  if (station.deposit_status === 'REFUND_PENDING' && options.some(item => item.value === 'REFUND')) return 'REFUND';
+  if (Number(station.deposit_total) > 0 && options.some(item => item.value === 'PAYMENT')) return 'PAYMENT';
+  return options[0]?.value || 'DEPOSIT';
 };
 
 const formatMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`;
@@ -140,7 +146,8 @@ const AdminFinancePage = () => {
     setInvoicePage(1);
     setInvoices([]);
     setAddingInvoice(false);
-    setInvoiceForm({ ...EMPTY_INVOICE_FORM, invoice_type: getDefaultInvoiceType(station) });
+    setInvoiceForm({ ...EMPTY_INVOICE_FORM, invoice_type: getDefaultInvoiceType(station),
+      deposit_refund_required: Number(station.deposit_refund_required) === 1 });
     setEvidenceFile(null);
     loadInvoices(station.id, 1);
   };
@@ -153,6 +160,10 @@ const AdminFinancePage = () => {
 
   const submitInvoice = async (event) => {
     event.preventDefault();
+    if (!evidenceFile) {
+      setToast({ message: 'Vui lòng tải ảnh hoặc PDF bằng chứng', type: 'error' });
+      return;
+    }
     if (!invoiceStation || !Number.isFinite(Number(invoiceForm.amount)) || Number(invoiceForm.amount) <= 0) {
       setToast({ message: 'Số tiền phải lớn hơn 0', type: 'error' });
       return;
@@ -184,11 +195,13 @@ const AdminFinancePage = () => {
         invoice_type: invoiceForm.invoice_type,
         amount: Number(invoiceForm.amount),
         content: invoiceForm.content.trim() || null,
-        evidence_file_id: evidenceFileId
+        evidence_file_id: evidenceFileId,
+        ...(invoiceForm.invoice_type === 'DEPOSIT' ? { deposit_refund_required: invoiceForm.deposit_refund_required } : {})
       }, token);
       if (!response?.success) throw new Error(response?.message || 'Không ghi nhận được hóa đơn');
       setToast({ message: response.message || 'Đã ghi nhận hóa đơn', type: 'success' });
-      setInvoiceForm({ ...EMPTY_INVOICE_FORM, invoice_type: invoiceForm.invoice_type });
+      setInvoiceForm({ ...EMPTY_INVOICE_FORM, invoice_type: invoiceForm.invoice_type,
+        deposit_refund_required: invoiceForm.deposit_refund_required });
       setEvidenceFile(null);
       setAddingInvoice(false);
       setInvoicePage(1);
@@ -406,7 +419,12 @@ const AdminFinancePage = () => {
             <div className="flex items-center justify-between gap-2">
               <h4 className="font-semibold">Lịch sử hóa đơn</h4>
               {canOperateStation(user, invoiceStation, 'finance') && getInvoiceTypeOptions(invoiceStation).length > 0 ? (
-                <Button size="sm" onClick={() => setAddingInvoice((value) => !value)}>
+                <Button size="sm" onClick={() => {
+                  if (!addingInvoice) setInvoiceForm({ ...EMPTY_INVOICE_FORM,
+                    invoice_type: getDefaultInvoiceType(invoiceStation),
+                    deposit_refund_required: Number(invoiceStation.deposit_refund_required) === 1 });
+                  setAddingInvoice(value => !value);
+                }}>
                   {addingInvoice ? 'Đóng biểu mẫu' : 'Ghi nhận hóa đơn'}
                 </Button>
               ) : (
@@ -418,6 +436,7 @@ const AdminFinancePage = () => {
               <form className="grid gap-3 rounded-lg border border-base-300 p-4 md:grid-cols-2" onSubmit={submitInvoice}>
                 <Select
                   label="Loại hóa đơn"
+                  aria-label="Loại hóa đơn"
                   options={getInvoiceTypeOptions(invoiceStation)}
                   value={invoiceForm.invoice_type}
                   onChange={(event) => setInvoiceForm((form) => ({ ...form, invoice_type: event.target.value }))}
@@ -425,6 +444,7 @@ const AdminFinancePage = () => {
                 />
                 <Input
                   label="Số tiền (₫)"
+                  aria-label="Số tiền (₫)"
                   type="number"
                   min="0.01"
                   step="0.01"
@@ -432,6 +452,15 @@ const AdminFinancePage = () => {
                   value={invoiceForm.amount}
                   onChange={(event) => setInvoiceForm((form) => ({ ...form, amount: event.target.value }))}
                 />
+                {invoiceForm.invoice_type === 'DEPOSIT' && (
+                  <label className="flex items-center gap-2 md:col-span-2">
+                    <input type="checkbox" className="checkbox checkbox-sm"
+                      checked={invoiceForm.deposit_refund_required}
+                      disabled={Number(invoiceStation.refund_total) > 0}
+                      onChange={event => setInvoiceForm(form => ({ ...form, deposit_refund_required: event.target.checked }))} />
+                    Xác nhận đề xuất cần hoàn cọc
+                  </label>
+                )}
                 <label className="form-control w-full md:col-span-2">
                   <span className="label-text font-medium mb-2">Nội dung</span>
                   <textarea
@@ -441,13 +470,12 @@ const AdminFinancePage = () => {
                     onChange={(event) => setInvoiceForm((form) => ({ ...form, content: event.target.value }))}
                   />
                 </label>
-                <Input
-                  label="Ảnh bằng chứng (ảnh hoặc PDF, tối đa 10 MB)"
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(event) => setEvidenceFile(event.target.files?.[0] || null)}
-                  className="md:col-span-2"
-                />
+                <label className="form-control md:col-span-2">
+                  <span className="label-text font-medium mb-2">Ảnh bằng chứng (ảnh hoặc PDF, tối đa 10 MB) <span className="text-error">*</span></span>
+                  <input type="file" required accept="image/*,application/pdf"
+                    className="file-input file-input-bordered w-full"
+                    onChange={event => setEvidenceFile(event.target.files?.[0] || null)} />
+                </label>
                 {evidenceFile && <span className="text-xs text-base-content/60 md:col-span-2">{evidenceFile.name}</span>}
                 <div className="flex justify-end gap-2 md:col-span-2">
                   <Button type="button" variant="outline" disabled={busy} onClick={() => setAddingInvoice(false)}>Hủy</Button>

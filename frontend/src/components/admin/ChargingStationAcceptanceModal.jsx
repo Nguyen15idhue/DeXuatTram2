@@ -31,8 +31,9 @@ const ChargingStationAcceptanceModal = ({ station, portionId, onClose, onChanged
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [station.id, portionId, token]);
-  const canEdit = record && portion?.installation_status === 'DONE' && portion.acceptance_status !== 'PASSED'
-    && !record.workflow_override?.completed && record.status !== 'CANCELLED' && canOperateStation(user, record, 'setup');
+  const canEdit = record && (portion?.installation_status === 'DONE' || user?.role === 'SUPER_ADMIN')
+    && (!record.workflow_override?.completed || user?.role === 'SUPER_ADMIN')
+    && record.status !== 'CANCELLED' && canOperateStation(user, record, 'setup');
   const uploading = Object.values(uploads).some(Boolean);
   const save = async event => {
     event.preventDefault();

@@ -4,8 +4,8 @@ test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 test('Setup ADMIN can update installation while unrelated ADMIN cannot', async ({ page }) => {
   let allowed = true;
   const updates = [];
-  const portion = { id: 31, export_id: 1, installation_status: 'NOT', installation_version: 1,
-    stage: 'INSTALLING', pole_name: 'DC120', quantity: 1 };
+  const portion = { id: 31, export_id: 1, installation_status: 'DONE', installation_version: 1,
+    stage: 'OPERATING', pole_name: 'DC120', quantity: 1 };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -26,10 +26,10 @@ test('Setup ADMIN can update installation while unrelated ADMIN cannot', async (
   await page.getByRole('button', { name: /Chưa lắp trụ/ }).click();
   const select = page.getByLabel('Trạng thái phần 31');
   await expect(select).toBeEnabled();
-  await select.selectOption('DOING');
+  await select.selectOption('NOT');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await expect.poll(() => updates.length).toBe(1);
-  expect(updates[0].items[0]).toMatchObject({ id: 31, status: 'DOING', expected_version: 1 });
+  expect(updates[0].items[0]).toMatchObject({ id: 31, status: 'NOT', expected_version: 1 });
 
   allowed = false;
   await page.reload();

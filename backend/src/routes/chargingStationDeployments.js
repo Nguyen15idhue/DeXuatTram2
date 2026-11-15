@@ -32,7 +32,8 @@ router.use(requireAuth);
  *       request_id duy nhất theo trạm bảo đảm không lặp ghi log/thông báo.
  *       Lắp xong mở hai công việc nghiệm thu và ON song song.
  *       Nghiệm thu đạt yêu cầu equipment và infrastructure, mỗi bộ có file PDF/Word và ít nhất 2 ảnh.
- *       expected_version là workflow_version của phần trụ; đã hoàn tất chỉ SUPER_ADMIN sửa qua Thông tin chung.
+ *       expected_version là workflow_version của phần trụ. Setup/Vận hành được lùi nghiệm thu,
+ *       acceptance-reset đưa về NOT và giữ hồ sơ, ngày, ghi chú và kết quả ON.
  *       ON yêu cầu mã CMS chung và ngày hợp lệ. Nếu thiếu hợp đồng, một trong hai
  *       hạ tầng hoặc tài chính, bắt buộc accept_missing=true và reason.
  *       Phần trụ ON đầu tiên kích hoạt đề xuất; phần sau không thay mã/ngày ON trạm.
@@ -57,7 +58,7 @@ router.use(requireAuth);
  *             properties:
  *               action:
  *                 type: string
- *                 enum: [start-installation, complete-installation, acceptance-failed, acceptance-passed, complete-configuration]
+ *                 enum: [start-installation, complete-installation, acceptance-failed, acceptance-passed, acceptance-reset, complete-configuration]
  *               request_id: { type: string, maxLength: 100 }
  *               reason: { type: string, maxLength: 5000 }
  *               expected_version: { type: integer, minimum: 0 }
@@ -93,7 +94,7 @@ router.get('/:id/deployments', controller.list);
  *   put:
  *     tags: [Charging Stations]
  *     summary: Lưu đồng thời trạng thái và ghi chú các phần trụ đã nhận
- *     description: Setup chỉ tiến từng bước NOT/DOING/DONE; SUPER_ADMIN được lùi nhưng giữ kết quả nghiệm thu/cấu hình/ON. Mỗi dòng cần id, status, note, expected_version. request_id bảo đảm idempotency.
+ *     description: Setup/Vận hành và SUPER_ADMIN được tiến/lùi NOT/DOING/DONE; lùi giữ ghi chú và kết quả nghiệm thu/cấu hình/ON. Mỗi dòng cần id, status, note, expected_version. request_id bảo đảm idempotency.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }

@@ -72,6 +72,11 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
   const evidenceFileId = data.evidence_file_id === undefined || data.evidence_file_id === null || data.evidence_file_id === ''
     ? null
     : toId(data.evidence_file_id, 'Ảnh bằng chứng');
+  if (!evidenceFileId) throw err('Vui lòng tải ảnh hoặc PDF bằng chứng', 400);
+  if (data.deposit_refund_required !== undefined
+    && (invoiceType !== 'DEPOSIT' || typeof data.deposit_refund_required !== 'boolean')) {
+    throw err('Xác nhận cần hoàn cọc chỉ nhận giá trị boolean khi tạo hóa đơn cọc', 400);
+  }
 
   const connection = await pool.getConnection();
   let transactionStarted = false;
@@ -81,6 +86,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     transactionStarted = true;
     const [stations] = await connection.query(
       `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status, cs.deposit_status, cs.payment_status, cs.fulfillment_review_required,
+              cs.deposit_refund_required,
               JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
               p.tong_gia_tri_chot
          FROM charging_stations cs
@@ -106,12 +112,18 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     const depositTotal = Number(totals.deposit_total);
     const paymentTotal = Number(totals.payment_total);
     const refundTotal = Number(totals.refund_total);
+    if (invoiceType !== 'DEPOSIT' && depositTotal <= 0) {
+      throw err('Vui lòng tạo hóa đơn tiền cọc trước khi thanh toán hoặc hoàn cọc', 409);
+    }
     const statusChanges = {};
+    const refundRequired = invoiceType === 'DEPOSIT'
+      ? data.deposit_refund_required ?? Boolean(station.deposit_refund_required)
+      : Boolean(station.deposit_refund_required);
     let nextDepositStatus = station.deposit_status;
     let nextPaymentStatus = station.payment_status;
 
     if (invoiceType === 'DEPOSIT') {
-      if (['REFUND_PENDING', 'REFUNDED'].includes(station.deposit_status)) {
+      if (refundTotal > 0 || ['REFUND_PENDING', 'REFUNDED'].includes(station.deposit_status)) {
         throw err('Tiền cọc đã chuyển sang giai đoạn hoàn cọc, không thể ghi nhận thêm khoản cọc', 409);
       }
       nextDepositStatus = 'RECEIVED';
@@ -120,6 +132,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
         throw err('Chưa có đặt cọc. Vui lòng tạo hóa đơn cọc trước rồi mới tạo hóa đơn thanh toán', 409);
       }
     } else {
+      if (!refundRequired) throw err('ON trạm chưa được xác nhận cần hoàn cọc', 409);
       if (model !== 'LK') throw err('Chỉ mô hình Liên kết được hoàn cọc', 400);
       if (station.status !== 'OPERATING' || station.sub_status !== 'ACTIVE') {
         throw err('Chỉ được hoàn cọc sau khi trạm đã ON', 409);
@@ -159,7 +172,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
 
     if (evidenceFileId) {
       const [files] = await connection.query(
-        "SELECT id, mime_type, uploaded_by FROM files WHERE id = ? AND status <> 'deleted'",
+        "SELECT id, mime_type, uploaded_by, size FROM files WHERE id = ? AND status <> 'deleted'",
         [evidenceFileId]
       );
       if (!files.length) throw err('Không tìm thấy file bằng chứng', 400);
@@ -170,9 +183,17 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
       if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
         throw err('Bằng chứng phải là ảnh hoặc PDF', 400);
       }
+      if (Number(files[0].size) > 10 * 1024 * 1024) throw err('Ảnh bằng chứng không được vượt quá 10 MB', 400);
     }
 
     const proposalId = station.proposal_id;
+    if (invoiceType === 'DEPOSIT' && Number(station.deposit_refund_required) !== Number(refundRequired)) {
+      statusChanges.deposit_refund_required = {
+        label: 'Xác nhận đề xuất cần hoàn cọc',
+        old: station.deposit_refund_required,
+        new: refundRequired
+      };
+    }
     const [result] = await connection.query(
       `INSERT INTO charging_station_invoices
         (charging_station_id, proposal_id, invoice_type, amount, content, evidence_file_id, created_by)
@@ -214,8 +235,8 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     }
     if (Object.keys(statusChanges).length > 0) {
       await connection.query(
-        'UPDATE charging_stations SET deposit_status = ?, payment_status = ? WHERE id = ?',
-        [nextDepositStatus, nextPaymentStatus, id]
+        'UPDATE charging_stations SET deposit_status = ?, payment_status = ?, deposit_refund_required = ? WHERE id = ?',
+        [nextDepositStatus, nextPaymentStatus, refundRequired, id]
       );
       await chargingStationService.writeActivity(connection, {
         chargingStationId: id,

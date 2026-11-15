@@ -112,7 +112,7 @@ const configurationMissing = (station, model) => {
 };
 
 const updatePortion = async (stationId, deploymentId, body = {}, user, ctx = {}) => {
-  if (['acceptance-passed', 'acceptance-failed'].includes(body?.action)) {
+  if (['acceptance-passed', 'acceptance-failed', 'acceptance-reset'].includes(body?.action)) {
     return require('./chargingStationCompletionService').updateAcceptance(stationId, deploymentId, body, user, ctx);
   }
   if (body?.action === 'complete-configuration') {
@@ -264,19 +264,19 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
       const current = portions.find(portion => Number(portion.id) === item.id);
       if (Number(current.installation_version) !== item.expected_version) throw fail('Dữ liệu lắp đặt đã thay đổi; hãy mở lại modal', 409);
       const delta = ranks.indexOf(item.status) - ranks.indexOf(current.installation_status);
-      if (user.role !== 'SUPER_ADMIN' && (delta < 0 || delta > 1)) throw fail('Chỉ được chuyển tiến từng bước lắp đặt', 403);
       if (item.status === current.installation_status && item.note === text(current.installation_note)) continue;
+      const nextNote = delta < 0 ? current.installation_note : item.note || null;
       const next = current.stage === 'INSTALLING'
         ? { stage: item.status === 'DONE' ? 'CONFIGURING' : 'INSTALLING',
           sub: item.status === 'DONE' ? 'NOT_CONFIGURED' : item.status === 'DOING' ? 'INSTALLING' : 'NOT_INSTALLED' }
         : { stage: current.stage, sub: current.sub_status };
       await connection.query(`UPDATE charging_station_deployments SET installation_status=?,installation_note=?,
         installation_version=installation_version+1,workflow_version=workflow_version+1,stage=?,sub_status=? WHERE id=?`,
-      [item.status, item.note || null, next.stage, next.sub, item.id]);
+      [item.status, nextNote, next.stage, next.sub, item.id]);
       await log(connection, stationId, 'installation_updated', current.stage, next.stage,
-        { ...ctx, source: delta < 0 || delta > 1 ? 'admin_override' : 'user' }, item.note, {
+        { ...ctx, source: user.role === 'SUPER_ADMIN' && (delta < 0 || delta > 1) ? 'admin_override' : 'user' }, item.note, {
         deployment_id: item.id, installation_status: { old: current.installation_status, new: item.status },
-        installation_note: { old: current.installation_note, new: item.note },
+        installation_note: { old: current.installation_note, new: nextNote },
         later_results_preserved: current.stage !== 'INSTALLING'
       });
       if (item.status === 'DONE' && current.installation_status !== 'DONE') {

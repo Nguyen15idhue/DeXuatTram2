@@ -29,6 +29,63 @@ test('overview rejects unauthorized edits and invalid dates before writes', asyn
   await assert.rejects(override.update(1, { reason: 'Reason', id: 2 }, ctx), /Không được sửa trường id/);
 });
 
+const rollbackFixture = t => {
+  const access = require('../src/services/chargingStationAccessService');
+  const calls = [];
+  const portion = { id: 1, stage: 'OPERATING', sub_status: 'ACTIVE', installation_status: 'DONE',
+    installation_note: 'Original installation', installation_version: 2,
+    acceptance_status: 'PASSED', acceptance_date: '2026-11-12', workflow_version: 5, quantity: 1 };
+  const connection = {
+    beginTransaction: async () => {},
+    commit: async () => calls.push(['commit']),
+    rollback: async () => calls.push(['rollback']),
+    release: () => {},
+    query: async (sql, params) => {
+      calls.push([sql, params]);
+      if (sql.includes('SELECT * FROM charging_stations')) return [[{ id: 1, status: 'OPERATING', sub_status: 'ACTIVE' }]];
+      if (sql.includes('SELECT * FROM charging_station_deployments')) return [[portion]];
+      if (sql.includes('SELECT d.id')) return [[portion]];
+      return [[]];
+    }
+  };
+  t.mock.method(pool, 'getConnection', async () => connection);
+  t.mock.method(access, 'assertSetup', async () => {});
+  t.mock.method(access, 'assertView', async () => {});
+  return { calls, portion, connection };
+};
+
+test('Setup ADMIN rolls back installed portions without changing ON or previous notes', async t => {
+  const { calls } = rollbackFixture(t);
+  await deployment.updateInstallation(1, { request_id: 'setup-rollback',
+    items: [{ id: 1, status: 'NOT', note: 'Do not replace', expected_version: 2 }] },
+  { id: 2, role: 'ADMIN' });
+  const update = calls.find(([sql]) => sql.includes('SET installation_status'));
+  assert.deepEqual(update[1], ['NOT', 'Original installation', 'OPERATING', 'ACTIVE', 1]);
+  assert.equal(calls.some(([sql]) => sql.includes('UPDATE charging_stations')), false);
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+});
+
+test('Setup resets passed acceptance while keeping reports, date, ON and installation', async t => {
+  const { calls } = rollbackFixture(t);
+  await deployment.updatePortion(1, 1, {
+    action: 'acceptance-reset', reason: 'Recheck', expected_version: 5, request_id: 'acceptance-rollback'
+  }, { id: 2, role: 'ADMIN' });
+  const update = calls.find(([sql]) => sql.includes('SET acceptance_status'));
+  assert.deepEqual(update[1], ['NOT', true, true, true, 2, 1]);
+  assert.doesNotMatch(update[0], /SET stage|stage=|installation_status=/);
+  assert.equal(calls.some(([sql]) => sql.includes('DELETE FROM charging_station_acceptance')), false);
+  assert.equal(calls.some(([sql]) => sql.includes('UPDATE charging_stations')), false);
+});
+
+test('stale acceptance rollback is rejected without writes', async t => {
+  const { calls } = rollbackFixture(t);
+  await assert.rejects(deployment.updatePortion(1, 1, {
+    action: 'acceptance-reset', reason: 'Recheck', expected_version: 4, request_id: 'stale-rollback'
+  }, superUser), { statusCode: 409 });
+  assert.equal(calls.some(([sql]) => sql.startsWith('UPDATE')), false);
+  assert.ok(calls.some(([sql]) => sql === 'rollback'));
+});
+
 test('real SQL: overview override, tasks, separate installation, shipment and carrier invariants', {
   skip: process.env.RUN_ON_MANAGEMENT_SQL_TEST !== '1'
 }, async t => {
@@ -102,8 +159,8 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
 
     await fixture.query("UPDATE charging_stations SET workflow_override=NULL,fulfillment_review_required=0,status='INSTALLING',sub_status='NOT_INSTALLED' WHERE id=1");
     const setupUser = { id: 2, role: 'SALES', custom_data: { department: 'Phòng Setup và Vận hành' } };
-    await assert.rejects(deployment.updateInstallation(1, { request_id: 'skip-install',
-      items: [{ id: 1, status: 'DONE', note: '', expected_version: 0 }] }, setupUser), { statusCode: 403 });
+    await assert.rejects(deployment.updateInstallation(1, { request_id: 'invalid-install',
+      items: [{ id: 1, status: 'INVALID', note: '', expected_version: 0 }] }, setupUser), { statusCode: 400 });
     const request = { request_id: 'install-1', items: [{ id: 1, status: 'DONE', note: 'Installed', expected_version: 0 }] };
     await deployment.updateInstallation(1, request, superUser);
     await deployment.updateInstallation(1, request, superUser);
@@ -118,8 +175,8 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     assert.ok(preserved.acceptance_date);
     assert.ok(preserved.on_date);
     assert.equal(preserved.installation_status, 'NOT');
-    await assert.rejects(deployment.updateInstallation(1, { request_id: 'skip-again',
-      items: [{ id: 1, status: 'DONE', note: '', expected_version: 2 }] }, setupUser), { statusCode: 403 });
+    await assert.rejects(deployment.updateInstallation(1, { request_id: 'invalid-again',
+      items: [{ id: 1, status: 'INVALID', note: '', expected_version: 2 }] }, setupUser), { statusCode: 400 });
     await assert.rejects(deployment.updateInstallation(1, { request_id: 'admin-install',
       items: [{ id: 1, status: 'DOING', note: '', expected_version: 2 }] }, { id: 1, role: 'ADMIN' }), { statusCode: 403 });
     await assert.rejects(deployment.updateInstallation(1, { request_id: 'stale-install',

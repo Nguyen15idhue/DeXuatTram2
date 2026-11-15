@@ -15,7 +15,7 @@ const ChargingStationTable = ({
     label: column.label,
     type: 'text',
     visible: true,
-    width: column.width || (column.key === 'address' ? 240 : column.key.endsWith('_at') ? 165 : 150)
+    width: column.key === 'ma_tram' ? 110 : column.width || (column.key === 'address' ? 240 : column.key.endsWith('_at') ? 165 : 150)
   })), [columns]);
   const cellRenderers = useMemo(() => Object.fromEntries(columns.map((column) => [
     column.key,

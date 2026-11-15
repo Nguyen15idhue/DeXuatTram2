@@ -55,11 +55,15 @@ export const requestKeyForIntent = (previous, payload) => {
 
 export const deploymentActions = (portion) => {
   const stage = portion.stage;
-  if (stage === 'INSTALLING' && portion.sub_status === 'NOT_INSTALLED') return ['start-installation'];
-  if (stage === 'INSTALLING' && portion.sub_status === 'INSTALLING') return ['complete-installation'];
-  if (portion.installation_status !== 'DONE') return [];
+  const installation = stage === 'INSTALLING'
+    ? portion.sub_status === 'NOT_INSTALLED' ? ['start-installation'] : ['complete-installation']
+    : [];
+  const rollback = portion.acceptance_status !== 'NOT' ? ['acceptance-reset'] : [];
+  if (portion.installation_status !== 'DONE') return [...installation, ...rollback];
   return [
-    ...(portion.acceptance_status !== 'PASSED' ? ['acceptance-passed', 'acceptance-failed'] : []),
+    ...rollback,
+    'acceptance-passed',
+    ...(portion.acceptance_status !== 'FAILED' ? ['acceptance-failed'] : []),
     ...(stage !== 'OPERATING' ? ['complete-configuration'] : [])
   ];
 };
@@ -83,5 +87,6 @@ export const DEPLOYMENT_ACTION_LABELS = {
   'complete-installation': 'Hoàn tất lắp đặt',
   'acceptance-passed': 'Nghiệm thu đạt',
   'acceptance-failed': 'Nghiệm thu không đạt',
+  'acceptance-reset': 'Chuyển về Chưa nghiệm thu',
   'complete-configuration': 'Hoàn tất ON phần trụ'
 };

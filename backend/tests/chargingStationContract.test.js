@@ -83,11 +83,13 @@ test('saves signing status and note together', async t => {
   assert.deepEqual(calls.find(([sql]) => sql.includes('SET contract_status'))[1], ['DOING', 'Sent for signing', 1]);
 });
 
-test('rejects moving signing backwards and stale status without writes', async t => {
+test('Back Office can move signing backwards while retaining notes; stale status rejects writes', async t => {
   const { calls } = setup(t);
-  await assert.rejects(service.startContractSigning(1, user, {}, {
-    contract_status: 'NOT', expected_status: 'DOING'
-  }), { statusCode: 400 });
+  await service.startContractSigning(1, { id: 2, role: 'ADMIN' }, {}, {
+    contract_status: 'NOT', expected_status: 'DOING', contract_note: 'Do not replace history'
+  });
+  assert.deepEqual(calls.find(([sql]) => sql.includes('SET contract_status'))[1], ['NOT', null, 1]);
+  calls.length = 0;
   await assert.rejects(service.startContractSigning(1, user, {}, {
     contract_status: 'DOING', expected_status: 'NOT'
   }), { statusCode: 409 });
@@ -123,10 +125,20 @@ for (const [label, overrides, statusCode] of [
   });
 }
 
-test('rejects completing a contract that is not DOING', async t => {
+test('can confirm DONE again with files already attached by another uploader', async t => {
+  const { calls, connection } = setup(t, { uploaded_by: 9 }, 'DONE');
+  const query = connection.query;
+  connection.query = async (sql, params) => sql.includes('SELECT file_id FROM charging_station_contract_files')
+    ? [[{ file_id: 11 }, { file_id: 12 }]] : query(sql, params);
+  await service.completeContract(1, { ...body, expected_status: 'DONE' }, user);
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+});
+
+test('rejects stale completion without modifying attached files', async t => {
   const { calls } = setup(t, {}, 'DONE');
-  await assert.rejects(service.completeContract(1, body, user), { statusCode: 400 });
+  await assert.rejects(service.completeContract(1, { ...body, expected_status: 'DOING' }, user), { statusCode: 409 });
   assert.ok(calls.some(([sql]) => sql === 'rollback'));
+  assert.equal(calls.some(([sql]) => sql.includes('DELETE FROM charging_station_contract_files')), false);
 });
 
 test('rejects an absent attachment before completing the contract', async t => {

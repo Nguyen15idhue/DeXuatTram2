@@ -61,9 +61,7 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm">Trạng thái lắp trụ<select aria-label={`Trạng thái phần ${row.id}`} className="select select-bordered w-full mt-1"
             disabled={!canEdit || busy} value={row.status} onChange={event => patch(row.id, { status: event.target.value })}>
-            {RANKS.map(status => <option key={status} value={status}
-              disabled={user?.role !== 'SUPER_ADMIN' && (RANKS.indexOf(status) < RANKS.indexOf(row.initialStatus)
-                || RANKS.indexOf(status) > RANKS.indexOf(row.initialStatus) + 1)}>{INSTALLATION_LABELS[status]}</option>)}
+            {RANKS.map(status => <option key={status} value={status}>{INSTALLATION_LABELS[status]}</option>)}
           </select></label>
           <Input label="Ghi chú" disabled={!canEdit || busy} maxLength={5000} value={row.note}
             onChange={event => patch(row.id, { note: event.target.value })} />

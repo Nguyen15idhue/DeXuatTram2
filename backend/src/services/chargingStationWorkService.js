@@ -22,7 +22,11 @@ const allOperating = `(${overridden} OR (${committed}>0 AND cs.fulfillment_revie
   AND ${everyOperating})
   OR (${noCommitments} AND cs.fulfillment_review_required=0 AND ${noPortions} AND cs.status='OPERATING'))`;
 const financialOpen = `(cs.deposit_status IN ('NOT_RECEIVED','REFUND_PENDING')
-  OR cs.payment_status IN ('NOT','DOING'))`;
+  OR cs.payment_status IN ('NOT','DOING')
+  OR (cs.deposit_refund_required=1 AND
+    (SELECT COALESCE(SUM(CASE WHEN i.invoice_type='DEPOSIT' THEN i.amount
+      WHEN i.invoice_type='REFUND' THEN -i.amount ELSE 0 END),0)
+     FROM charging_station_invoices i WHERE i.charging_station_id=cs.id)>0))`;
 const complete = `(${allOperating} AND cs.contract_status='DONE'
   AND cs.infra_power_status='DONE' AND cs.infra_site_status='DONE' AND NOT ${financialOpen})`;
 const installationExists = after(['INSTALLING', 'ACCEPTANCE', 'CONFIGURING', 'OPERATING']);

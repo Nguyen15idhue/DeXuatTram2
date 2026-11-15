@@ -12,7 +12,7 @@ for (const [role, department, allowed] of [
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     const station = { id: 501, ma_tram: 'ON-501', proposal_id: 77, status: 'DELIVERING',
-      infra_power_status: 'NOT', infra_site_status: 'DOING' };
+      infra_power_status: 'NOT', infra_site_status: 'DONE', ngay_du_kien_on: '2026-12-01' };
     await page.route('**/api/**', async route => {
       const { pathname } = new URL(route.request().url());
       let data = {};
@@ -30,6 +30,8 @@ for (const [role, department, allowed] of [
     await page.goto('/admin/on-tram/xay-dung-ha-tang?tab=all');
     await expect(page.getByText('ON-501', { exact: true })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Hành động', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Ngày ON dự kiến', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Tài chính', exact: true })).toHaveCount(0);
     if (!allowed) {
       await expect(page.getByRole('button', { name: /^Hạ tầng điện:/ })).toHaveCount(0);
       expect(updates).toEqual([]);
@@ -37,15 +39,13 @@ for (const [role, department, allowed] of [
     }
     for (const [type, title, label, old, target] of [
       ['power', 'Hạ tầng điện', 'Trạng thái điện', 'NOT', role === 'SUPER_ADMIN' ? 'DONE' : 'DOING'],
-      ['site', 'Hạ tầng mặt bằng', 'Trạng thái mặt bằng', 'DOING', role === 'SUPER_ADMIN' ? 'NOT' : 'DONE']
+      ['site', 'Hạ tầng mặt bằng', 'Trạng thái mặt bằng', 'DONE', 'NOT']
     ]) {
       await page.getByRole('button', { name: new RegExp(`^${title}:`) }).click();
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
       const select = page.getByLabel(label, { exact: true });
-      if (role !== 'SUPER_ADMIN') {
-        for (const value of ['NOT', 'DOING', 'DONE']) {
-          await expect(select.locator(`option[value="${value}"]`)).toHaveJSProperty('disabled', value !== target);
-        }
+      for (const value of ['NOT', 'DOING', 'DONE']) {
+        await expect(select.locator(`option[value="${value}"]`)).toHaveJSProperty('disabled', false);
       }
       await select.selectOption(target);
       const today = await page.evaluate(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));

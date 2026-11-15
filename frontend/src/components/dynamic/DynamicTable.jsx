@@ -408,7 +408,7 @@ const toDisplayValue = (val) => {
     <div className="dynamic-table-container">
       <div className="overflow-x-auto" ref={tableWrapRef}>
         {loading && <div className="px-2 py-1 text-xs text-base-content/50 border-b border-base-300">Đang tải cấu hình...</div>}
-        <table className={`table table-zebra dynamic-table w-full text-sm${density === 'compact' ? ' proposal-table-compact' : ''}`} style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
+        <table className={`table table-zebra dynamic-table w-full text-sm${density === 'compact' ? ' proposal-table-compact' : ''}${entity === 'charging_stations' ? ' on-station-table' : ''}`} style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
           <thead>
             <tr>
               {hasSelection && (
@@ -416,7 +416,7 @@ const toDisplayValue = (val) => {
                   <input type="checkbox" className="checkbox checkbox-sm" checked={allSelected} onChange={handleToggleAll} />
                 </th>
               )}
-              <th {...frozenCell('__stt', 'th', 'text-center w-12')}>STT</th>
+              <th {...frozenCell('__stt', 'th', entity === 'charging_stations' ? 'text-center w-10' : 'text-center w-12')}>STT</th>
               {hasLeading && <th {...frozenCell('__lead', 'th', 'text-center min-w-[110px] whitespace-nowrap')}>{leadingActionTitle}</th>}
               {visibleColumns.map((col, ci) => {
                 const key = col.field_key || col.key;

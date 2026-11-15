@@ -134,7 +134,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const canShip = canOperateStation(user, record, "back_office");
   const canSetup =
     canOperateStation(user, record, "setup") &&
-    !record.workflow_override?.completed &&
+    (!record.workflow_override?.completed || user?.role === "SUPER_ADMIN") &&
     record.status !== "CANCELLED";
   const canRequest =
     canOperateStation(user, record, "request_early") ||
@@ -217,7 +217,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       });
       const { request_id } = request.current;
       if (
-        ["fail", "request-return", "acceptance-failed", "early"].includes(
+        ["fail", "request-return", "acceptance-failed", "acceptance-reset", "early"].includes(
           action,
         ) &&
         !form.reason.trim()

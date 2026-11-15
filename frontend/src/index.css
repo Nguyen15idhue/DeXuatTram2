@@ -248,6 +248,16 @@ body {
   padding: 0.375rem 0.5rem;
 }
 
+.table.on-station-table thead th,
+.table.on-station-table tbody td {
+  padding: 4px 6px;
+}
+
+.on-station-table th.w-10 {
+  width: 40px;
+  min-width: 40px;
+}
+
 .proposal-address-tooltip {
   position: fixed;
   z-index: 10000;
