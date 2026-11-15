@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireWarehouseManager } = require('../middlewares/auth');
 const controller = require('../controllers/supplierController');
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireWarehouseManager);
 
 router.get('/', controller.list);
 router.post('/', controller.create);

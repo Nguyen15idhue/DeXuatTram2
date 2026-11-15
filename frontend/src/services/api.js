@@ -718,6 +718,9 @@ export const shippingCarrierService = {
   },
   remove(id, token) {
     return api.deleteWithAuth(`/admin/shipping-carriers/${id}`, token);
+  },
+  updateStatus(id, active, token) {
+    return api.patchWithAuth(`/admin/shipping-carriers/${id}/status`, { active }, token);
   }
 };
 

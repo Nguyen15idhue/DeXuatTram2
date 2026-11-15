@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { shippingCarrierService } from '../../services/api';
 import { Badge, Button, ConfirmDialog, DataTable, Dialog, Input } from '../ui';
 
-const ShippingCarriersTab = ({ token }) => {
+const ShippingCarriersTab = ({ token, canManage = false, canUpdateStatus = false }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,14 +44,27 @@ const ShippingCarriersTab = ({ token }) => {
   };
   return <div className="space-y-3">
     {error && <div role="alert" className="alert alert-error">{error}</div>}
-    <div className="flex justify-end"><Button onClick={() => { setError(''); setForm({ name: '', note: '', active: true }); }}>Thêm đơn vị vận chuyển</Button></div>
+    <div className="flex justify-end">{canManage && <Button onClick={() => { setError(''); setForm({ name: '', note: '', active: true }); }}>Thêm đơn vị vận chuyển</Button>}</div>
     <DataTable data={items} loading={loading} columns={[
       { key: 'name', label: 'Đơn vị vận chuyển' }, { key: 'note', label: 'Ghi chú' },
       { key: 'active', label: 'Trạng thái', render: value => <Badge variant={value ? 'success' : 'ghost'}>{value ? 'Hoạt động' : 'Ngừng hoạt động'}</Badge> }
     ]} actions={row => <div className="flex gap-2">
-      <Button size="xs" variant="outline" onClick={() => { setError(''); setForm({ ...row, active: Boolean(row.active), note: row.note || '' }); }}>Sửa</Button>
-      <Button size="xs" variant="outline-error" disabled={Boolean(row.used)} title={row.used ? 'Đã sử dụng, chỉ được ngừng hoạt động' : ''}
-        onClick={() => setDeleting(row)}>Xóa</Button>
+      {canManage && <Button size="xs" variant="outline" onClick={() => { setError(''); setForm({ ...row, active: Boolean(row.active), note: row.note || '' }); }}>Sửa</Button>}
+      {canManage && <Button size="xs" variant="outline-error" disabled={Boolean(row.used)} title={row.used ? 'Đã sử dụng, chỉ được ngừng hoạt động' : ''}
+        onClick={() => setDeleting(row)}>Xóa</Button>}
+      {!canManage && canUpdateStatus && (
+        <Button size="xs" variant={row.active ? 'outline-warning' : 'outline-success'} disabled={busy}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try {
+              await shippingCarrierService.updateStatus(row.id, !row.active, token);
+              await load();
+            } catch (failure) { setError(failure.message); }
+            finally { setBusy(false); }
+          }}>
+          {row.active ? 'Vô hiệu hóa' : 'Kích hoạt'}
+        </Button>
+      )}
     </div>} />
     <Dialog isOpen={!!form} onClose={() => !busy && setForm(null)} title={form?.id ? 'Sửa đơn vị vận chuyển' : 'Thêm đơn vị vận chuyển'}>
       {form && <form onSubmit={save} className="space-y-3">

@@ -233,6 +233,29 @@ const requireProposalReportManager = (req, res, next) => {
   next();
 };
 
+// Middleware: Quyền quản lý Kho (SUPER_ADMIN, ADMIN, Back Office).
+// Back Office = role SALES/ADMIN với department chứa "back office"/"backoffice".
+const requireWarehouseManager = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Chưa đăng nhập' });
+    }
+    if (['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) return next();
+    if (req.user.role === 'SALES') {
+      const pool = require('../utils/db');
+      const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+      const cd = rows.length && rows[0].custom_data
+        ? (typeof rows[0].custom_data === 'string' ? JSON.parse(rows[0].custom_data) : rows[0].custom_data)
+        : {};
+      const dept = String(cd?.department || '').toLowerCase();
+      if (dept.includes('back office') || dept.includes('backoffice')) return next();
+    }
+    return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 module.exports = {
   requireAuth,
   requireAdmin,
@@ -247,7 +270,7 @@ module.exports = {
   requireReportViewer,
   requireReportConfigurator,
   requireChargingStationViewer,
-  requireChargingStationEditor,
+  requireWarehouseManager,
   optionalAuth,
   JWT_SECRET
 };

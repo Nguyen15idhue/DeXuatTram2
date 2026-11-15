@@ -378,15 +378,15 @@ function App() {
             />
             <Route
               path="/admin/kho"
-              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehousePage /></RoleRoute>}
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN', 'SALES']}><AdminWarehousePage /></RoleRoute>}
             />
             <Route
               path="/admin/kho/*"
-              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehousePage /></RoleRoute>}
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN', 'SALES']}><AdminWarehousePage /></RoleRoute>}
             />
             <Route
               path="/admin/kho/ton-kho"
-              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehouseStockDetailPage /></RoleRoute>}
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN', 'SALES']}><AdminWarehouseStockDetailPage /></RoleRoute>}
             />
             <Route
               path="/admin/e-sign"
