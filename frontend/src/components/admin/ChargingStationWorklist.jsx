@@ -6,6 +6,9 @@ import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { Badge, Button, Dialog, FilterBar, Input, Pagination } from "../ui";
 import ChargingStationTable from "./ChargingStationTable";
 import ChargingStationFulfillment from "./ChargingStationFulfillment";
+import ChargingStationGroupedProgress from "./ChargingStationGroupedProgress";
+import { formatProposalScale } from "../../utils/proposalGrading";
+import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRATION_LABELS } from "../../utils/chargingFulfillment";
 import {
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
@@ -155,7 +158,7 @@ const ChargingStationWorklist = ({ stage }) => {
               </span>
             ),
           },
-          {
+          ...(!["nghiem-thu", "on-tram"].includes(stage) ? [{
             key: "status",
             label: "Trạng thái quy trình",
             render: (value, row) => (
@@ -188,7 +191,23 @@ const ChargingStationWorklist = ({ stage }) => {
               ) : (
                 "—"
               ),
-          },
+          }] : [
+            ...(stage === "nghiem-thu" ? [{
+              key: "chot_so_luong_tru", label: "Quy mô trụ chốt", width: 260,
+              render: (_, row) => formatProposalScale(row)
+            }] : []),
+            {
+              key: "workflow_summary",
+              label: stage === "nghiem-thu" ? "Trạng thái nghiệm thu" : "Trạng thái ON trạm",
+              width: 230,
+              render: (_, row) => {
+                const status = stage === "nghiem-thu" ? acceptanceSummary(row) : onStationStatus(row);
+                return <Badge variant={status === "DONE" ? "success" : status === "DOING" ? "info" : "ghost"}>
+                  {(stage === "nghiem-thu" ? ACCEPTANCE_SUMMARY_LABELS : INTEGRATION_LABELS)[status]}
+                </Badge>;
+              }
+            }
+          ]),
           ...(stage === "lap-tru"
             ? [
                 {
@@ -239,6 +258,9 @@ const ChargingStationWorklist = ({ stage }) => {
           onClose={() => setSelected(null)}
           onChanged={() => load(page)}
         />
+      ) : selected && ["nghiem-thu", "on-tram"].includes(stage) ? (
+        <ChargingStationGroupedProgress station={selected} stage={stage}
+          onClose={() => setSelected(null)} onChanged={() => load(page)} />
       ) : (
         <Dialog
           isOpen={!!selected}

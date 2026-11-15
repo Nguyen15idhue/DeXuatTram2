@@ -63,7 +63,9 @@ router.get('/invoices', chargingFinanceController.listInvoices);
  *     summary: Ghi nhận hóa đơn ON trạm
  *     description: >
  *       DEPOSIT ghi nhận ngay deposit_status=RECEIVED; PAYMENT yêu cầu đã nhận cọc và đưa payment_status từ NOT sang DOING;
- *       REFUND chỉ cho mô hình Liên kết sau khi trạm đã ON. Mô hình Tự đầu tư không thu cọc/thanh toán.
+ *       PAYMENT/REFUND bắt buộc có hóa đơn cọc. REFUND chỉ cho mô hình LK, toàn bộ trụ đã ON và đã xác nhận cần hoàn cọc.
+ *       Bằng chứng ảnh/PDF bắt buộc. Cờ cần hoàn cọc chỉ sửa khi tạo DEPOSIT, khóa khi có REFUND.
+ *       Mô hình Tự đầu tư không thu cọc/thanh toán. Tiền ròng = cọc + thanh toán - hoàn cọc.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -76,12 +78,13 @@ router.get('/invoices', chargingFinanceController.listInvoices);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [invoice_type, amount]
+ *             required: [invoice_type, amount, evidence_file_id]
  *             properties:
  *               invoice_type: { type: string, enum: [DEPOSIT, REFUND, PAYMENT] }
  *               amount: { type: number, exclusiveMinimum: 0 }
  *               content: { type: string }
- *               evidence_file_id: { type: integer, nullable: true }
+ *               evidence_file_id: { type: integer }
+ *               deposit_refund_required: { type: boolean, description: Chỉ gửi với DEPOSIT }
  *     responses:
  *       201: { description: Đã ghi nhận hóa đơn }
  *       400: { description: Dữ liệu hóa đơn không hợp lệ }

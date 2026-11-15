@@ -718,10 +718,19 @@ export const shippingCarrierService = {
   },
   remove(id, token) {
     return api.deleteWithAuth(`/admin/shipping-carriers/${id}`, token);
+  },
+  updateStatus(id, active, token) {
+    return api.patchWithAuth(`/admin/shipping-carriers/${id}/status`, { active }, token);
   }
 };
 
 export const chargingStationService = {
+  updateAcceptance(id, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/acceptance`, data, token));
+  },
+  updateShipmentStatus(id, exportId, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/shipments/${exportId}/status`, data, token));
+  },
   updateOnStation(id, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/on-station`, data, token));
   },

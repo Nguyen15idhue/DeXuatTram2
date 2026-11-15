@@ -15,7 +15,7 @@ const list = async (user, options = false) => {
     if (!(await require('./chargingStationAccessService').permissions(user)).back_office) {
       throw fail('Không có quyền chọn đơn vị vận chuyển', 403);
     }
-  } else assertManager(user);
+  } else { const isSuper = user?.role === 'SUPER_ADMIN'; const isBO = !isSuper && (await require('./chargingStationAccessService').permissions(user)).back_office; if (!isSuper && !isBO) assertManager(user); }
   const [rows] = await pool.query(`SELECT c.*,
     EXISTS(SELECT 1 FROM warehouse_exports we WHERE we.carrier_id=c.id) AS used
     FROM shipping_carriers c ${options ? 'WHERE c.active=1' : ''} ORDER BY c.name, c.id`);
@@ -23,7 +23,16 @@ const list = async (user, options = false) => {
 };
 
 const save = async (id, body, user) => {
-  assertManager(user);
+  const isSuper = user?.role === 'SUPER_ADMIN';
+  const isBO = !isSuper && (await require('./chargingStationAccessService').permissions(user)).back_office;
+  if (!isSuper && !isBO) assertManager(user);
+  if (isBO && id === null) throw fail('Chỉ SUPER_ADMIN được tạo đơn vị vận chuyển', 403);
+  if (isBO) {
+    if (typeof body.active !== 'boolean') throw fail('Trạng thái hoạt động không hợp lệ');
+    const [result] = await pool.query('UPDATE shipping_carriers SET active=? WHERE id=?', [body.active ? 1 : 0, idOf(id)]);
+    if (!result.affectedRows) throw fail('Không tìm thấy đơn vị vận chuyển', 404);
+    return { id: idOf(id) };
+  }
   const name = String(body.name || '').trim();
   const note = String(body.note || '').trim();
   if (!name || name.length > 255) throw fail('Tên đơn vị vận chuyển bắt buộc, tối đa 255 ký tự');
@@ -62,4 +71,14 @@ const resolve = async (executor, id) => {
   return rows[0];
 };
 
-module.exports = { list, save, remove, resolve };
+const updateStatus = async (id, active, user) => {
+  const isSuper = user?.role === 'SUPER_ADMIN';
+  const isBO = !isSuper && (await require('./chargingStationAccessService').permissions(user)).back_office;
+  if (!isSuper && !isBO) throw fail('Không có quyền cập nhật trạng thái đơn vị vận chuyển', 403);
+  if (typeof active !== 'boolean') throw fail('Trạng thái hoạt động không hợp lệ');
+  const [result] = await pool.query('UPDATE shipping_carriers SET active=? WHERE id=?', [active ? 1 : 0, idOf(id)]);
+  if (!result.affectedRows) throw fail('Không tìm thấy đơn vị vận chuyển', 404);
+  return { id: idOf(id), active };
+};
+
+module.exports = { list, save, remove, resolve, updateStatus };

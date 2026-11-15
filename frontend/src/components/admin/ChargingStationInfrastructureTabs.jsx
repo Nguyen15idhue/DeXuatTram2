@@ -12,15 +12,10 @@ import {
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
-  CS_DEPOSIT_LABELS,
-  CS_DEPOSIT_VARIANT,
-  CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
-  formatCsDate,
-  getCsDeadlineLabel,
-  isCsDeadlineStopped
+  formatCsDate
 } from '../../utils/chargingStation';
 import { Badge, Button, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 
@@ -130,25 +125,17 @@ const ChargingStationInfrastructureTabs = () => {
     {
       key: 'contract_status',
       label: 'Hợp đồng',
-      render: (value, row) => (
-        <div className="flex flex-col items-start gap-1">
+      render: (value) => (
           <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">
             {CS_CONTRACT_LABELS[value] || '—'}
           </Badge>
-          {value !== 'DONE' && !isCsDeadlineStopped(row) && row.contract_deadline_at && (
-            <span className={`text-xs ${new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now() ? 'text-error font-semibold' : 'text-base-content/60'}`}>
-              {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
-            </span>
-          )}
-        </div>
       )
     },
     ...INFRASTRUCTURE_ITEMS.map((item) => ({
       key: item.field,
       label: item.columnLabel,
       render: (value, row) => {
-        const editable = row.status !== 'CANCELLED' && canOperateStation(user, row, 'back_office')
-          && (user?.role === 'SUPER_ADMIN' || value !== 'DONE');
+        const editable = row.status !== 'CANCELLED' && canOperateStation(user, row, 'back_office');
         return editable ? (
           <button type="button" aria-label={`${item.columnLabel}: ${CS_FLOW_LABELS[value] || 'Chưa làm'}`}
             aria-haspopup="dialog" disabled={busyAction !== null}
@@ -159,9 +146,9 @@ const ChargingStationInfrastructureTabs = () => {
             onClick={() => {
               const current = value || 'NOT';
               setEditing({ station: row, item, expectedStatus: current });
-              setStatus(user?.role === 'SUPER_ADMIN' ? current : current === 'NOT' ? 'DOING' : 'DONE');
-              setDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
-              setNote('');
+              setStatus(current);
+              setDate(row[`infra_${item.type}_date`] || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
+              setNote(row[`infra_${item.type}_note`] || '');
             }}>
             {CS_FLOW_LABELS[value] || 'Chưa làm'}<ChevronDown size={14} />
           </button>
@@ -172,17 +159,7 @@ const ChargingStationInfrastructureTabs = () => {
         );
       }
     })),
-    {
-      key: 'payment_status',
-      label: 'Tài chính',
-      render: (value, row) => (
-        <div className="flex flex-col items-start gap-1">
-          <Badge variant={CS_DEPOSIT_VARIANT[row.deposit_status] || 'ghost'} size="sm" outline>{CS_DEPOSIT_LABELS[row.deposit_status] || '—'}</Badge>
-          <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
-        </div>
-      )
-    },
-    { key: 'on_date', label: 'Ngày ON', render: (value) => formatCsDate(value) },
+    { key: 'ngay_du_kien_on', label: 'Ngày ON dự kiến', render: (value) => formatCsDate(value) },
 
   ], [location.pathname, location.search, user, busyAction]);
 
@@ -279,8 +256,7 @@ const ChargingStationInfrastructureTabs = () => {
               aria-label={editing?.item.type === 'power' ? 'Trạng thái điện' : 'Trạng thái mặt bằng'}
               disabled={!!busyAction} onChange={event => setStatus(event.target.value)}>
               {['NOT', 'DOING', 'DONE'].map(value => (
-                <option key={value} value={value}
-                  disabled={user?.role !== 'SUPER_ADMIN' && value !== (editing?.expectedStatus === 'NOT' ? 'DOING' : 'DONE')}>
+                <option key={value} value={value}>
                   {CS_FLOW_LABELS[value]}
                 </option>
               ))}
@@ -292,9 +268,7 @@ const ChargingStationInfrastructureTabs = () => {
             <textarea className="textarea textarea-bordered mt-2 w-full" rows={3}
               value={note} disabled={!!busyAction} onChange={event => setNote(event.target.value)} />
           </label>
-          {user?.role === 'SUPER_ADMIN' && <p className="text-xs text-base-content/60">
-            SUPER_ADMIN được chọn trạng thái tùy ý. Lùi trạng thái không tự lùi tiến độ giao trụ đã thực hiện.
-          </p>}
+          <p className="text-xs text-base-content/60">Lùi trạng thái giữ ngày, ghi chú cũ và không tự lùi các bước khác.</p>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={!!busyAction} onClick={() => setEditing(null)}>Hủy</Button>
             <Button variant="primary" loading={!!busyAction} disabled={!!busyAction} onClick={updateInfrastructure}>Xác nhận</Button>

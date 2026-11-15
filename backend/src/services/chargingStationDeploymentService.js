@@ -28,7 +28,7 @@ const notify = async (connection, station, ctx, title, details, finance = false)
   const [users] = await connection.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
   const normalize = (s) => text(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
   for (const user of users) {
-    if (user.role === 'ADMIN') continue;
+    if (user.role === 'ADMIN' && finance) continue;
     const department = normalize((json(user.custom_data) || {}).department);
     const matches = finance
       ? department.includes('tai chinh') || department.includes('back office')
@@ -48,16 +48,18 @@ const getDeployments = async (stationId, executor = pool) => {
     `SELECT d.id, d.charging_station_id, d.export_item_id, d.quantity, d.stage, d.sub_status,
             d.installation_status, d.installation_note, d.installation_version,
             d.acceptance_status, d.acceptance_legacy, d.acceptance_user_id, d.workflow_version, d.on_note,
+            we.transport_status AS shipment_status,
             i.export_id, i.commitment_id, i.pole_id, i.supplier_id, cp.name AS pole_name, s.name AS supplier_name,
             d.acceptance_file_id, DATE_FORMAT(d.acceptance_date, '%Y-%m-%d') AS acceptance_date,
             DATE_FORMAT(d.on_date, '%Y-%m-%d') AS on_date, d.created_at, d.updated_at,
             f.original_name AS acceptance_file_name, f.mime_type AS acceptance_file_mime
        FROM charging_station_deployments d
        JOIN warehouse_export_items i ON i.id=d.export_item_id
+       JOIN warehouse_exports we ON we.id=i.export_id
        JOIN charging_poles cp ON cp.id=i.pole_id
        LEFT JOIN suppliers s ON s.id=i.supplier_id
        LEFT JOIN files f ON f.id = d.acceptance_file_id
-      WHERE d.charging_station_id = ? ORDER BY d.id`,
+      WHERE d.charging_station_id = ? AND d.returned_at IS NULL ORDER BY d.id`,
     [idOf(stationId)]
   );
   if (!rows.length) return rows;
@@ -111,8 +113,19 @@ const configurationMissing = (station, model) => {
   return missing;
 };
 
+const assertDeploymentAvailable = async (connection, portion) => {
+  if (portion.returned_at) throw fail('Phần trụ đã hoàn kho; hãy tải lại', 409);
+  const [rows] = await connection.query(`SELECT we.transport_status, i.return_pending_quantity
+    FROM warehouse_export_items i JOIN warehouse_exports we ON we.id=i.export_id WHERE i.id=?`,
+  [portion.export_item_id]);
+  if (!rows.length) throw fail('Không tìm thấy chuyến giao của phần trụ', 409);
+  if (['RETURN_PENDING', 'RETURNED'].includes(rows[0].transport_status) || Number(rows[0].return_pending_quantity) > 0) {
+    throw fail('Chuyến giao đang chờ hoàn hoặc đã hoàn kho; không thể cập nhật phần trụ', 409);
+  }
+};
+
 const updatePortion = async (stationId, deploymentId, body = {}, user, ctx = {}) => {
-  if (['acceptance-passed', 'acceptance-failed'].includes(body?.action)) {
+  if (['acceptance-passed', 'acceptance-failed', 'acceptance-reset'].includes(body?.action)) {
     return require('./chargingStationCompletionService').updateAcceptance(stationId, deploymentId, body, user, ctx);
   }
   if (body?.action === 'complete-configuration') {
@@ -168,6 +181,7 @@ const updatePortion = async (stationId, deploymentId, body = {}, user, ctx = {})
     );
     if (!portions.length) throw fail('Không tìm thấy phần trụ tại ON trạm này', 404);
     const portion = portions[0];
+    await assertDeploymentAvailable(connection, portion);
     if (portion.stage !== rule.stage || !rule.sub.includes(portion.sub_status)) {
       throw fail('Phần trụ không ở bước phù hợp; hãy tải lại dữ liệu', 409);
     }
@@ -262,21 +276,22 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
     if (portions.length !== items.length) throw fail('Phần trụ không thuộc trạm này', 409);
     for (const item of items) {
       const current = portions.find(portion => Number(portion.id) === item.id);
+      await assertDeploymentAvailable(connection, current);
       if (Number(current.installation_version) !== item.expected_version) throw fail('Dữ liệu lắp đặt đã thay đổi; hãy mở lại modal', 409);
       const delta = ranks.indexOf(item.status) - ranks.indexOf(current.installation_status);
-      if (user.role !== 'SUPER_ADMIN' && (delta < 0 || delta > 1)) throw fail('Chỉ được chuyển tiến từng bước lắp đặt', 403);
       if (item.status === current.installation_status && item.note === text(current.installation_note)) continue;
+      const nextNote = delta < 0 ? current.installation_note : item.note || null;
       const next = current.stage === 'INSTALLING'
         ? { stage: item.status === 'DONE' ? 'CONFIGURING' : 'INSTALLING',
           sub: item.status === 'DONE' ? 'NOT_CONFIGURED' : item.status === 'DOING' ? 'INSTALLING' : 'NOT_INSTALLED' }
         : { stage: current.stage, sub: current.sub_status };
       await connection.query(`UPDATE charging_station_deployments SET installation_status=?,installation_note=?,
         installation_version=installation_version+1,workflow_version=workflow_version+1,stage=?,sub_status=? WHERE id=?`,
-      [item.status, item.note || null, next.stage, next.sub, item.id]);
+      [item.status, nextNote, next.stage, next.sub, item.id]);
       await log(connection, stationId, 'installation_updated', current.stage, next.stage,
-        { ...ctx, source: delta < 0 || delta > 1 ? 'admin_override' : 'user' }, item.note, {
+        { ...ctx, source: user.role === 'SUPER_ADMIN' && (delta < 0 || delta > 1) ? 'admin_override' : 'user' }, item.note, {
         deployment_id: item.id, installation_status: { old: current.installation_status, new: item.status },
-        installation_note: { old: current.installation_note, new: item.note },
+        installation_note: { old: current.installation_note, new: nextNote },
         later_results_preserved: current.stage !== 'INSTALLING'
       });
       if (item.status === 'DONE' && current.installation_status !== 'DONE') {
@@ -297,4 +312,4 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
 };
 
 module.exports = { getDeployments, refreshStationProgress, updatePortion, notifySetupOperations, updateInstallation,
-  installationSummary, configurationMissing, notifyProgress: notify };
+  installationSummary, configurationMissing, assertDeploymentAvailable, notifyProgress: notify };

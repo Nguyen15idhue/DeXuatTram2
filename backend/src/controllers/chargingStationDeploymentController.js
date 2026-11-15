@@ -35,3 +35,11 @@ exports.onStation = async (req, res) => {
     res.json({ success: true, data, message: 'Đã xác nhận ON các phần trụ' });
   } catch (error) { sendError(res, error); }
 };
+
+exports.acceptance = async (req, res) => {
+  try {
+    const data = await require('../services/chargingStationCompletionService').updateAcceptanceBatch(
+      req.params.id, req.body, req.user, { ip: req.ip });
+    res.json({ success: true, data, message: 'Đã cập nhật nhóm nghiệm thu' });
+  } catch (error) { sendError(res, error); }
+};

@@ -28,11 +28,12 @@ router.use(requireAuth);
  *     tags: [Charging Stations]
  *     summary: Tiến hành lắp đặt, nghiệm thu hoặc ON một phần trụ đã nhận
  *     description: >
- *       Chỉ SUPER_ADMIN và Setup/Vận hành; ADMIN chỉ đọc.
+ *       Chỉ SUPER_ADMIN và Setup/Vận hành, kể cả ADMIN thuộc phòng này.
  *       request_id duy nhất theo trạm bảo đảm không lặp ghi log/thông báo.
  *       Lắp xong mở hai công việc nghiệm thu và ON song song.
  *       Nghiệm thu đạt yêu cầu equipment và infrastructure, mỗi bộ có file PDF/Word và ít nhất 2 ảnh.
- *       expected_version là workflow_version của phần trụ; đã hoàn tất chỉ SUPER_ADMIN sửa qua Thông tin chung.
+ *       expected_version là workflow_version của phần trụ. Setup/Vận hành được lùi nghiệm thu,
+ *       acceptance-reset đưa về NOT và giữ hồ sơ, ngày, ghi chú và kết quả ON.
  *       ON yêu cầu mã CMS chung và ngày hợp lệ. Nếu thiếu hợp đồng, một trong hai
  *       hạ tầng hoặc tài chính, bắt buộc accept_missing=true và reason.
  *       Phần trụ ON đầu tiên kích hoạt đề xuất; phần sau không thay mã/ngày ON trạm.
@@ -57,7 +58,7 @@ router.use(requireAuth);
  *             properties:
  *               action:
  *                 type: string
- *                 enum: [start-installation, complete-installation, acceptance-failed, acceptance-passed, complete-configuration]
+ *                 enum: [start-installation, complete-installation, acceptance-failed, acceptance-passed, acceptance-reset, complete-configuration]
  *               request_id: { type: string, maxLength: 100 }
  *               reason: { type: string, maxLength: 5000 }
  *               expected_version: { type: integer, minimum: 0 }
@@ -93,7 +94,7 @@ router.get('/:id/deployments', controller.list);
  *   put:
  *     tags: [Charging Stations]
  *     summary: Lưu đồng thời trạng thái và ghi chú các phần trụ đã nhận
- *     description: Setup chỉ tiến từng bước NOT/DOING/DONE; SUPER_ADMIN được lùi nhưng giữ kết quả nghiệm thu/cấu hình/ON. Mỗi dòng cần id, status, note, expected_version. request_id bảo đảm idempotency.
+ *     description: Setup/Vận hành và SUPER_ADMIN được tiến/lùi NOT/DOING/DONE; lùi giữ ghi chú và kết quả nghiệm thu/cấu hình/ON. Mỗi dòng cần id, status, note, expected_version. request_id bảo đảm idempotency.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -122,6 +123,64 @@ router.get('/:id/deployments', controller.list);
  *       409: { description: Dữ liệu đã thay đổi }
  */
 router.put('/:id/installation', controller.installation);
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/acceptance:
+ *   put:
+ *     tags: [Charging Stations]
+ *     summary: Cập nhật nghiệm thu nhiều phần trụ bằng một bộ hồ sơ chung
+ *     description: >
+ *       Setup/Vận hành hoặc SUPER_ADMIN. Lưu nguyên tử, chống gửi lặp.
+ *       Mỗi phần cần id và expected_version; lỗi một phần hủy toàn bộ lần lưu.
+ *       Nghiệm thu đạt yêu cầu đã lắp xong và hai bộ hồ sơ thiết bị/hạ tầng,
+ *       mỗi bộ có file PDF/Word cùng từ 2 đến 100 ảnh. Hồ sơ dùng chung cho nhóm.
+ *       Không đạt hoặc trở về Chưa nghiệm thu bắt buộc lý do. Giữ nguyên kết quả ON.
+ *       Phần trụ đang hoàn hoặc đã hoàn kho bị chặn.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [request_id, action, items]
+ *             properties:
+ *               request_id: { type: string, maxLength: 100 }
+ *               action: { type: string, enum: [acceptance-passed, acceptance-failed, acceptance-reset] }
+ *               reason: { type: string, maxLength: 5000 }
+ *               items:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 1000
+ *                 items:
+ *                   type: object
+ *                   required: [id, expected_version]
+ *                   properties:
+ *                     id: { type: integer, minimum: 1 }
+ *                     expected_version: { type: integer, minimum: 0 }
+ *               equipment:
+ *                 type: object
+ *                 required: [file_id, image_ids]
+ *                 properties:
+ *                   file_id: { type: integer }
+ *                   image_ids: { type: array, minItems: 2, maxItems: 100, uniqueItems: true, items: { type: integer } }
+ *                   note: { type: string, nullable: true }
+ *               infrastructure:
+ *                 type: object
+ *                 required: [file_id, image_ids]
+ *                 properties:
+ *                   file_id: { type: integer }
+ *                   image_ids: { type: array, minItems: 2, maxItems: 100, uniqueItems: true, items: { type: integer } }
+ *                   note: { type: string, nullable: true }
+ *     responses:
+ *       200: { description: Đã lưu toàn bộ nhóm và nhật ký từng phần }
+ *       400: { description: Hồ sơ hoặc lý do không hợp lệ }
+ *       403: { description: Không có quyền }
+ *       409: { description: Phần trụ chưa sẵn sàng hoặc đã thay đổi }
+ */
+router.put('/:id/acceptance', controller.acceptance);
 /**
  * @swagger
  * /api/admin/charging-stations/{id}/on-station:

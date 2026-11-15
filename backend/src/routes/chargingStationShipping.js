@@ -86,6 +86,41 @@ router.use(requireAuth, requireChargingStationViewer);
  */
 router.get('/:id/fulfillment', controller.summary);
 router.post('/:id/shipments', controller.create);
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/shipments/{exportId}/status:
+ *   put:
+ *     tags: [Charging Stations]
+ *     summary: Nhận hoặc hoàn toàn bộ số còn lại của một đơn vận chuyển
+ *     description: >
+ *       Back Office hoặc SUPER_ADMIN. SHIPPING/PENDING chuyển DELIVERED hoặc RETURN_PENDING;
+ *       DELIVERED/FAILED chuyển RETURN_PENDING; RETURN_PENDING chỉ chuyển RETURNED.
+ *       Chặn hoàn khi bất kỳ phần trụ nào đã bắt đầu lắp/nghiệm thu/ON.
+ *       Chờ hoàn khóa triển khai; xác nhận hoàn mới cộng kho, giữ lịch sử phần trụ đã trả.
+ *       Ghi chú bắt buộc khi yêu cầu hoặc xác nhận hoàn. Retry cùng request_id không cộng kho lặp.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: exportId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [request_id, status, expected_status]
+ *             properties:
+ *               request_id: { type: string, maxLength: 100 }
+ *               status: { type: string, enum: [DELIVERED, RETURN_PENDING, RETURNED] }
+ *               expected_status: { type: string, enum: [PENDING, SHIPPING, DELIVERED, FAILED, RETURN_PENDING] }
+ *               reason: { type: string, maxLength: 5000 }
+ *     responses:
+ *       200: { description: Cập nhật nguyên tử toàn bộ đơn }
+ *       400: { description: Thiếu thông tin hoặc lý do }
+ *       403: { description: Không có quyền }
+ *       409: { description: Sai bước, đã bắt đầu lắp hoặc dữ liệu đã thay đổi }
+ */
+router.put('/:id/shipments/:exportId/status', controller.status);
 router.post('/:id/shipments/:exportId/receive', controller.receive);
 router.post('/:id/shipments/:exportId/request-return', controller.requestReturn);
 router.post('/:id/shipments/:exportId/confirm-return', controller.confirmReturn);

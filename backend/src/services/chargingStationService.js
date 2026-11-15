@@ -149,7 +149,7 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     DATE_FORMAT(cs.contract_effective_date, '%Y-%m-%d') AS contract_effective_date,
     DATE_FORMAT(cs.contract_expiry_date, '%Y-%m-%d') AS contract_expiry_date,
     cs.contract_note,
-    cs.infra_power_status, cs.infra_site_status, cs.payment_status, cs.deposit_status,
+    cs.infra_power_status, cs.infra_site_status, cs.payment_status, cs.deposit_status, cs.deposit_refund_required,
     DATE_FORMAT(cs.infra_power_date, '%Y-%m-%d') AS infra_power_date,
     DATE_FORMAT(cs.infra_site_date, '%Y-%m-%d') AS infra_site_date,
     cs.infra_power_note, cs.infra_site_note,
@@ -164,6 +164,7 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     p.user_id AS proposal_user_id,
     p.chot_so_luong_tru,
     p.tong_gia_tri_chot AS contract_amount,
+    DATE_FORMAT(p.ngay_du_kien_on, '%Y-%m-%d') AS ngay_du_kien_on,
     (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'DEPOSIT' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS deposit_total,
     (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'PAYMENT' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS payment_total,
     (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'REFUND' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS refund_total,
@@ -565,8 +566,10 @@ const listChargingStations = async ({
         initialize: !!stage && stage !== 'thong-tin-chung', allowReview: true
       });
       const deployments = await require('./chargingStationDeploymentService').getDeployments(row.id);
+      const contractFiles = stage === 'khoi-tao-hop-dong' ? await getContractFiles(row.id) : undefined;
       return {
         ...record,
+        ...(contractFiles ? { contract_files: contractFiles } : {}),
         edit_token: user?.role === 'SUPER_ADMIN' ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined,
         permissions,
         fulfillment,
@@ -647,17 +650,22 @@ const getChargingStationTaskCounts = async (user) => {
   };
 };
 
-const getChargingStationDetail = async (id, user = null) => {
-  await assertCanViewChargingStation(id, user);
-  const record = await requireRecord(id);
+const getContractFiles = async (id) => {
   const [contractFiles] = await pool.query(
     `SELECT f.id, f.original_name, f.mime_type, f.size
        FROM charging_station_contract_files cf
        JOIN files f ON f.id = cf.file_id
       WHERE cf.charging_station_id = ?
       ORDER BY cf.sort_order, cf.id`,
-    [record.id]
+    [id]
   );
+  return contractFiles;
+};
+
+const getChargingStationDetail = async (id, user = null) => {
+  await assertCanViewChargingStation(id, user);
+  const record = await requireRecord(id);
+  const contractFiles = await getContractFiles(record.id);
   const [images] = await pool.query(
     `SELECT f.id, f.original_name, f.mime_type, f.size, i.sort_order
      FROM charging_station_images i
@@ -1115,19 +1123,19 @@ const startContractSigning = async (id, user, ctx = {}, body = {}) => {
     if (body.expected_status !== undefined && body.expected_status !== current.contract_status) {
       throw err('Trạng thái hợp đồng đã thay đổi; hãy mở lại modal', 409);
     }
-    if (current.status === 'CANCELLED' || !['NOT', 'DOING'].includes(current.contract_status)
-      || (current.contract_status === 'DOING' && target === 'NOT')) {
-      throw err('Chỉ được chuyển tiến tuần tự hợp đồng chưa hoàn tất', 400);
+    if (current.status === 'CANCELLED' || !['NOT', 'DOING', 'DONE'].includes(current.contract_status)) {
+      throw err('Không thể cập nhật hợp đồng của trạm đã hủy', 400);
     }
 
-    const nextNote = note === undefined ? current.contract_note || null : note || null;
+    const backwards = ['NOT', 'DOING', 'DONE'].indexOf(target) < ['NOT', 'DOING', 'DONE'].indexOf(current.contract_status);
+    const nextNote = backwards || note === undefined ? current.contract_note || null : note || null;
     await connection.query(
       'UPDATE charging_stations SET contract_status = ?, contract_note = ? WHERE id = ?',
       [target, nextNote, stationId]
     );
     await writeActivity(connection, {
       chargingStationId: stationId,
-      action: target !== current.contract_status ? 'contract_signing_started' : 'contract_note_updated',
+      action: target !== current.contract_status ? 'contract_status_changed' : 'contract_note_updated',
       changedFields: {
         contract_status: { label: FIELD_LABELS.contract_status, old: current.contract_status, new: target },
         contract_note: { label: FIELD_LABELS.contract_note, old: current.contract_note || null, new: nextNote }
@@ -1190,17 +1198,26 @@ const completeContract = async (id, body, user, ctx = {}) => {
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
     proposalId = current.proposal_id;
-    if (current.status === 'CANCELLED' || current.contract_status !== 'DOING') {
-      throw err('Chỉ có thể hoàn tất hợp đồng khi đang ở trạng thái Đang ký hợp đồng', 400);
+    if (body.expected_status !== undefined && body.expected_status !== current.contract_status) {
+      throw err('Trạng thái hợp đồng đã thay đổi; hãy mở lại modal', 409);
+    }
+    if (current.status === 'CANCELLED' || !['NOT', 'DOING', 'DONE'].includes(current.contract_status)) {
+      throw err('Không thể hoàn tất hợp đồng của trạm đã hủy', 400);
     }
 
+    const [existingFiles] = await connection.query(
+      'SELECT file_id FROM charging_station_contract_files WHERE charging_station_id = ?',
+      [stationId]
+    );
+    const attachedIds = new Set(existingFiles.map(file => Number(file.file_id)));
+    if (current.contract_file_id) attachedIds.add(Number(current.contract_file_id));
     const [files] = await connection.query(
       "SELECT id, mime_type, uploaded_by, status FROM files WHERE id IN (?) AND status <> 'deleted' FOR UPDATE",
       [fileIds]
     );
     if (files.length !== fileIds.length) throw err('Không tìm thấy file hợp đồng', 400);
     for (const file of files) {
-      if (Number(file.uploaded_by) !== Number(user.id)) {
+      if (!attachedIds.has(Number(file.id)) && Number(file.uploaded_by) !== Number(user.id)) {
         throw err('Chỉ được gắn file do chính bạn tải lên', 403);
       }
       if (!CONTRACT_FILE_MIME_TYPES.includes(String(file.mime_type || '').toLowerCase())) {
@@ -1220,7 +1237,7 @@ const completeContract = async (id, body, user, ctx = {}) => {
       [fileIds.map((fileId, index) => [stationId, fileId, index])]
     );
     const contractChanges = {
-      contract_status: { label: FIELD_LABELS.contract_status, old: 'DOING', new: 'DONE' },
+      contract_status: { label: FIELD_LABELS.contract_status, old: current.contract_status, new: 'DONE' },
       contract_file_id: {
         label: FIELD_LABELS.contract_file_id,
         old: current.contract_file_id ? String(current.contract_file_id) : '',
@@ -1328,24 +1345,24 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
     if (isStatusUpdate && current[field] !== body.expected_status) {
       throw err('Trạng thái hạ tầng đã thay đổi. Vui lòng tải lại danh sách', 409);
     }
-    if (user.role !== 'SUPER_ADMIN' && statuses.indexOf(next) !== statuses.indexOf(current[field]) + 1) {
-      throw err('Chỉ được chuyển tuần tự Chưa làm → Đang làm → Đã làm', 400);
-    }
     if (!isStatusUpdate && current[field] !== (action === 'start' ? 'NOT' : 'DOING')) {
       throw err('Trạng thái hạ tầng hiện tại không cho phép thao tác này', 400);
     }
 
+    const backwards = statuses.indexOf(next) < statuses.indexOf(current[field]);
+    const nextDate = backwards ? normalizeDate(current[dateField]) : body.date;
+    const nextNote = backwards ? current[noteField] || null : note || null;
     await connection.query(
       `UPDATE charging_stations SET ${field} = ?, ${dateField} = ?, ${noteField} = ? WHERE id = ?`,
-      [next, body.date, note || null, stationId]
+      [next, nextDate, nextNote, stationId]
     );
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'infrastructure_status_changed',
       changedFields: {
         [field]: { label: FIELD_LABELS[field], old: current[field] || 'NOT', new: next },
-        [dateField]: { label: FIELD_LABELS[dateField], old: normalizeDate(current[dateField]), new: body.date },
-        [noteField]: { label: FIELD_LABELS[noteField], old: current[noteField] || '', new: note }
+        [dateField]: { label: FIELD_LABELS[dateField], old: normalizeDate(current[dateField]), new: nextDate },
+        [noteField]: { label: FIELD_LABELS[noteField], old: current[noteField] || '', new: nextNote || '' }
       },
       actorId: ctx.actorId,
       actorRole: ctx.actorRole,
@@ -1353,7 +1370,7 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
         ? 'admin_override' : 'user',
       ip: ctx.ip
     });
-    await advanceToDeliveryIfReady(connection, { ...current, [field]: next }, ctx);
+    if (!backwards) await advanceToDeliveryIfReady(connection, { ...current, [field]: next }, ctx);
     await connection.commit();
     transactionStarted = false;
   } catch (error) {

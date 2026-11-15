@@ -16,24 +16,25 @@ const TABS = [
   { key: 'exports', label: 'Xuất kho' },
   { key: 'poles', label: 'Loại trụ sạc' },
   { key: 'suppliers', label: 'Nhà cung cấp' },
-  { key: 'carriers', label: 'Đơn vị vận chuyển', superOnly: true }
+  { key: 'carriers', label: 'Đơn vị vận chuyển' }
 ];
 
 const EMPTY_TOAST = { message: '', type: 'success' };
 
 const AdminWarehousePage = () => {
   const { token, user } = useAuth();
-  const visibleTabs = TABS.filter(tab => !tab.superOnly || user?.role === 'SUPER_ADMIN');
+  const isBackOffice = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role) || (user?.role === 'SALES' && String(user?.department || '').toLowerCase().includes('back office'));
+  const visibleTabs = isBackOffice ? TABS : [];
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(visibleTabs.some(tab => tab.key === searchParams.get('tab')) ? searchParams.get('tab') : 'poles');
+  const [activeTab, setActiveTab] = useState(visibleTabs.some(tab => tab.key === searchParams.get('tab')) ? searchParams.get('tab') : 'suppliers');
   const [toast, setToast] = useState(EMPTY_TOAST);
   const closeToast = useCallback(() => setToast(EMPTY_TOAST), []);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && TABS.some(item => item.key === tab && (!item.superOnly || user?.role === 'SUPER_ADMIN'))) setActiveTab(tab);
-    else setActiveTab('poles');
-  }, [searchParams, user?.role]);
+    if (tab && TABS.some(item => item.key === tab)) setActiveTab(tab);
+    else setActiveTab('suppliers');
+  }, [searchParams]);
 
   const changeTab = (tab) => {
     setActiveTab(tab);
@@ -53,6 +54,15 @@ const AdminWarehousePage = () => {
     }
   };
 
+  if (!isBackOffice) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Quản lý kho" subtitle="Danh mục trụ sạc, nhập kho, xuất kho và tồn kho" />
+        <div className="alert alert-warning">Bạn không có quyền truy cập trang này.</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Quản lý kho" subtitle="Danh mục trụ sạc, nhập kho, xuất kho và tồn kho" actions={activeTab !== 'carriers' && <Button size="sm" variant="outline" onClick={exportCurrentTab}>Xuất Excel</Button>} />
@@ -71,7 +81,7 @@ const AdminWarehousePage = () => {
       </div>
 
       <Toast message={toast.message} type={toast.type} onClose={closeToast} />
-      {activeTab === 'carriers' && user?.role === 'SUPER_ADMIN' && <ShippingCarriersTab token={token} />}
+      {activeTab === 'carriers' && <ShippingCarriersTab token={token} canManage={user?.role === 'SUPER_ADMIN'} canUpdateStatus={isBackOffice} onToast={(m, t = 'success') => setToast({ message: m, type: t })} />}
 
       {activeTab === 'suppliers' && <SuppliersTab token={token} onToast={(m, t = 'success') => setToast({ message: m, type: t })} />}
       {activeTab === 'poles' && <PolesTab token={token} onToast={(m, t = 'success') => setToast({ message: m, type: t })} />}

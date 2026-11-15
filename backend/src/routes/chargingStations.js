@@ -325,7 +325,7 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  *   post:
  *     tags: [Charging Stations]
  *     summary: Lưu ghi chú hoặc bắt đầu ký hợp đồng (Back Office)
- *     description: NOT/DOING được giữ trạng thái để sửa ghi chú; chỉ cho tiến NOT→DOING. DONE dùng endpoint complete. Không lùi hoặc sửa hợp đồng hoàn tất tại đây.
+ *     description: Back Office và SUPER_ADMIN được chọn NOT/DOING, kể cả lùi từ DONE; lùi giữ ghi chú, file và ngày cũ. DONE dùng endpoint complete.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -341,7 +341,7 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  *             type: object
  *             properties:
  *               contract_status: { type: string, enum: [NOT, DOING], default: DOING }
- *               expected_status: { type: string, enum: [NOT, DOING] }
+ *               expected_status: { type: string, enum: [NOT, DOING, DONE] }
  *               contract_note: { type: string, nullable: true }
  *     responses:
  *       200:
@@ -359,6 +359,7 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *   post:
  *     tags: [Charging Stations]
  *     summary: Gắn file hợp đồng và hoàn tất thủ tục (Back Office)
+ *     description: Cho phép chọn DONE từ NOT/DOING/DONE; có thể dùng lại file đã gắn hoặc file mới do chính người thực hiện tải lên.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -375,6 +376,7 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *             type: object
  *             required: [file_ids, contract_effective_date, contract_expiry_date]
  *             properties:
+ *               expected_status: { type: string, enum: [NOT, DOING, DONE] }
  *               file_ids:
  *                 type: array
  *                 minItems: 1
@@ -467,7 +469,7 @@ router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, 
  *   post:
  *     tags: [Charging Stations]
  *     summary: Cập nhật trạng thái, ngày và ghi chú hạ tầng
- *     description: Back Office chuyển tiến tuần tự; SUPER_ADMIN chọn tùy ý. Không tự lùi tiến độ giao trụ.
+ *     description: Back Office và SUPER_ADMIN được chọn NOT/DOING/DONE; lùi giữ ngày và ghi chú cũ. Không tự lùi các bước khác.
  *     security:
  *       - bearerAuth: []
  *     parameters:

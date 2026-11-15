@@ -105,7 +105,8 @@ const mutate = async (stationId, body, payload, operation, user, ctx, apply) => 
       await connection.commit();
       return json(events[0].result);
     }
-    if (station.status === 'CANCELLED' || json(station.workflow_override)?.completed) {
+    if (station.status === 'CANCELLED' || (json(station.workflow_override)?.completed
+      && !(['ACCEPTANCE_UPDATE', 'ACCEPTANCE_BATCH'].includes(operation) && user.role === 'SUPER_ADMIN'))) {
       throw fail('Trạm đã hủy hoặc hoàn tất bằng ghi đè; hãy điều chỉnh tại Thông tin chung', 409);
     }
     await apply(connection, station);
@@ -125,38 +126,67 @@ const lockPortion = async (connection, stationId, id, version) => {
   const [rows] = await connection.query('SELECT * FROM charging_station_deployments WHERE id=? AND charging_station_id=? FOR UPDATE', [id, stationId]);
   if (!rows.length) throw fail('Phần trụ không thuộc trạm này', 409);
   if (Number(rows[0].workflow_version) !== version) throw fail('Phần trụ đã thay đổi; hãy mở lại modal', 409);
+  await require('./chargingStationDeploymentService').assertDeploymentAvailable(connection, rows[0]);
   return rows[0];
 };
-const updateAcceptance = async (stationId, deploymentId, body, user, ctx = {}) => {
+const updateAcceptanceItems = async (stationId, body, items, user, ctx, operation) => {
   assertObject(body);
   const passed = body.action === 'acceptance-passed';
-  if (!passed && body.action !== 'acceptance-failed') throw fail('Thao tác nghiệm thu không hợp lệ');
-  const payload = { id: idOf(deploymentId), expected_version: versionOf(body.expected_version),
+  const reset = body.action === 'acceptance-reset';
+  if (!passed && !reset && body.action !== 'acceptance-failed') throw fail('Thao tác nghiệm thu không hợp lệ');
+  const payload = { ...(operation === 'ACCEPTANCE_UPDATE' ? items[0] : { items }),
     action: body.action, reason: noteOf(body.reason),
     reports: passed ? { EQUIPMENT: reportOf(body.equipment), INFRASTRUCTURE: reportOf(body.infrastructure) } : null };
-  if (!passed && !payload.reason) throw fail('Bắt buộc lý do nghiệm thu không đạt');
-  return mutate(stationId, body, payload, 'ACCEPTANCE_UPDATE', user, ctx, async (connection, station) => {
-    const portion = await lockPortion(connection, station.id, payload.id, payload.expected_version);
-    if (portion.installation_status !== 'DONE' || portion.acceptance_status === 'PASSED') {
-      throw fail('Phần trụ chưa lắp xong hoặc đã nghiệm thu đạt; hãy tải lại', 409);
+  if (!passed && !payload.reason) throw fail('Bắt buộc lý do đổi trạng thái nghiệm thu');
+  return mutate(stationId, body, payload, operation, user, ctx, async (connection, station) => {
+    const portions = [];
+    for (const item of items) {
+      const portion = await lockPortion(connection, station.id, item.id, item.expected_version);
+      if (portion.installation_status !== 'DONE' && user.role !== 'SUPER_ADMIN'
+        && (passed || (!reset && portion.acceptance_status !== 'PASSED'))) {
+        throw fail('Phần trụ chưa lắp xong; hãy tải lại', 409);
+      }
+      portions.push(portion);
     }
     if (passed) {
       for (const report of Object.values(payload.reports)) await validateReportFiles(connection, report, user, ctx);
-      await storeReports(connection, portion.id, payload.reports);
     }
-    const stage = portion.stage === 'OPERATING' ? 'OPERATING' : 'CONFIGURING';
-    const sub = stage === 'OPERATING' ? 'ACTIVE' : 'NOT_CONFIGURED';
-    await connection.query(`UPDATE charging_station_deployments SET acceptance_status=?,acceptance_legacy=0,
-      acceptance_date=CURRENT_DATE(),acceptance_user_id=?,stage=?,sub_status=?,workflow_version=workflow_version+1 WHERE id=?`,
-    [passed ? 'PASSED' : 'FAILED', user.id, stage, sub, portion.id]);
-    await audit(connection, station, portion, passed ? 'portion_acceptance_passed' : 'portion_acceptance_failed',
-      { stage, acceptance_status: { old: portion.acceptance_status, new: passed ? 'PASSED' : 'FAILED' },
-        reports: { old: null, new: payload.reports } },
-      user, ctx, payload.reason);
+    const status = passed ? 'PASSED' : reset ? 'NOT' : 'FAILED';
+    const previous = passed ? await require('./chargingStationDeploymentService').getDeployments(station.id, connection) : [];
+    for (const portion of portions) {
+      if (passed) await storeReports(connection, portion.id, payload.reports);
+      const backwards = reset || portion.acceptance_status === 'PASSED';
+      await connection.query(`UPDATE charging_station_deployments SET acceptance_status=?,
+        acceptance_legacy=IF(?,acceptance_legacy,0),
+        acceptance_date=IF(?,acceptance_date,CURRENT_DATE()),
+        acceptance_user_id=IF(?,acceptance_user_id,?),workflow_version=workflow_version+1 WHERE id=?`,
+      [status, backwards, backwards, backwards, user.id, portion.id]);
+      await audit(connection, station, portion, reset ? 'portion_acceptance_reset' : passed ? 'portion_acceptance_passed' : 'portion_acceptance_failed',
+        { acceptance_status: { old: portion.acceptance_status, new: status },
+          later_results_preserved: true, batch_deployment_ids: items.map(item => item.id),
+          ...(passed ? { reports: { old: previous.find(row => Number(row.id) === Number(portion.id))?.acceptance_reports,
+            new: payload.reports } } : {}) },
+        user, ctx, payload.reason);
+    }
     await require('./chargingStationDeploymentService').notifyProgress(connection, station,
-      { ...ctx, actorId: user.id, actorRole: user.role }, passed ? 'Nghiệm thu phần trụ đạt' : 'Nghiệm thu phần trụ không đạt',
-      `Phần trụ #${portion.id} · ${portion.quantity} trụ. Trạng thái ON giữ nguyên.`);
+      { ...ctx, actorId: user.id, actorRole: user.role }, reset ? 'Phần trụ cần nghiệm thu lại' : passed ? 'Nghiệm thu phần trụ đạt' : 'Nghiệm thu phần trụ không đạt',
+      `${portions.reduce((sum, portion) => sum + Number(portion.quantity), 0)} trụ. Trạng thái ON giữ nguyên.`);
   });
+};
+const updateAcceptance = async (stationId, deploymentId, body, user, ctx = {}) => {
+  assertObject(body);
+  return updateAcceptanceItems(stationId, body, [{ id: idOf(deploymentId), expected_version: versionOf(body.expected_version) }],
+    user, ctx, 'ACCEPTANCE_UPDATE');
+};
+const updateAcceptanceBatch = async (stationId, body, user, ctx = {}) => {
+  assertObject(body);
+  if (!Array.isArray(body.items) || !body.items.length || body.items.length > 1000) throw fail('Danh sách nghiệm thu không hợp lệ');
+  const items = body.items.map(row => {
+    assertObject(row);
+    return { id: idOf(row.id), expected_version: versionOf(row.expected_version) };
+  }).sort((a, b) => a.id - b.id);
+  if (new Set(items.map(item => item.id)).size !== items.length) throw fail('Phần trụ bị lặp');
+  return updateAcceptanceItems(stationId, body, items, user, ctx, 'ACCEPTANCE_BATCH');
 };
 const updateOn = async (stationId, body, user, ctx = {}) => {
   assertObject(body);
@@ -255,4 +285,4 @@ const overridePortions = async (connection, station, values, user, ctx, reason) 
   }
 };
 
-module.exports = { updateAcceptance, updateOn, overridePortions };
+module.exports = { updateAcceptance, updateAcceptanceBatch, updateOn, overridePortions };

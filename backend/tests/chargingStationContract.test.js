@@ -23,7 +23,8 @@ test('requires files and valid dates, with expiry strictly after effective date'
   }
 });
 
-test('ADMIN cannot complete contracts solely by role', async () => {
+test('ADMIN cannot complete contracts solely by role', async t => {
+  t.mock.method(pool, 'query', async () => [[{ custom_data: { department: 'Phòng khác' } }]]);
   await assert.rejects(service.completeContract(1, body, { id: 2, role: 'ADMIN' }), { statusCode: 403 });
 });
 
@@ -46,6 +47,7 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
   };
   t.mock.method(pool, 'getConnection', async () => connection);
   t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('SELECT custom_data FROM users')) return [[{ custom_data: { department: 'Back Office' } }]];
     if (sql.includes('SELECT cs.id')) return [[record]];
     if (sql.includes('charging_station_contract_files')) return [files];
     return [[]];
@@ -57,6 +59,12 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
   t.mock.method(require('../src/services/chargingStationOverrideService'), 'getEditToken', async () => 'test-token');
   return { calls, connection, files };
 };
+
+test('Back Office ADMIN can start signing a contract', async t => {
+  const { calls } = setup(t, {}, 'NOT');
+  await service.startContractSigning(1, { id: 2, role: 'ADMIN' }, {}, { contract_status: 'DOING' });
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+});
 
 test('saves notes without advancing an unsigned contract', async t => {
   const { calls } = setup(t, {}, 'NOT');
@@ -75,11 +83,13 @@ test('saves signing status and note together', async t => {
   assert.deepEqual(calls.find(([sql]) => sql.includes('SET contract_status'))[1], ['DOING', 'Sent for signing', 1]);
 });
 
-test('rejects moving signing backwards and stale status without writes', async t => {
+test('Back Office can move signing backwards while retaining notes; stale status rejects writes', async t => {
   const { calls } = setup(t);
-  await assert.rejects(service.startContractSigning(1, user, {}, {
-    contract_status: 'NOT', expected_status: 'DOING'
-  }), { statusCode: 400 });
+  await service.startContractSigning(1, { id: 2, role: 'ADMIN' }, {}, {
+    contract_status: 'NOT', expected_status: 'DOING', contract_note: 'Do not replace history'
+  });
+  assert.deepEqual(calls.find(([sql]) => sql.includes('SET contract_status'))[1], ['NOT', null, 1]);
+  calls.length = 0;
   await assert.rejects(service.startContractSigning(1, user, {}, {
     contract_status: 'DOING', expected_status: 'NOT'
   }), { statusCode: 409 });
@@ -115,10 +125,20 @@ for (const [label, overrides, statusCode] of [
   });
 }
 
-test('rejects completing a contract that is not DOING', async t => {
+test('can confirm DONE again with files already attached by another uploader', async t => {
+  const { calls, connection } = setup(t, { uploaded_by: 9 }, 'DONE');
+  const query = connection.query;
+  connection.query = async (sql, params) => sql.includes('SELECT file_id FROM charging_station_contract_files')
+    ? [[{ file_id: 11 }, { file_id: 12 }]] : query(sql, params);
+  await service.completeContract(1, { ...body, expected_status: 'DONE' }, user);
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+});
+
+test('rejects stale completion without modifying attached files', async t => {
   const { calls } = setup(t, {}, 'DONE');
-  await assert.rejects(service.completeContract(1, body, user), { statusCode: 400 });
+  await assert.rejects(service.completeContract(1, { ...body, expected_status: 'DOING' }, user), { statusCode: 409 });
   assert.ok(calls.some(([sql]) => sql === 'rollback'));
+  assert.equal(calls.some(([sql]) => sql.includes('DELETE FROM charging_station_contract_files')), false);
 });
 
 test('rejects an absent attachment before completing the contract', async t => {

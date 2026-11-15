@@ -53,11 +53,14 @@ for (const type of ['power', 'site']) {
 }
 
 for (const [from, to] of [['NOT', 'DONE'], ['DOING', 'NOT'], ['DONE', 'DOING'], ['DOING', 'DOING']]) {
-  test(`Back Office cannot change ${from} to ${to}; SUPER_ADMIN can`, async t => {
-    const { calls } = setup(t, { infra_power_status: from });
+  test(`Back Office and SUPER_ADMIN can change ${from} to ${to} independently`, async t => {
+    const { calls } = setup(t, { infra_power_status: from, infra_power_date: '2026-11-01', infra_power_note: 'History' });
     const request = { ...body, expected_status: from, status: to };
-    await assert.rejects(service.updateInfrastructureStatus(1, 'power', request, backOffice), { statusCode: 400 });
-    assert.ok(calls.some(([sql]) => sql === 'rollback'));
+    await service.updateInfrastructureStatus(1, 'power', request, backOffice);
+    const backwards = ['NOT', 'DOING', 'DONE'].indexOf(to) < ['NOT', 'DOING', 'DONE'].indexOf(from);
+    assert.deepEqual(calls.find(([sql]) => sql.startsWith('UPDATE charging_stations SET infra_'))[1],
+      [to, backwards ? '2026-11-01' : body.date, backwards ? 'History' : 'Started', 1]);
+    assert.equal(calls.some(([sql]) => sql.includes('SET status =')), false);
     calls.length = 0;
     await service.updateInfrastructureStatus(1, 'power', request, superUser);
     const audit = calls.find(([sql]) => sql.includes('INSERT INTO charging_station_activity_logs'));
@@ -79,10 +82,17 @@ test('stale status and cancelled station fail without updates', async t => {
   assert.equal(calls.some(([sql]) => sql.startsWith('UPDATE')), false);
 });
 
-test('ADMIN and unrelated SALES cannot update infrastructure', async () => {
+test('ADMIN and SALES outside Back Office cannot update infrastructure', async t => {
+  t.mock.method(pool, 'query', async () => [[{ custom_data: { department: 'Phòng khác' } }]]);
   for (const role of ['ADMIN', 'SALES']) {
     await assert.rejects(service.updateInfrastructureStatus(1, 'power', body, { id: 9, role, custom_data: {} }), { statusCode: 403 });
   }
+});
+
+test('Back Office ADMIN can update infrastructure', async t => {
+  const { calls } = setup(t);
+  await service.updateInfrastructureStatus(1, 'power', body, { ...backOffice, role: 'ADMIN' });
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
 });
 
 test('invalid status, date, expected status and note fail before transactions', async () => {

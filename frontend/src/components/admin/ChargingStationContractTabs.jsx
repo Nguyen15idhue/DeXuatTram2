@@ -9,11 +9,7 @@ import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import ChargingStationTable from './ChargingStationTable';
 import {
   CS_CONTRACT_VARIANT,
-  CS_FLOW_LABELS,
-  CS_FLOW_VARIANT,
-  CS_DEPOSIT_LABELS,
-  CS_DEPOSIT_VARIANT,
-  CS_PAYMENT_LABELS,
+  getCsFinanceSummary,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
@@ -103,7 +99,8 @@ const ChargingStationContractTabs = () => {
 
   const openContract = row => {
     setContractFiles([]);
-    setUploadedContractIds([]);
+    setUploadedContractIds((row.contract_files || []).map(file => file.id || file.file_id));
+    if (!row.contract_files?.length && row.contract_file_id) setUploadedContractIds([row.contract_file_id]);
     setContractStatus(row.contract_status || 'NOT');
     setContractEffectiveDate(row.contract_effective_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
     setContractExpiryDate(row.contract_expiry_date || '');
@@ -151,7 +148,7 @@ const ChargingStationContractTabs = () => {
       key: 'contract_status',
       label: 'Hợp đồng',
       render: (value, row) => {
-        const editable = row.status !== 'CANCELLED' && ['NOT', 'DOING'].includes(value)
+        const editable = row.status !== 'CANCELLED' && ['NOT', 'DOING', 'DONE'].includes(value)
           && canOperateStation(user, row, 'back_office');
         const statusChip = editable ? <button type="button" aria-haspopup="dialog"
           aria-label={`Hợp đồng: ${SIGNING_LABELS[value]}`} disabled={busyId !== null || uploading}
@@ -169,7 +166,7 @@ const ChargingStationContractTabs = () => {
             <span className={`text-xs ${expired ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>
-            {canExtend && canOperateStation(user, row, 'back_office') && (
+            {canExtend && user?.role !== 'ADMIN' && canOperateStation(user, row, 'back_office') && (
               <Button
                 variant="outline-warning"
                 size="xs"
@@ -187,24 +184,12 @@ const ChargingStationContractTabs = () => {
       }
     },
     {
-      key: 'infra_power_status',
-      label: 'Hạ tầng điện',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_FLOW_LABELS[value] || '—'}</Badge>
-    },
-    {
-      key: 'infra_site_status',
-      label: 'Hạ tầng mặt bằng',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_FLOW_LABELS[value] || '—'}</Badge>
-    },
-    {
       key: 'payment_status',
-      label: 'Tài chính',
-      render: (value, row) => (
-        <div className="flex flex-col items-start gap-1">
-          <Badge variant={CS_DEPOSIT_VARIANT[row.deposit_status] || 'ghost'} size="sm" outline>{CS_DEPOSIT_LABELS[row.deposit_status] || '—'}</Badge>
-          <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
-        </div>
-      )
+      label: 'Trạng thái tài chính',
+      render: (_value, row) => {
+        const summary = getCsFinanceSummary(row);
+        return <Badge variant={summary.variant} size="sm" outline className="h-auto whitespace-normal">{summary.label}</Badge>;
+      }
     },
 
     { key: 'created_at', label: 'Ngày tạo', render: formatDateTime },
@@ -236,7 +221,7 @@ const ChargingStationContractTabs = () => {
       finally { saving.current = false; setUploading(false); }
       return;
     }
-    if (!uploadStation || !contractFiles.length) {
+    if (!contractFiles.length && !uploadedContractIds.length) {
       setModalError('Vui lòng chọn file hợp đồng');
       return;
     }
@@ -261,7 +246,8 @@ const ChargingStationContractTabs = () => {
     setUploading(true);
     try {
       const fileIds = [...uploadedContractIds];
-      for (let index = fileIds.length; index < contractFiles.length; index++) {
+      const newFiles = contractFiles.length ? contractFiles : [];
+      for (let index = fileIds.length; index < newFiles.length; index++) {
         const file = contractFiles[index];
         const data = new FormData();
         data.append('file', file);
@@ -277,7 +263,8 @@ const ChargingStationContractTabs = () => {
         file_ids: fileIds,
         contract_effective_date: contractEffectiveDate,
         contract_expiry_date: contractExpiryDate,
-        contract_note: contractNote.trim()
+        contract_note: contractNote.trim(),
+        expected_status: uploadStation.contract_status
       }, token);
       if (!completed?.success) throw new Error(completed?.message || 'Không thể hoàn tất hợp đồng');
       setUploadStation(null);
@@ -375,10 +362,9 @@ const ChargingStationContractTabs = () => {
         <div className="space-y-4">
           {modalError && <div role="alert" className="alert alert-error">{modalError}</div>}
           <label className="block text-sm font-medium">Trạng thái hợp đồng
-            <select className="select select-bordered mt-2 w-full" disabled={uploading} value={contractStatus}
+            <select aria-label="Trạng thái hợp đồng" className="select select-bordered mt-2 w-full" disabled={uploading} value={contractStatus}
               onChange={event => setContractStatus(event.target.value)}>
-              {['NOT', 'DOING', 'DONE'].map(status => <option key={status} value={status}
-                disabled={uploadStation?.contract_status === 'NOT' ? status === 'DONE' : status === 'NOT'}>
+              {['NOT', 'DOING', 'DONE'].map(status => <option key={status} value={status}>
                 {SIGNING_LABELS[status]}</option>)}
             </select>
           </label>
@@ -405,6 +391,7 @@ const ChargingStationContractTabs = () => {
             }}
           />
           {contractFiles.length > 0 && <ul className="list-disc pl-5 text-sm">{contractFiles.map((file, index) => <li key={index} className="break-all">{file.name}</li>)}</ul>}
+          {!contractFiles.length && uploadedContractIds.length > 0 && <p className="text-sm">Giữ {uploadedContractIds.length} file hợp đồng đã lưu. Có thể chọn file mới để thay thế.</p>}
           <Input label="Ngày hiệu lực hợp đồng" aria-label="Ngày hiệu lực hợp đồng" type="date" required
             value={contractEffectiveDate} disabled={uploading} onChange={event => setContractEffectiveDate(event.target.value)} />
           <Input label="Ngày hết hạn hợp đồng" aria-label="Ngày hết hạn hợp đồng" type="date" required
@@ -414,7 +401,7 @@ const ChargingStationContractTabs = () => {
             <Button variant="ghost" disabled={uploading} onClick={() => setUploadStation(null)}>
               Hủy
             </Button>
-            <Button variant="primary" loading={uploading} disabled={uploading || (contractStatus === 'DONE' && !contractFiles.length)} onClick={completeContract}>
+            <Button variant="primary" loading={uploading} disabled={uploading || (contractStatus === 'DONE' && !contractFiles.length && !uploadedContractIds.length)} onClick={completeContract}>
               Lưu
             </Button>
           </div>

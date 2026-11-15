@@ -73,6 +73,29 @@ export const CS_ROLLBACK_STATUS = {
   ACCEPTANCE: CS_STATUS.INSTALLING
 };
 
+export const getCsFinanceSummary = (station) => {
+  if (station.requires_deposit === false || (station.deposit_status === 'NOT_REQUIRED'
+    && station.payment_status === 'NOT_REQUIRED')) return { label: 'Không yêu cầu', variant: 'ghost' };
+  const deposit = Number(station.deposit_total || 0);
+  const payment = Number(station.payment_total || 0);
+  const refund = Number(station.refund_total || 0);
+  const amount = Number(station.contract_amount || 0);
+  const paid = amount > 0 ? deposit + payment - refund >= amount : station.payment_status === 'DONE';
+  if (!paid) {
+    if (payment > 0 || refund > 0) return { label: 'Đang thanh toán', variant: 'warning' };
+    return deposit > 0
+      ? { label: 'Đã nhận cọc', variant: 'info' }
+      : { label: 'Chưa nhận cọc', variant: 'ghost' };
+  }
+  if (refund > 0 && deposit > 0 && refund >= deposit) {
+    return { label: 'Đã thanh toán - Đã hoàn cọc', variant: 'success' };
+  }
+  if (Number(station.deposit_refund_required) === 1) {
+    return { label: 'Đã thanh toán - Chờ hoàn cọc', variant: 'warning' };
+  }
+  return { label: 'Đã thanh toán toàn bộ', variant: 'success' };
+};
+
 export const CS_CONTRACT_LABELS = {
   NOT: 'Chưa ký hợp đồng',
   DOING: 'Đang ký hợp đồng',

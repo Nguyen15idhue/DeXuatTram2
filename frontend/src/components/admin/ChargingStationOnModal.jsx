@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import { Button, Dialog, Input } from '../ui';
-import { canOperateStation, missingOnPrerequisites, requestKeyForIntent } from '../../utils/chargingFulfillment';
+import { canOperateStation, missingOnPrerequisites, portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
 
 export const ON_STATION_LABELS = { NOT: 'Chưa ON trạm', DOING: 'Đã ON một phần', DONE: 'Đã ON trạm' };
 const today = () => {
@@ -10,7 +10,7 @@ const today = () => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-const ChargingStationOnModal = ({ station, onClose, onChanged }) => {
+const ChargingStationOnModal = ({ station, portionIds, onClose, onChanged }) => {
   const { token, user } = useAuth();
   const [record, setRecord] = useState(null);
   const [rows, setRows] = useState([]);
@@ -22,6 +22,7 @@ const ChargingStationOnModal = ({ station, onClose, onChanged }) => {
   const [error, setError] = useState('');
   const saving = useRef(false);
   const request = useRef(null);
+  const idsKey = portionIds ? JSON.stringify(portionIds) : null;
   useEffect(() => {
     let active = true;
     Promise.all([chargingStationService.getDetail(station.id, token), chargingStationService.getDeployments(station.id, token)])
@@ -30,11 +31,16 @@ const ChargingStationOnModal = ({ station, onClose, onChanged }) => {
         if (!detail.success || !deployments.success) throw new Error(detail.message || deployments.message || 'Không tải được các phần trụ');
         setRecord(detail.data);
         setCms(detail.data.cms_station_code || '');
-        setRows(deployments.data.map(row => ({ ...row, selected: false, date: row.on_date || today(), note: row.on_note || '' })));
+        const ids = idsKey ? JSON.parse(idsKey).map(Number) : null;
+        const selected = deployments.data.filter(row => !ids || ids.includes(Number(row.id)));
+        if (ids && selected.length !== ids.length) throw new Error('Phần trụ đã thay đổi; hãy mở lại modal');
+        setRows(selected.map(row => ({ ...row,
+          selected: Boolean(ids && row.installation_status === 'DONE' && row.stage !== 'OPERATING' && !portionUnavailable(row)),
+          date: row.on_date || today(), note: row.on_note || '' })));
       }).catch(failure => { if (active) setError(failure.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [station.id, token]);
+  }, [station.id, idsKey, token]);
   const canEdit = record && record.status !== 'CANCELLED' && !record.workflow_override?.completed
     && canOperateStation(user, record, 'setup');
   const missing = record ? missingOnPrerequisites(record) : [];
@@ -66,6 +72,9 @@ const ChargingStationOnModal = ({ station, onClose, onChanged }) => {
       {loading && <span className="loading loading-spinner" />}
       {error && <div role="alert" className="alert alert-error">{error}</div>}
       {record && <>
+        {record.fulfillment?.needs_review && <div role="alert" className="alert alert-warning">
+          Dữ liệu trụ cần đối soát. {record.fulfillment.review_message || 'Cần kiểm tra bảng trụ chốt và các phiếu giao cũ.'}
+        </div>}
         <Input label="Mã trạm trên CMS" required maxLength={100} readOnly={!!record.cms_station_code}
           disabled={busy || !canEdit} value={cms} onChange={event => setCms(event.target.value)} />
         <p className="text-sm text-base-content/60">ON được thực hiện song song với nghiệm thu, không đóng việc nghiệm thu còn thiếu.
@@ -74,16 +83,16 @@ const ChargingStationOnModal = ({ station, onClose, onChanged }) => {
       </>}
       <div className="flex flex-col gap-3 md:flex-row md:overflow-x-auto md:pb-2">
         {rows.map(row => {
-          const eligible = canEdit && row.installation_status === 'DONE' && row.stage !== 'OPERATING';
+          const eligible = canEdit && row.installation_status === 'DONE' && row.stage !== 'OPERATING' && !portionUnavailable(row);
           return <section key={row.id} className="w-full space-y-3 rounded-lg border border-base-300 p-3 md:w-72 md:shrink-0">
-            <h3 className="font-semibold">Phiếu #{row.export_id} · Phần #{row.id}</h3>
-            <p>{row.pole_name} · {row.supplier_name || '—'} · {row.quantity} trụ</p>
+            <h3 className="font-semibold">{row.pole_name} · {row.supplier_name || '—'} · {row.quantity} trụ</h3>
             {row.stage === 'OPERATING' ? <p className="text-success">Đã ON — chỉ xem</p>
+              : portionUnavailable(row) ? <p className="text-warning">Đang hoàn hàng — không được ON</p>
               : row.installation_status !== 'DONE' ? <p className="text-warning">Chưa lắp xong — chưa được ON</p>
                 : <label className="flex items-center gap-2"><input type="checkbox" className="checkbox checkbox-sm"
                   disabled={!eligible || busy} checked={row.selected}
                   onChange={event => patch(row.id, { selected: event.target.checked })} /> Xác nhận ON phần trụ</label>}
-            <Input label="Ngày ON" type="date" required={row.selected} value={row.date}
+            <Input label="Ngày ON" aria-label={`Ngày ON ${row.id}`} type="date" required={row.selected} value={row.date}
               disabled={!eligible || !row.selected || busy} onChange={event => patch(row.id, { date: event.target.value })} />
             <label className="block text-sm">Ghi chú<textarea className="textarea textarea-bordered mt-1 w-full"
               maxLength={5000} value={row.note} disabled={!eligible || !row.selected || busy}

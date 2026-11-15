@@ -23,3 +23,4 @@ exports.receive = handler('receive');
 exports.requestReturn = handler('requestReturn');
 exports.confirmReturn = handler('confirmReturn');
 exports.fail = handler('markFailed');
+exports.status = handler('updateShipmentStatus');

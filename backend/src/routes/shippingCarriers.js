@@ -61,4 +61,5 @@ router.get('/', handle((req) => service.list(req.user, req.query.options === '1'
 router.post('/', handle((req) => service.save(null, req.body, req.user)));
 router.put('/:id', handle((req) => service.save(req.params.id, req.body, req.user)));
 router.delete('/:id', handle((req) => service.remove(req.params.id, req.user)));
+router.patch('/:id/status', handle((req) => service.updateStatus(req.params.id, req.body?.active, req.user)));
 module.exports = router;
