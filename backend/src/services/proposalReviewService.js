@@ -358,7 +358,7 @@ const getReviewDetail = async (id, user) => {
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email
        FROM station_proposals p
        LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.id = ? AND p.review_level IS NOT NULL
+      WHERE p.id = ?
       LIMIT 1`,
     [proposalId]
   );
@@ -381,9 +381,17 @@ const getReviewDetail = async (id, user) => {
       ORDER BY r.created_at ASC, r.id ASC`,
     [proposalId]
   );
+  const progress = await require('./proposalProgressService').getProgress(proposalId);
+  const reviewStatuses = [...GDTTKD_STATUSES, REGRADING_STATUS, TGD_STATUS];
+  const hasReviewHistory = (row.review_level !== null && row.review_level !== undefined)
+    || reviewStatuses.includes(row.status)
+    || requests.length > 0
+    || (progress.activity || []).some(log => reviewStatuses.includes(log.from_status) || reviewStatuses.includes(log.to_status));
+  if (!scope.isAdmin && !hasReviewHistory) {
+    throw err('Đề xuất chưa có lịch sử xem xét hoặc chấm điểm lại', 403);
+  }
   const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const proposal = mapReviewRow(dynamicUtils.mergeData(row, fieldDefinitions));
-  const progress = await require('./proposalProgressService').getProgress(proposalId);
   return {
     proposal,
     fieldDefinitions,

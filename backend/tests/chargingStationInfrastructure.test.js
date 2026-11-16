@@ -89,6 +89,34 @@ test('ADMIN and SALES outside Back Office cannot update infrastructure', async t
   }
 });
 
+test('owner-level infrastructure permission applies to CTV/NPP/ancestors and departments without creating department-only tasks', async t => {
+  const { calls } = setup(t);
+  const owners = new Set([5, 6, 7]);
+  const originalQuery = pool.query;
+  t.mock.method(pool, 'query', async (sql, params) => sql.includes('AS owner_task')
+    ? [[{ owner_task: owners.has(params[0]) ? 1 : 0 }]] : originalQuery(sql, params));
+  t.mock.method(require('../src/services/adminProposalService'), 'getBranchUserIds', async id => [id]);
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
+    isBackOffice: user.id === 2, department: user.id === 8 ? 'Phòng Setup và Vận hành' : ''
+  }));
+  for (const user of [{ id: 5, role: 'CTV' }, { id: 6, role: 'NPP' }, { id: 7, role: 'SALES' }]) {
+    const permission = await access.recordPermissions(1, user);
+    assert.equal(permission.infrastructure, true);
+    assert.equal(permission.infrastructure_task, true);
+    await service.updateInfrastructureStatus(1, 'power', body, user);
+  }
+  for (const user of [{ id: 2, role: 'ADMIN' }, { id: 8, role: 'SALES' }]) {
+    const permission = await access.recordPermissions(1, user);
+    assert.equal(permission.infrastructure, true);
+    assert.equal(permission.infrastructure_task, false);
+    await service.updateInfrastructureStatus(1, 'power', body, user);
+  }
+  for (const role of ['CTV', 'NPP', 'SALES', 'ADMIN']) {
+    await assert.rejects(service.updateInfrastructureStatus(1, 'power', body, { id: 9, role }), { statusCode: 403 });
+  }
+  assert.equal(calls.filter(([sql]) => sql === 'commit').length, 5);
+});
+
 test('Back Office ADMIN can update infrastructure', async t => {
   const { calls } = setup(t);
   await service.updateInfrastructureStatus(1, 'power', body, { ...backOffice, role: 'ADMIN' });

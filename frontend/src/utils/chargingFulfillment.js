@@ -2,7 +2,7 @@ import { isBackOfficeDept, isFinanceDept } from './proposalAccess.js';
 
 export const canOperateStation = (user, station, permission) => {
   if (user?.role === 'SUPER_ADMIN') return true;
-  if (user?.role === 'ADMIN' && !['back_office', 'setup'].includes(permission)) return false;
+  if (user?.role === 'ADMIN' && !['back_office', 'setup', 'infrastructure'].includes(permission)) return false;
   if (station?.permissions) return station.permissions[permission] === true;
   if (permission === 'back_office') return isBackOfficeDept(user);
   if (permission === 'finance') return isBackOfficeDept(user) || isFinanceDept(user);
@@ -64,7 +64,7 @@ export const deploymentActions = (portion) => {
     ...rollback,
     'acceptance-passed',
     ...(portion.acceptance_status !== 'FAILED' ? ['acceptance-failed'] : []),
-    ...(stage !== 'OPERATING' ? ['complete-configuration'] : [])
+    'complete-configuration'
   ];
 };
 
@@ -82,6 +82,77 @@ export const shipmentNextStatuses = status => ({
 export const portionUnavailable = portion => Boolean(portion.returned_at)
   || ['RETURN_PENDING', 'RETURNED'].includes(portion.shipment_status);
 
+export const onDeploymentQuantity = portion => Number(portion.on_quantity
+  ?? (portion.stage === 'OPERATING' ? portion.quantity : 0));
+
+export const onQuantityStatus = (quantity, total) => quantity === 0 ? 'NOT' : quantity < total ? 'DOING' : 'DONE';
+
+export const buildOnRows = (fulfillment, portions) => {
+  const groups = new Map();
+  const itemGroups = new Map();
+  for (const shipment of fulfillment.shipments || []) {
+    for (const item of shipment.items || []) {
+      const key = `${shipment.id}:${item.pole_id}:${item.supplier_id || ''}`;
+      const group = groups.get(key) || { id: key, export_id: shipment.id, pole_name: item.name,
+        supplier_name: item.supplier_name, quantity: 0, portions: [], shipment_status: shipment.transport_status };
+      group.quantity += Math.max(0, Number(item.quantity) - Number(item.returned_quantity || 0));
+      groups.set(key, group);
+      itemGroups.set(Number(item.id), key);
+    }
+  }
+  for (const portion of portions.filter(row => !row.returned_at)) {
+    const key = itemGroups.get(Number(portion.export_item_id))
+      || `${portion.export_id || portion.export_item_id}:${portion.pole_id}:${portion.supplier_id || ''}`;
+    const group = groups.get(key) || { id: key, export_id: portion.export_id, pole_name: portion.pole_name,
+      supplier_name: portion.supplier_name, quantity: 0, portions: [], shipment_status: portion.shipment_status };
+    if (!itemGroups.has(Number(portion.export_item_id))) group.quantity += Number(portion.quantity);
+    group.portions.push(portion);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) =>
+    Number(!a.portions.length && a.shipment_status !== 'DELIVERED')
+      - Number(!b.portions.length && b.shipment_status !== 'DELIVERED')
+    || Number(a.export_id) - Number(b.export_id)).map(group => {
+    const initialQuantity = group.portions.reduce((sum, portion) => sum + onDeploymentQuantity(portion), 0);
+    const available = group.portions.filter(portion => !portionUnavailable(portion));
+    const maximum = initialQuantity + available.filter(portion => portion.installation_status === 'DONE')
+      .reduce((sum, portion) => sum + Number(portion.quantity) - onDeploymentQuantity(portion), 0);
+    const minimum = initialQuantity - available.reduce((sum, portion) => sum + onDeploymentQuantity(portion), 0);
+    const firstOn = group.portions.filter(portion => portion.on_date).sort((a, b) =>
+      String(a.on_first_at || a.created_at || '').localeCompare(String(b.on_first_at || b.created_at || ''))
+      || Number(a.id) - Number(b.id))[0];
+    return { ...group, initialQuantity, value: initialQuantity, minimum, maximum,
+      firstDate: firstOn?.on_date || '', date: firstOn?.on_date || '' };
+  });
+};
+
+export const onRowPayload = row => {
+  const value = Number(row.value);
+  if (row.value === '' || !Number.isSafeInteger(value) || value < row.minimum || value > row.maximum) {
+    throw new Error(`Số lượng ON không hợp lệ: ${row.pole_name} · Đơn giao #${row.export_id || '—'}`);
+  }
+  let delta = value - row.initialQuantity;
+  if (delta === 0) return [];
+  if (!row.date) throw new Error('Nhập ngày ON hoặc ngày điều chỉnh cho từng dòng thay đổi');
+  const portions = row.portions.filter(portion => !portionUnavailable(portion))
+    .sort((a, b) => delta > 0 ? Number(a.id) - Number(b.id) : Number(b.id) - Number(a.id));
+  const items = [];
+  for (const portion of portions) {
+    const current = onDeploymentQuantity(portion);
+    const change = delta > 0
+      ? portion.installation_status === 'DONE' ? Math.min(delta, Number(portion.quantity) - current) : 0
+      : -Math.min(-delta, current);
+    if (change !== 0) {
+      items.push({ id: Number(portion.id), expected_version: portion.workflow_version,
+        on_quantity: current + change, on_date: row.date, note: portion.on_note || null });
+      delta -= change;
+    }
+    if (delta === 0) break;
+  }
+  if (delta !== 0) throw new Error('Số lượng phần trụ đã thay đổi; hãy mở lại modal');
+  return items;
+};
+
 export const formatDeploymentScale = rows => {
   const grouped = new Map();
   for (const row of rows) {
@@ -98,7 +169,8 @@ export const formatDeploymentScale = rows => {
 export const groupDeployments = (rows, stage) => {
   const groups = new Map();
   for (const row of rows.filter(row => !row.returned_at)) {
-    const status = stage === 'nghiem-thu' ? row.acceptance_status || 'NOT' : row.stage === 'OPERATING' ? 'DONE' : 'NOT';
+    const status = stage === 'nghiem-thu' ? row.acceptance_status || 'NOT'
+      : onQuantityStatus(onDeploymentQuantity(row), Number(row.quantity));
     const group = groups.get(status) || { id: status, status, rows: [], quantity: 0 };
     group.rows.push(row);
     group.quantity += Number(row.quantity);
@@ -125,10 +197,10 @@ export const onStationStatus = station => {
   const items = fulfillment.items || [];
   const portions = station.deployments || [];
   if (!fulfillment.needs_review && items.length && items.every(item => portions.filter(portion =>
-    !portion.returned_at && Number(portion.commitment_id) === Number(item.commitment_id) && portion.stage === 'OPERATING')
-    .reduce((sum, portion) => sum + Number(portion.quantity), 0) >= Number(item.committed_quantity))) return 'DONE';
+    !portion.returned_at && Number(portion.commitment_id) === Number(item.commitment_id))
+    .reduce((sum, portion) => sum + onDeploymentQuantity(portion), 0) >= Number(item.committed_quantity))) return 'DONE';
   if (!items.length && !portions.length && !fulfillment.needs_review && station.status === 'OPERATING') return 'DONE';
-  return portions.some(portion => !portion.returned_at && portion.stage === 'OPERATING') ? 'DOING' : 'NOT';
+  return portions.some(portion => !portion.returned_at && onDeploymentQuantity(portion) > 0) ? 'DOING' : 'NOT';
 };
 
 export const DEPLOYMENT_ACTION_LABELS = {

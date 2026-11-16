@@ -193,6 +193,34 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
 
 /**
  * @swagger
+ * /api/admin/charging-stations/{id}/activity:
+ *   get:
+ *     tags: [Charging Stations]
+ *     summary: Nhật ký toàn bộ một bước ON trạm, mới nhất trước, theo quyền xem trạm
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - in: query
+ *         name: step
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [khoi-tao-hop-dong, xay-dung-ha-tang, giao-tru, lap-tru, nghiem-thu, on-tram]
+ *       - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+ *       - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+ *     responses:
+ *       200:
+ *         description: Danh sách data và pagination, gồm trạng thái, số lượng, ngày nghiệp vụ, ghi chú và người cập nhật
+ *       400:
+ *         description: Bước hoặc phân trang không hợp lệ
+ *       403:
+ *         description: Không có quyền xem ON trạm
+ */
+router.get('/:id/activity', requireChargingStationViewer, chargingStationController.activity);
+
+/**
+ * @swagger
  * /api/admin/charging-stations/{id}/cancel:
  *   post:
  *     tags: [Charging Stations]
@@ -469,7 +497,10 @@ router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, 
  *   post:
  *     tags: [Charging Stations]
  *     summary: Cập nhật trạng thái, ngày và ghi chú hạ tầng
- *     description: Back Office và SUPER_ADMIN được chọn NOT/DOING/DONE; lùi giữ ngày và ghi chú cũ. Không tự lùi các bước khác.
+ *     description: >
+ *       Người đề xuất, nguoi_phu_trach, sales_quan_ly và quản lý nhánh hợp lệ được cập nhật, kể cả CTV/NPP được giao.
+ *       Back Office và Setup/Vận hành vẫn được cập nhật nhưng không nhận task chỉ vì thuộc phòng.
+ *       SUPER_ADMIN toàn quyền. Chọn NOT/DOING/DONE; lùi giữ ngày và ghi chú cũ, không tự lùi các bước khác.
  *     security:
  *       - bearerAuth: []
  *     parameters:

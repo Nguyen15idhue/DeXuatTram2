@@ -27,12 +27,19 @@ test(`contract modal defaults today, validates dates and uploads multiple files$
     else if (pathname.endsWith('/contract/complete')) {
       completed.push(route.request().postDataJSON());
     }
+    else if (pathname.endsWith('/activity')) data = [{
+      id: 1, action: 'contract_status_changed', actor_name: 'Back Office lịch sử',
+      created_at: '2026-11-16T08:00:00+07:00', reject_reason: 'Đã gửi hợp đồng',
+      changed_fields: { contract_status: { old: 'NOT', new: 'DOING' } }
+    }];
     await route.fulfill({ contentType: 'application/json',
       body: JSON.stringify({ success: true, data, pagination: { page: 1, total: 1, totalPages: 1 } }) });
   });
   await page.addInitScript(() => localStorage.setItem('token', 'contract-test'));
   await page.goto('/admin/on-tram/khoi-tao-hop-dong');
   await page.getByRole('button', { name: 'Hợp đồng: Đang ký', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Back Office lịch sử', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Đã gửi hợp đồng', exact: true })).toBeVisible();
   await expect(page.locator('#contract-files')).toHaveCount(0);
   await page.getByLabel('Trạng thái hợp đồng', { exact: true }).selectOption('DONE');
   const today = await page.evaluate(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -61,7 +68,7 @@ test(`contract modal defaults today, validates dates and uploads multiple files$
   expect(uploaded).toBe(2);
   expect(completed).toEqual([{
     file_ids: [101, 102], contract_effective_date: '2026-11-12',
-    contract_expiry_date: '2027-11-12', contract_note: 'Hợp đồng và phụ lục'
+    contract_expiry_date: '2027-11-12', contract_note: 'Hợp đồng và phụ lục', expected_status: 'DOING'
   }]);
   expect(errors).toEqual([]);
 });

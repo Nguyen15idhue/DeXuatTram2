@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import { Button, Dialog } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
+import ChargingStationStepHistory from './ChargingStationStepHistory';
 import { formatDeploymentScale, requestKeyForIntent, shipmentNextStatuses, SHIPMENT_STATUS_LABELS } from '../../utils/chargingFulfillment';
 
 const ChargingStationShipmentHistory = ({ station, shipments, canEdit, onChanged }) => {
@@ -50,7 +51,7 @@ const ChargingStationShipmentHistory = ({ station, shipments, canEdit, onChanged
             onClick={() => begin(row)}>{label} <span aria-hidden>▾</span></button>;
         } }
       ]} />
-    {selected && <Dialog isOpen portal title="Cập nhật trạng thái" size="lg" onClose={() => !busy && setSelected(null)}>
+    {selected && <Dialog isOpen portal title="Cập nhật trạng thái" size="2xl" onClose={() => !busy && setSelected(null)}>
       <form className="space-y-4" onSubmit={save}>
         {error && <div role="alert" className="alert alert-error">{error}</div>}
         <p>{formatDeploymentScale(selected.items || [])}</p>
@@ -76,6 +77,7 @@ const ChargingStationShipmentHistory = ({ station, shipments, canEdit, onChanged
           {canEdit && <Button type="submit" loading={busy} disabled={busy || !shipmentNextStatuses(selected.transport_status).includes(status)}>Lưu</Button>}
         </div>
       </form>
+      <ChargingStationStepHistory stationId={station.id} step="giao-tru" />
     </Dialog>}
   </>;
 };

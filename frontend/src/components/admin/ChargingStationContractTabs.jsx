@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import ChargingStationStepHistory from './ChargingStationStepHistory';
 import { api, chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { canOperateStation } from '../../utils/chargingFulfillment';
@@ -397,6 +398,7 @@ const ChargingStationContractTabs = () => {
           <Input label="Ngày hết hạn hợp đồng" aria-label="Ngày hết hạn hợp đồng" type="date" required
             value={contractExpiryDate} disabled={uploading} onChange={event => setContractExpiryDate(event.target.value)} />
           </>}
+          <ChargingStationStepHistory stationId={uploadStation?.id} step="khoi-tao-hop-dong" />
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={uploading} onClick={() => setUploadStation(null)}>
               Hủy

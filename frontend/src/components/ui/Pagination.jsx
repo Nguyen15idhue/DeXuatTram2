@@ -6,6 +6,7 @@ const Pagination = ({ page, totalPages, total, onPageChange }) => {
   return (
     <div className="flex items-center justify-center gap-2 py-4">
       <button
+        type="button"
         className="btn btn-sm btn-outline"
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
@@ -17,6 +18,7 @@ const Pagination = ({ page, totalPages, total, onPageChange }) => {
         Trang {page} / {totalPages} (Tổng: {total})
       </span>
       <button
+        type="button"
         className="btn btn-sm btn-outline"
         disabled={page >= totalPages}
         onClick={() => onPageChange(page + 1)}

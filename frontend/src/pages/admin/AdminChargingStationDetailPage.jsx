@@ -160,13 +160,17 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
       acceptance_file_id: 'Biên bản', on_date: 'Ngày ON', on_note: 'Ghi chú ON', cms_station_code: 'Mã CMS',
       acceptance_status: 'Trạng thái nghiệm thu', reports: 'Hồ sơ nghiệm thu', stage: 'Tiến độ phần trụ',
       accept_missing: 'Chấp nhận thiếu điều kiện', missing_prerequisites: 'Hạng mục còn thiếu',
-      export_id: 'Phiếu xuất', item_id: 'Dòng trụ' };
+      export_id: 'Phiếu xuất', item_id: 'Dòng trụ', export_item_id: 'Dòng giao trụ',
+      on_quantity: 'Số lượng ON', on_delta: 'Tăng/giảm trụ ON', on_event_date: 'Ngày ON/điều chỉnh',
+      on_event_kind: 'Loại cập nhật ON', integration_status: 'Trạng thái tích hợp' };
     const valueOf = (value, key) => {
       if (value === null || value === undefined || value === '') return '—';
       if (Array.isArray(value)) return value.join(', ') || '—';
       if (typeof value === 'boolean') return value ? 'Có' : 'Không';
       if (typeof value === 'object') return JSON.stringify(value);
       if (key === 'status') return CS_STATUS_LABELS[value] || String(value);
+      if (key === 'integration_status') return { NOT: 'Chưa tích hợp', DOING: 'Đang tích hợp', DONE: 'Đã tích hợp' }[value] || String(value);
+      if (key === 'on_event_kind') return { ON: 'ON thêm trụ', CORRECTION: 'Điều chỉnh số lượng' }[value] || String(value);
       return CS_SUB_STATUS_LABELS[value] || String(value);
     };
     const changes = Object.entries(entry.changed_fields || {})

@@ -123,7 +123,8 @@ const mutate = async (stationId, body, payload, operation, user, ctx, apply) => 
   } finally { connection.release(); }
 };
 const lockPortion = async (connection, stationId, id, version) => {
-  const [rows] = await connection.query('SELECT * FROM charging_station_deployments WHERE id=? AND charging_station_id=? FOR UPDATE', [id, stationId]);
+  const [rows] = await connection.query(`SELECT d.*,DATE_FORMAT(d.on_date,'%Y-%m-%d') AS on_date
+    FROM charging_station_deployments d WHERE d.id=? AND d.charging_station_id=? FOR UPDATE`, [id, stationId]);
   if (!rows.length) throw fail('Phần trụ không thuộc trạm này', 409);
   if (Number(rows[0].workflow_version) !== version) throw fail('Phần trụ đã thay đổi; hãy mở lại modal', 409);
   await require('./chargingStationDeploymentService').assertDeploymentAvailable(connection, rows[0]);
@@ -199,48 +200,68 @@ const updateOn = async (stationId, body, user, ctx = {}) => {
     const id = idOf(row.id);
     if (ids.has(id)) throw fail('Phần trụ bị lặp');
     ids.add(id);
-    return { id, expected_version: versionOf(row.expected_version), on_date: dateOf(row.on_date), note: noteOf(row.note) };
+    if (row.on_quantity !== undefined && (!Number.isSafeInteger(row.on_quantity) || row.on_quantity < 0)) {
+      throw fail('Số lượng ON phải là số nguyên không âm');
+    }
+    return { id, expected_version: versionOf(row.expected_version),
+      ...(row.on_quantity !== undefined ? { on_quantity: row.on_quantity } : {}),
+      on_date: dateOf(row.on_date), note: noteOf(row.note) };
   }).sort((a, b) => a.id - b.id);
   const payload = { items, cms_station_code: cms, reason: noteOf(body.reason), accept_missing: body.accept_missing === true };
   return mutate(stationId, body, payload, 'ON_BATCH', user, ctx, async (connection, station) => {
     if (station.cms_station_code && station.cms_station_code !== cms) throw fail('Mã CMS khác với mã hiện tại của trạm', 409);
+    const portions = [];
     for (const item of items) {
       const portion = await lockPortion(connection, station.id, item.id, item.expected_version);
-      if (portion.installation_status !== 'DONE' || portion.stage === 'OPERATING') {
-        throw fail('Chỉ được ON phần trụ đã lắp xong và chưa ON', 409);
+      const quantity = item.on_quantity ?? Number(portion.quantity);
+      const previous = Number(portion.on_quantity);
+      if (quantity > Number(portion.quantity)) throw fail('Số lượng ON vượt số trụ của phần giao');
+      if (quantity === previous) throw fail('Số lượng ON không thay đổi');
+      if (quantity > previous && portion.installation_status !== 'DONE') {
+        throw fail('Chỉ được ON thêm trụ của phần giao đã lắp xong', 409);
       }
+      if (quantity < previous && !payload.reason) throw fail('Bắt buộc nhập lý do giảm số lượng ON');
+      portions.push({ portion, item, quantity, previous });
     }
     const [proposals] = await connection.query(`SELECT status,JSON_UNQUOTE(JSON_EXTRACT(custom_data,'$.mo_hinh_dau_tu')) AS model
       FROM station_proposals WHERE id=? FOR UPDATE`, [station.proposal_id]);
     if (!proposals.length) throw fail('Không tìm thấy đề xuất liên quan', 409);
     const deployments = require('./chargingStationDeploymentService');
     const missing = deployments.configurationMissing(station, proposals[0].model);
-    if (missing.length && (!payload.accept_missing || !payload.reason)) {
+    const increasing = portions.filter(row => row.quantity > row.previous);
+    if (increasing.length && missing.length && (!payload.accept_missing || !payload.reason)) {
       throw fail(`Còn thiếu: ${missing.join(', ')}. Cần xác nhận rủi ro và nhập lý do`);
     }
     const options = { ...ctx, actorId: user.id, actorRole: user.role, stationCode: station.ma_tram,
       reason: payload.reason || 'Xác nhận ON các phần trụ' };
-    if (proposals[0].status !== 'ACTIVE') {
+    if (increasing.length && proposals[0].status !== 'ACTIVE') {
       const lifecycle = require('./proposalLifecycle');
       if (proposals[0].status === 'APPROVED') await lifecycle.transitionOnStationWithinTransaction(connection, station.proposal_id, 'DEPLOYING', options);
       await lifecycle.transitionOnStationWithinTransaction(connection, station.proposal_id, 'ACTIVE', options);
     }
-    const [previousOn] = await connection.query("SELECT id FROM charging_station_deployments WHERE charging_station_id=? AND stage='OPERATING' LIMIT 1", [station.id]);
-    if (!previousOn.length && !(station.status === 'OPERATING' && station.on_date)) {
-      await connection.query('UPDATE charging_stations SET cms_station_code=?,on_date=? WHERE id=?', [cms, items[0].on_date, station.id]);
+    const [previousOn] = await connection.query("SELECT id FROM charging_station_deployments WHERE charging_station_id=? AND (on_quantity>0 OR on_date IS NOT NULL) LIMIT 1", [station.id]);
+    if (!previousOn.length && !station.on_date && increasing.length) {
+      await connection.query('UPDATE charging_stations SET cms_station_code=?,on_date=? WHERE id=?', [cms, increasing[0].item.on_date, station.id]);
     } else if (!station.cms_station_code || !station.on_date) {
       throw fail('Trạm cũ thiếu mã CMS hoặc ngày ON; cần SUPER_ADMIN đối soát trước', 409);
     }
-    for (const item of items) {
-      const portion = await lockPortion(connection, station.id, item.id, item.expected_version);
+    const integrationStatus = (quantity, total) => quantity === 0 ? 'NOT' : quantity < total ? 'DOING' : 'DONE';
+    for (const { portion, item, quantity, previous } of portions) {
       await connection.query(`UPDATE charging_station_deployments SET stage='OPERATING',sub_status='ACTIVE',
-        on_date=?,on_note=?,workflow_version=workflow_version+1 WHERE id=?`, [item.on_date, item.note, item.id]);
+        on_date=IF(? > on_quantity,COALESCE(on_date,?),on_date),on_quantity=?,
+        on_note=?,workflow_version=workflow_version+1 WHERE id=?`,
+      [quantity, item.on_date, quantity, item.note, item.id]);
       await audit(connection, station, portion, 'portion_complete_configuration',
-        { stage: 'OPERATING', on_date: { old: portion.on_date, new: item.on_date }, on_note: item.note,
+        { stage: 'OPERATING', export_item_id: portion.export_item_id,
+          on_quantity: { old: previous, new: quantity }, on_delta: quantity - previous,
+          integration_status: { old: integrationStatus(previous, Number(portion.quantity)),
+            new: integrationStatus(quantity, Number(portion.quantity)) },
+          on_event_date: item.on_date, on_event_kind: quantity > previous ? 'ON' : 'CORRECTION',
+          on_date: { old: portion.on_date, new: portion.on_date || (quantity > previous ? item.on_date : null) }, on_note: item.note,
           cms_station_code: cms, missing_prerequisites: missing, accept_missing: payload.accept_missing }, user, ctx, payload.reason);
     }
-    await deployments.notifyProgress(connection, station, options, 'Phần trụ đã ON',
-      `${items.length} phần trụ đã ON. Các công việc nghiệm thu chưa xong vẫn cần thực hiện.`);
+    await deployments.notifyProgress(connection, station, options, 'Cập nhật số lượng trụ ON',
+      `${items.length} phần trụ được cập nhật. Các công việc ON và nghiệm thu còn thiếu vẫn cần thực hiện.`);
   });
 };
 const overridePortions = async (connection, station, values, user, ctx, reason) => {

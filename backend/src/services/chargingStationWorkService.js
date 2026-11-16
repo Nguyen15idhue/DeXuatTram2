@@ -11,10 +11,10 @@ const everyReceived = `NOT EXISTS(SELECT 1 FROM charging_station_commitments c
     (SELECT COALESCE(SUM(i.received_quantity),0) FROM warehouse_export_items i WHERE i.commitment_id=c.id))`;
 const everyOperating = `NOT EXISTS(SELECT 1 FROM charging_station_commitments c
   WHERE c.charging_station_id=cs.id AND c.quantity >
-    (SELECT COALESCE(SUM(d.quantity),0) FROM charging_station_deployments d
+    (SELECT COALESCE(SUM(d.on_quantity),0) FROM charging_station_deployments d
       JOIN warehouse_export_items i ON i.id=d.export_item_id
-      WHERE i.commitment_id=c.id AND d.charging_station_id=cs.id AND d.returned_at IS NULL AND d.stage='OPERATING'))`;
-const overridden = "(cs.status='OPERATING' AND JSON_EXTRACT(cs.workflow_override,'$.completed')=true)";
+      WHERE i.commitment_id=c.id AND d.charging_station_id=cs.id AND d.returned_at IS NULL))`;
+const overridden = "(cs.status='OPERATING' AND COALESCE(JSON_EXTRACT(cs.workflow_override,'$.completed')=true,0))";
 const deliveryComplete = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0 AND ${everyReceived})
   OR (${noCommitments} AND cs.fulfillment_review_required=0 AND cs.status IN ('INSTALLING','ACCEPTANCE','CONFIGURING','OPERATING')))`;
 const allOperating = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0
@@ -45,7 +45,9 @@ const allInstalled = `(${overridden} OR (
 const acceptancePending = `EXISTS(SELECT 1 FROM charging_station_deployments d WHERE d.charging_station_id=cs.id
   AND ${availablePortion} AND d.installation_status='DONE' AND d.acceptance_status<>'PASSED')`;
 const onPending = `EXISTS(SELECT 1 FROM charging_station_deployments d WHERE d.charging_station_id=cs.id
-  AND ${availablePortion} AND d.installation_status='DONE' AND d.stage<>'OPERATING')`;
+  AND ${availablePortion} AND d.installation_status='DONE' AND d.on_quantity<d.quantity)`;
+const onStarted = `EXISTS(SELECT 1 FROM charging_station_deployments d WHERE d.charging_station_id=cs.id
+  AND ${availablePortion} AND (d.installation_status='DONE' OR d.on_quantity>0))`;
 const allAccepted = `(${committed}>0 AND cs.fulfillment_review_required=0
   AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
   AND NOT EXISTS(SELECT 1 FROM charging_station_commitments c WHERE c.charging_station_id=cs.id AND c.quantity >
@@ -78,7 +80,7 @@ const stageFilters = {
     all: `(${after(['ACCEPTANCE', 'CONFIGURING', 'OPERATING'])} OR cs.status IN ('ACCEPTANCE','CONFIGURING','OPERATING'))`
   },
   'on-tram': {
-    need: `(NOT ${overridden} AND (${onPending} OR (${noPortions} AND cs.status='CONFIGURING')))`,
+    need: `(NOT ${allOperating} AND (${onPending} OR ${onStarted} OR (${noPortions} AND cs.status='CONFIGURING')))`,
     completed: `(${allOperating})`,
     all: `(${after(['ACCEPTANCE', 'CONFIGURING', 'OPERATING'])} OR cs.status IN ('CONFIGURING','OPERATING'))`
   },
@@ -91,12 +93,13 @@ const stageFilters = {
 
 const actionable = async (user) => {
   const permissions = await access.permissions(user);
+  const infrastructureOwner = await access.buildInfrastructureOwnerScope(user);
   const owner = permissions.request_early
     ? await require('./proposalAccessService').buildOwnerScopeSql(user)
     : { sql: '1 = 0', params: [] };
   const expressions = {
     contract: permissions.back_office ? stageFilters['khoi-tao-hop-dong'].need : '0',
-    infrastructure: permissions.back_office ? stageFilters['xay-dung-ha-tang'].need : '0',
+    infrastructure: `(${stageFilters['xay-dung-ha-tang'].need} AND (${infrastructureOwner.sql}))`,
     delivery: `(${permissions.back_office ? "(cs.status<>'ONBOARDING' AND NOT " + deliveryComplete + ')' : '0'}
       OR (${permissions.request_early ? '1' : '0'} AND cs.status='ONBOARDING'
         AND (${owner.sql}) AND ${readiness.deliveryMissingSql('cs', 'p')}))`,
@@ -105,7 +108,7 @@ const actionable = async (user) => {
     on_station: permissions.setup ? stageFilters['on-tram'].need : '0',
     finance: permissions.finance ? financialOpen : '0'
   };
-  return { expressions, params: owner.params, permissions };
+  return { expressions, params: [...infrastructureOwner.params, ...owner.params], permissions };
 };
 
 const getFilter = async (stage, tab, user) => {
@@ -118,6 +121,10 @@ const getFilter = async (stage, tab, user) => {
   const definition = stageFilters[stage];
   if (!definition) throw Object.assign(new Error('Bước ON trạm không hợp lệ'), { statusCode: 400 });
   let sql = definition[tab];
+  if (stage === 'xay-dung-ha-tang' && tab === 'need') {
+    const owner = await access.buildInfrastructureOwnerScope(user);
+    return { sql: `cs.status<>'CANCELLED' AND (${sql}) AND (${owner.sql})`, params: owner.params };
+  }
   if (stage === 'giao-tru' && tab !== 'completed') {
     const permission = await access.permissions(user);
     if (permission.back_office && user.role !== 'SUPER_ADMIN') sql = `(${sql}) AND cs.status<>'ONBOARDING'`;

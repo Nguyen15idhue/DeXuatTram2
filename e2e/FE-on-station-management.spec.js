@@ -41,6 +41,11 @@ async function setup(page, role = 'SUPER_ADMIN') {
     };
     else if (pathname.endsWith('/charging-stations/501')) data = station;
     else if (pathname.endsWith('/charging-stations')) data = [station];
+    else if (pathname.endsWith('/activity')) data = [{
+      id: 1, action: 'installation_updated', actor_name: 'Setup lịch sử',
+      created_at: '2026-11-16T08:00:00+07:00', reject_reason: 'Đã bắt đầu lắp',
+      pole_name: 'DC60', export_id: 8, changed_fields: { installation_status: { old: 'NOT', new: 'DOING' } }
+    }];
     else if (/\/warehouse\/|\/suppliers/.test(pathname)) data = [];
     if (role === 'SALES' && pathname.endsWith('/charging-stations/501')) data = { ...station, permissions: { setup: true } };
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data,
@@ -149,9 +154,18 @@ for (const role of ['SUPER_ADMIN', 'SALES']) {
     await expect(page.getByRole('button', { name: 'Các phần trụ / thao tác' })).toHaveCount(0);
     await page.getByRole('button', { name: /Đang lắp trụ/ }).click();
     const modal = page.locator('body > .modal').filter({ has: page.getByRole('heading', { name: 'Lắp trụ · TEST-501' }) });
-    await expect(modal.getByText('Phiếu #8 · Phần #11 · DC60 · Supplier A · 1 trụ')).toBeVisible();
+    await expect(modal.getByText('DC60 · Supplier A · 1 trụ', { exact: true })).toBeVisible();
+    await expect(modal.getByRole('cell', { name: 'Setup lịch sử', exact: true })).toBeVisible();
+    await expect(modal.getByRole('cell', { name: 'Đã bắt đầu lắp', exact: true })).toBeVisible();
+    expect(await modal.evaluate(element => {
+      const history = element.querySelector('section[aria-label="Lịch sử thay đổi trạng thái"]');
+      const buttons = [...element.querySelectorAll('button')].filter(button => ['Hủy', 'Lưu'].includes(button.textContent.trim()));
+      return history === history.parentElement.lastElementChild && buttons.length === 2
+        && buttons.every(button => button.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING);
+    })).toBe(true);
+    expect(await modal.locator('.modal-box').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(1000);
     const status = modal.getByLabel('Trạng thái phần 11');
-    if (role === 'SALES') await expect(status.locator('option[value=DONE]')).toHaveAttribute('disabled', '');
+    await expect(status.locator('option[value=DONE]')).not.toBeDisabled();
     await status.selectOption('DOING');
     await input(modal, 'Ghi chú').fill('Đang triển khai');
     await modal.getByRole('button', { name: 'Lưu', exact: true }).click();

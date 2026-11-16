@@ -43,6 +43,53 @@ test('review scope uses current recursive branch, department, explicit manager a
   assert.equal(scopeService.matches(blank, proposal(12, 98)), false);
 });
 
+test('review detail preserves history after clearing the level without opening actions or bypassing scope', async t => {
+  let row = { ...proposals[4], status: 'DESIGNING', review_level: null };
+  let requests = [{ id: 1, request_type: 'RE_GRADE', status: 'DONE' }];
+  let activity = [];
+  t.mock.method(pool, 'query', async (sql, params) => {
+    if (sql.includes('SELECT custom_data FROM users')) {
+      return [[{ custom_data: users.find(user => user.id === Number(params[0]))?.custom_data || {} }]];
+    }
+    if (sql.includes('SELECT id, parent_id, custom_data FROM users')) return [users];
+    if (sql.includes('FROM station_proposals')) {
+      return [row && Number(params[0]) === row.id
+        && !(sql.includes('p.review_level IS NOT NULL') && row.review_level === null) ? [row] : []];
+    }
+    if (sql.includes('FROM proposal_requests r')) return [requests];
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  t.mock.method(require('../src/services/dynamicUtils'), 'getFieldDefinitionsByEntity', async () => []);
+  t.mock.method(require('../src/services/dynamicUtils'), 'mergeData', value => value);
+  t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({ requests, activity }));
+  const user = { id: 1, role: 'SALES' };
+  for (const status of ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'CANCELLED', 'APPROVED']) {
+    row = { ...row, status };
+    const detail = await reviews.getReviewDetail(row.id, user);
+    assert.equal(detail.proposal.review_level, null);
+    assert.equal(detail.requests[0].status, 'DONE');
+    assert.ok(Object.values(detail.permissions).every(value => value === false));
+    await assert.rejects(reviews.requestRegrade({ user, id: row.id, reason: 'test', departments: ['QH'] }),
+      { statusCode: 400 });
+  }
+  requests = [];
+  activity = [{ from_status: 'GDTTKD_EVALUATING', to_status: 'DESIGNING' }];
+  const history = await reviews.getReviewDetail(row.id, user);
+  assert.equal(history.progress.activity.length, 1);
+  assert.equal(history.proposal.review_level, null);
+  row = { ...proposals[8], status: 'DESIGNING', review_level: null };
+  await assert.rejects(reviews.getReviewDetail(row.id, user), { statusCode: 403 });
+  await assert.rejects(reviews.getReviewDetail(row.id, { id: 3, role: 'CTV' }), { statusCode: 403 });
+  row = { ...proposals[4], status: 'PENDING', review_level: null };
+  activity = [];
+  await assert.rejects(reviews.getReviewDetail(row.id, user), { statusCode: 403 });
+  const adminDetail = await reviews.getReviewDetail(row.id, { id: 99, role: 'ADMIN' });
+  assert.equal(adminDetail.proposal.review_level, null);
+  assert.ok(Object.values(adminDetail.permissions).every(value => value === false));
+  row = null;
+  await assert.rejects(reviews.getReviewDetail(9999, user), { statusCode: 404 });
+});
+
 test('real SQL review lists, permissions, denied actions and notifications share organizational scope',
   { skip: process.env.RUN_SIGNATURE_SQL_TEST !== '1' }, async t => {
     const connection = await pool.getConnection();
@@ -142,6 +189,16 @@ test('real SQL review lists, permissions, denied actions and notifications share
       await connection.query('UPDATE station_proposals SET review_level = 1 WHERE id = 5');
       const cancelled = await reviews.cancelAtGdttkd({ user, id: 5, reason: 'Đúng người quản lý' });
       assert.equal(cancelled.status, 'CANCELLED');
+      await connection.query('UPDATE station_proposals SET review_level = NULL, status = ? WHERE id = 5', ['DESIGNING']);
+      await connection.query(`INSERT INTO proposal_requests (id,proposal_id,request_type,status)
+        VALUES (101,5,'RE_GRADE','DONE')`);
+      const completedDetail = await reviews.getReviewDetail(5, user);
+      assert.equal(completedDetail.proposal.review_level, null);
+      assert.equal(completedDetail.requests[0].status, 'DONE');
+      assert.ok(Object.values(completedDetail.permissions).every(value => value === false));
+      await connection.query('UPDATE station_proposals SET review_level = NULL, status = ? WHERE id = 9', ['DESIGNING']);
+      await assert.rejects(reviews.getReviewDetail(9, user), { statusCode: 403 });
+      await assert.rejects(reviews.getReviewDetail(9999, user), { statusCode: 404 });
     } finally {
       await connection.query(`USE \`${original.name}\``);
       await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);

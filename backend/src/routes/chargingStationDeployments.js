@@ -186,12 +186,16 @@ router.put('/:id/acceptance', controller.acceptance);
  * /api/admin/charging-stations/{id}/on-station:
  *   put:
  *     tags: [Charging Stations]
- *     summary: Xác nhận ON một hoặc nhiều phần trụ đã lắp xong, không cần chờ nghiệm thu
+ *     summary: Cập nhật số lượng ON một hoặc nhiều phần trụ, không cần chờ nghiệm thu
  *     description: >
  *       Chỉ Setup/Vận hành và SUPER_ADMIN. Lưu nguyên tử, chống lặp bằng request_id.
  *       Không đóng công việc nghiệm thu. Ngày ON chung giữ theo lần xác nhận đầu tiên;
  *       khi chọn nhiều phần trong lần đầu, lấy ngày của phần có ID nhỏ nhất.
- *       Thiếu hợp đồng/hạ tầng/tài chính cần accept_missing=true và reason.
+ *       on_quantity là tổng ON của phần trụ, số nguyên từ 0 đến quantity; không truyền giữ API ON toàn phần cũ.
+ *       Tăng cần lắp xong; giảm bắt buộc reason. Mỗi thay đổi cần on_date (ngày ON hoặc ngày điều chỉnh).
+ *       Ngày ON đầu tiên của phần và trạm được giữ nguyên, từng đợt ghi vào nhật ký.
+ *       Giảm về 0 mở lại task, không tự lùi trạng thái trạm/đề xuất.
+ *       Khi tăng mà thiếu hợp đồng/hạ tầng/tài chính cần accept_missing=true và reason.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -217,13 +221,14 @@ router.put('/:id/acceptance', controller.acceptance);
  *                   properties:
  *                     id: { type: integer }
  *                     expected_version: { type: integer, minimum: 0 }
+ *                     on_quantity: { type: integer, minimum: 0 }
  *                     on_date: { type: string, format: date }
  *                     note: { type: string, nullable: true, maxLength: 5000 }
  *     responses:
- *       200: { description: Các phần trụ đã ON; nghiệm thu giữ nguyên }
+ *       200: { description: Các phần trụ sau cập nhật số lượng ON; nghiệm thu giữ nguyên }
  *       400: { description: Thiếu thông tin hoặc chưa xác nhận rủi ro }
  *       403: { description: Không có quyền }
- *       409: { description: Phần trụ chưa lắp xong, đã ON hoặc dữ liệu đã thay đổi }
+ *       409: { description: Phần trụ chưa lắp xong, đang hoàn hàng hoặc dữ liệu đã thay đổi }
  */
 router.put('/:id/on-station', controller.onStation);
 router.post('/:id/deployments/:deploymentId/actions', controller.update);
