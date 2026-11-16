@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 const station = {
   id: 501, ma_tram: 'TEST-501', proposal_id: 77, status: 'INSTALLING', sub_status: 'NOT_INSTALLED',
   contract_status: 'NOT', infra_power_status: 'NOT', infra_site_status: 'NOT', payment_status: 'DOING',
@@ -58,6 +59,7 @@ for (const width of [1366, 390]) {
     await page.getByRole('menuitem', { name: 'Sửa', exact: true }).click();
     await expect(page).toHaveURL(/\/501\/edit$/);
     await expect(page.getByRole('heading', { name: 'Sửa ON trạm · TEST-501' })).toBeVisible();
+    await expect(page.getByText('Trạng thái quy trình: 3. Đang lắp đặt', { exact: true })).toBeVisible();
     await expect(input(page, 'Mã trạm trên CMS')).toBeVisible();
     await select(page, 'Trạng thái hợp đồng').selectOption('DONE');
     await page.locator('label').filter({ hasText: /^Lý do điều chỉnh/ }).locator('textarea').fill('Điều chỉnh hồ sơ');
@@ -75,10 +77,15 @@ for (const width of [1366, 390]) {
 test('overview status modal exposes all statuses and requires CMS/date for ON', async ({ page }) => {
   const { errors, mutations } = await setup(page);
   await page.goto('/admin/on-tram/thong-tin-chung');
+  await expect(page.getByText('3. Đang lắp đặt', { exact: true })).toBeVisible();
+  await expect(page.getByText('Chưa lắp đặt', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Thao tác khác TEST-501' }).click();
   await page.getByRole('menuitem', { name: 'Đổi trạng thái', exact: true }).click();
   const modal = page.locator('.modal-box').filter({ has: page.getByRole('heading', { name: 'Đổi trạng thái ON trạm' }) });
-  expect(await modal.locator('select option').count()).toBe(8);
+  await expect(modal.locator('select option')).toHaveText([
+    'Chọn trạng thái', '1. Đang hoàn thiện thủ tục', '2. Đang giao hàng', '3. Đang lắp đặt',
+    '4. Đang nghiệm thu', '5. Đang cấu hình', '6. Đang hoạt động', 'Đã hủy'
+  ]);
   await modal.locator('select').selectOption('OPERATING');
   await modal.locator('textarea').fill('Hoàn tất bằng ghi đè');
   await expect(modal.getByRole('button', { name: 'Xác nhận', exact: true })).toBeDisabled();
@@ -89,6 +96,27 @@ test('overview status modal exposes all statuses and requires CMS/date for ON', 
   expect(mutations.find(item => item.path.endsWith('/status')).data).toMatchObject({
     to_status: 'OPERATING', expected_token: 'fixture-token', cms_station_code: 'CMS-TEST', on_date: '2026-11-13'
   });
+  expect(errors).toEqual([]);
+});
+
+test('detail history numbers workflow codes without numbering substatuses or rewriting saved text', async ({ page }) => {
+  const { errors } = await setup(page);
+  await page.route('**/api/admin/charging-stations/501', route => route.fulfill({ json: {
+    success: true, data: { ...station, timeline: [
+      { id: 1, action: 'status_changed', from_status: 'INSTALLING', to_status: 'CONFIGURING',
+        changed_fields: { status: { old: 'INSTALLING', new: 'CONFIGURING' },
+          sub_status: { old: 'NOT_CONFIGURED', new: 'CONFIGURING' } } },
+      { id: 2, action: 'status_changed', from_status: 'ONBOARDING', to_status: 'DELIVERING' },
+      { id: 3, action: 'updated', changed_fields: { note: { label: 'Ghi chú', old: null, new: 'Đang lắp đặt' } } }
+    ] }
+  } }));
+  await page.goto('/admin/on-tram/thong-tin-chung/501');
+  await expect(page.getByText('3. Đang lắp đặt', { exact: true })).toBeVisible();
+  await expect(page.getByText('Chưa lắp đặt', { exact: true })).toBeVisible();
+  await expect(page.getByText('Trạng thái quy trình: 3. Đang lắp đặt → 5. Đang cấu hình', { exact: false })).toBeVisible();
+  await expect(page.getByText('Trạng thái chi tiết: Chưa cấu hình → Đang cấu hình', { exact: false })).toBeVisible();
+  await expect(page.getByText('Trạng thái quy trình: 1. Đang hoàn thiện thủ tục → 2. Đang giao hàng', { exact: true })).toBeVisible();
+  await expect(page.getByText('Ghi chú: — → Đang lắp đặt', { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

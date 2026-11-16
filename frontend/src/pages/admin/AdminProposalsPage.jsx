@@ -38,6 +38,7 @@ import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
+import { CS_STATUS_LABELS } from '../../utils/chargingStation';
 import { getProposalStatusFilterOptions } from '../../utils/proposalStatus';
 import { ProposalStatusContext } from '../../contexts/ProposalStatusContext';
 import { canOwnerEditProposal } from '../../utils/proposalOwnerLock';
@@ -1554,7 +1555,7 @@ const AdminProposalsPage = () => {
             </div>
             <div className="alert alert-warning py-2 px-3 text-sm">
               <AlertTriangle size={16} />
-              <span>Thao tác SUPER_ADMIN bỏ qua các bước của luồng đề xuất, chuyển đề xuất sang <b>Đang triển khai</b> và tạo bản ghi ON trạm ở bước <b>Đang hoàn thiện thủ tục</b>.</span>
+              <span>Thao tác SUPER_ADMIN bỏ qua các bước của luồng đề xuất, chuyển đề xuất sang <b>Đang triển khai</b> và tạo bản ghi ON trạm ở bước <b>{CS_STATUS_LABELS.ONBOARDING}</b>.</span>
             </div>
             <div className="mt-3 rounded-lg bg-base-200 p-3 text-sm">
               <div><b>Mã đề xuất:</b> {directOnStationRow?.ma_de_xuat || `#${directOnStationModal.id}`}</div>

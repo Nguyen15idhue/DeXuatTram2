@@ -156,25 +156,29 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
   const defaultReturnTab = stage === 'thong-tin-chung' ? 'all' : 'need';
   const returnTo = location.state?.returnTo || `/admin/on-tram/${stage}?tab=${defaultReturnTab}`;
   const historySummary = (entry) => {
-    const labels = { deployment_id: 'Phần trụ', quantity: 'Số lượng', sub_status: 'Trạng thái chi tiết',
+    const labels = { status: 'Trạng thái quy trình', deployment_id: 'Phần trụ', quantity: 'Số lượng', sub_status: 'Trạng thái chi tiết',
       acceptance_file_id: 'Biên bản', on_date: 'Ngày ON', on_note: 'Ghi chú ON', cms_station_code: 'Mã CMS',
       acceptance_status: 'Trạng thái nghiệm thu', reports: 'Hồ sơ nghiệm thu', stage: 'Tiến độ phần trụ',
       accept_missing: 'Chấp nhận thiếu điều kiện', missing_prerequisites: 'Hạng mục còn thiếu',
       export_id: 'Phiếu xuất', item_id: 'Dòng trụ' };
-    const valueOf = (value) => {
+    const valueOf = (value, key) => {
       if (value === null || value === undefined || value === '') return '—';
       if (Array.isArray(value)) return value.join(', ') || '—';
       if (typeof value === 'boolean') return value ? 'Có' : 'Không';
       if (typeof value === 'object') return JSON.stringify(value);
+      if (key === 'status') return CS_STATUS_LABELS[value] || String(value);
       return CS_SUB_STATUS_LABELS[value] || String(value);
     };
     const changes = Object.entries(entry.changed_fields || {})
       .filter(([, change]) => change !== null && change !== undefined)
       .map(([key, change]) => {
         const label = change?.label || labels[key] || key;
-        if (typeof change !== 'object' || Array.isArray(change)) return `${label}: ${valueOf(change)}`;
-        return `${label}: ${valueOf(change.old)} → ${valueOf(change.new)}`;
+        if (typeof change !== 'object' || Array.isArray(change)) return `${label}: ${valueOf(change, key)}`;
+        return `${label}: ${valueOf(change.old, key)} → ${valueOf(change.new, key)}`;
       });
+    if (!entry.changed_fields?.status && (entry.from_status || entry.to_status)) {
+      changes.unshift(`Trạng thái quy trình: ${valueOf(entry.from_status, 'status')} → ${valueOf(entry.to_status, 'status')}`);
+    }
     return changes.length ? changes.join(' · ') : '';
   };
 

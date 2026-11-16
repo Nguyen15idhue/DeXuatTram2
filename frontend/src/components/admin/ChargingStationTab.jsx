@@ -389,7 +389,7 @@ const ChargingStationTab = ({ stage }) => {
               <option value="">Chọn trạng thái</option>
               {Object.entries(CS_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}
                 disabled={value === changeStation.row.status && !(value === 'OPERATING' && !changeStation.row.workflow_override?.completed)}>
-                {value === 'OPERATING' ? 'Đã ON trạm' : label}</option>)}
+                {label}</option>)}
             </select>
           </label>
           {changeStation.to_status === 'OPERATING' && <>
