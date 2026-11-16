@@ -93,6 +93,13 @@ router.get('/', requireAuth, requireUserManager, proposalReviewController.list);
  *   get:
  *     tags: [Proposal Reviews]
  *     summary: Chi tiết đề xuất, kết quả xem xét và các yêu cầu chấm lại
+ *     description: >
+ *       Chi tiết không phụ thuộc review_level hiện tại. Khi mức xem xét đã về null,
+ *       người dùng đúng vai trò/phạm vi vẫn xem được đề xuất từng qua khâu xem xét,
+ *       có yêu cầu RE_GRADE/TGD_REVIEW hoặc nhật ký chuyển trạng thái xem xét.
+ *       ADMIN/SUPER_ADMIN được đọc trong phạm vi quản trị.
+ *       Quyền thao tác vẫn phụ thuộc trạng thái và mức xem xét hiện tại;
+ *       404 chỉ khi đề xuất không tồn tại, ngoài quyền/phạm vi trả 403.
  *     security:
  *       - bearerAuth: []
  *     parameters:

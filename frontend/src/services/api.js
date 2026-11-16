@@ -725,6 +725,9 @@ export const shippingCarrierService = {
 };
 
 export const chargingStationService = {
+  getActivity(id, step, page, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/activity?${new URLSearchParams({ step, page, limit: 20 })}`, token);
+  },
   updateAcceptance(id, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/acceptance`, data, token));
   },

@@ -571,7 +571,7 @@ const listChargingStations = async ({
         ...record,
         ...(contractFiles ? { contract_files: contractFiles } : {}),
         edit_token: user?.role === 'SUPER_ADMIN' ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined,
-        permissions,
+        permissions: await stationAccess.recordPermissions(row.id, user, permissions),
         fulfillment,
         deployments,
         installation_status: require('./chargingStationDeploymentService').installationSummary(record, fulfillment.items, deployments, fulfillment.needs_review),
@@ -662,6 +662,56 @@ const getContractFiles = async (id) => {
   return contractFiles;
 };
 
+const getChargingStationActivity = async (id, user, { step, page = 1, limit = 20 } = {}) => {
+  const fieldsByStep = {
+    'khoi-tao-hop-dong': ['contract_status', 'contract_note', 'contract_file_id'],
+    'xay-dung-ha-tang': ['infra_power_status', 'infra_site_status'],
+    'giao-tru': ['transport_status'],
+    'lap-tru': ['installation_status'],
+    'nghiem-thu': ['acceptance_status', 'reports'],
+    'on-tram': ['on_quantity', 'on_date', 'on_note']
+  };
+  const actionsByStep = {
+    'khoi-tao-hop-dong': ['contract_status_changed', 'contract_note_updated', 'contract_completed'],
+    'xay-dung-ha-tang': ['infrastructure_status_changed'],
+    'giao-tru': ['shipment_created', 'shipment_status_changed', 'shipment_received', 'shipment_return_requested',
+      'shipment_return_confirmed', 'shipment_failed', 'early_delivery_requested'],
+    'lap-tru': ['installation_updated', 'installation_started', 'installation_completed',
+      'portion_start_installation', 'portion_complete_installation'],
+    'nghiem-thu': ['acceptance_passed', 'acceptance_failed', 'acceptance_updated', 'acceptance_file_uploaded',
+      'portion_acceptance_passed', 'portion_acceptance_failed', 'portion_acceptance_reset'],
+    'on-tram': ['portion_complete_configuration', 'configuration_completed', 'manual_marked_active']
+  };
+  if (typeof step !== 'string' || !Object.hasOwn(fieldsByStep, step)) throw err('Bước nhật ký ON trạm không hợp lệ', 400);
+  const safePage = Number(page);
+  const safeLimit = Number(limit);
+  if (!Number.isSafeInteger(safePage) || safePage < 1 || !Number.isSafeInteger(safeLimit) || safeLimit < 1 || safeLimit > 50
+    || !Number.isSafeInteger((safePage - 1) * safeLimit)) {
+    throw err('Phân trang nhật ký không hợp lệ', 400);
+  }
+  await assertCanViewChargingStation(id, user);
+  const paths = fieldsByStep[step].map(field => `'$.${field}'`).join(',');
+  const where = `l.charging_station_id=? AND (l.action IN (?)
+    OR JSON_CONTAINS_PATH(l.changed_fields,'one',${paths}))`;
+  const params = [Number(id), actionsByStep[step]];
+  const [[count]] = await pool.query(`SELECT COUNT(*) AS total FROM charging_station_activity_logs l WHERE ${where}`, params);
+  const [rows] = await pool.query(`SELECT l.*,u.full_name AS actor_name,
+    d.export_item_id,i.export_id,cp.name AS pole_name,s.name AS supplier_name,
+    (SELECT GROUP_CONCAT(CONCAT(pole.name,' · ',item.quantity,' trụ') ORDER BY item.id SEPARATOR ' + ')
+      FROM warehouse_export_items item JOIN charging_poles pole ON pole.id=item.pole_id
+      WHERE item.export_id=CAST(JSON_UNQUOTE(JSON_EXTRACT(l.changed_fields,'$.export_id')) AS UNSIGNED)) AS shipment_scale
+    FROM charging_station_activity_logs l LEFT JOIN users u ON u.id=l.actor_id
+    LEFT JOIN charging_station_deployments d ON d.id=CAST(JSON_UNQUOTE(JSON_EXTRACT(l.changed_fields,'$.deployment_id')) AS UNSIGNED)
+      AND d.charging_station_id=l.charging_station_id
+    LEFT JOIN warehouse_export_items i ON i.id=d.export_item_id
+    LEFT JOIN charging_poles cp ON cp.id=i.pole_id LEFT JOIN suppliers s ON s.id=i.supplier_id
+    WHERE ${where} ORDER BY l.created_at DESC,l.id DESC LIMIT ? OFFSET ?`,
+  [...params, safeLimit, (safePage - 1) * safeLimit]);
+  return { items: rows.map(row => ({ ...row, changed_fields: parseJson(row.changed_fields) })),
+    pagination: { page: safePage, limit: safeLimit, total: Number(count.total),
+      totalPages: Math.ceil(Number(count.total) / safeLimit) } };
+};
+
 const getChargingStationDetail = async (id, user = null) => {
   await assertCanViewChargingStation(id, user);
   const record = await requireRecord(id);
@@ -708,7 +758,7 @@ const getChargingStationDetail = async (id, user = null) => {
     ...record,
     contract_files: contractFiles,
     proposal,
-    permissions: user ? await stationAccess.permissions(user) : {},
+    permissions: user ? await stationAccess.recordPermissions(record.id, user) : {},
     fulfillment: await require('./chargingStationShippingService').getSummary(record.id, pool, { allowReview: true }),
     deployments: await require('./chargingStationDeploymentService').getDeployments(record.id),
     images,
@@ -1300,7 +1350,7 @@ const completeContract = async (id, body, user, ctx = {}) => {
 };
 
 const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
-  await assertBackOfficeManager(user);
+  await stationAccess.assertInfrastructure(id, user);
   const field = INFRA_FIELD_BY_TYPE[type];
   if (!field) throw err('Loại hạ tầng không hợp lệ', 400);
   const isStatusUpdate = action !== null && typeof action === 'object';
@@ -1359,6 +1409,7 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'infrastructure_status_changed',
+      reason: note || null,
       changedFields: {
         [field]: { label: FIELD_LABELS[field], old: current[field] || 'NOT', new: next },
         [dateField]: { label: FIELD_LABELS[dateField], old: normalizeDate(current[dateField]), new: nextDate },
@@ -2273,6 +2324,7 @@ exports.SUB_STATUS_LABELS = SUB_STATUS_LABELS;
 exports.listChargingStations = listChargingStations;
 exports.getChargingStationTaskCounts = getChargingStationTaskCounts;
 exports.getChargingStationDetail = getChargingStationDetail;
+exports.getChargingStationActivity = getChargingStationActivity;
 exports.cancelOnStation = cancelOnStation;
 exports.restoreOnStation = restoreOnStation;
 exports.canViewChargingStation = canViewChargingStation;

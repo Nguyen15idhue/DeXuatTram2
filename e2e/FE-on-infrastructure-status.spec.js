@@ -5,6 +5,9 @@ for (const [role, department, allowed] of [
   ['SUPER_ADMIN', 'Back Office', true],
   ['SALES', 'Back Office', true],
   ['ADMIN', 'Back Office', true],
+  ['SALES', 'Phòng Setup và Vận hành', true],
+  ['CTV', 'Người phụ trách', true],
+  ['NPP', 'Quản lý nhánh', true],
   ['ADMIN', 'Phòng khác', false]
 ]) {
   test(`${role} ${department} infrastructure cells, modal and transition permissions`, async ({ page }) => {
@@ -12,12 +15,18 @@ for (const [role, department, allowed] of [
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     const station = { id: 501, ma_tram: 'ON-501', proposal_id: 77, status: 'DELIVERING',
-      infra_power_status: 'NOT', infra_site_status: 'DONE', ngay_du_kien_on: '2026-12-01' };
+      infra_power_status: 'NOT', infra_site_status: 'DONE', ngay_du_kien_on: '2026-12-01',
+      permissions: { infrastructure: allowed, infrastructure_task: ['CTV', 'NPP'].includes(role) } };
     await page.route('**/api/**', async route => {
       const { pathname } = new URL(route.request().url());
       let data = {};
       if (pathname.endsWith('/auth/me')) data = { user: { id: 1, role, custom_data: { department } } };
       else if (pathname.endsWith('/charging-stations')) data = [station];
+      else if (pathname.endsWith('/activity')) data = [{
+        id: 1, action: 'infrastructure_status_changed', actor_name: 'Quản lý hạ tầng',
+        created_at: '2026-11-16T08:00:00+07:00', reject_reason: 'Lịch sử toàn bước',
+        changed_fields: { infra_power_status: { old: 'NOT', new: 'DOING' } }
+      }];
       else if (/\/infrastructure\/(power|site)\/status$/.test(pathname)) {
         updates.push({ pathname, body: route.request().postDataJSON() });
         const type = pathname.includes('/power/') ? 'power' : 'site';
@@ -43,6 +52,9 @@ for (const [role, department, allowed] of [
     ]) {
       await page.getByRole('button', { name: new RegExp(`^${title}:`) }).click();
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Lịch sử thay đổi trạng thái' })).toBeVisible();
+      await expect(page.getByRole('cell', { name: 'Quản lý hạ tầng', exact: true })).toBeVisible();
+      await expect(page.getByRole('cell', { name: 'Lịch sử toàn bước', exact: true })).toBeVisible();
       const select = page.getByLabel(label, { exact: true });
       for (const value of ['NOT', 'DOING', 'DONE']) {
         await expect(select.locator(`option[value="${value}"]`)).toHaveJSProperty('disabled', false);

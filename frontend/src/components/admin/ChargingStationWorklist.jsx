@@ -7,6 +7,7 @@ import { Badge, Button, Dialog, FilterBar, Input, Pagination } from "../ui";
 import ChargingStationTable from "./ChargingStationTable";
 import ChargingStationFulfillment from "./ChargingStationFulfillment";
 import ChargingStationGroupedProgress from "./ChargingStationGroupedProgress";
+import ChargingStationOnModal from "./ChargingStationOnModal";
 import { formatProposalScale } from "../../utils/proposalGrading";
 import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRATION_LABELS } from "../../utils/chargingFulfillment";
 import {
@@ -202,6 +203,9 @@ const ChargingStationWorklist = ({ stage }) => {
               width: 230,
               render: (_, row) => {
                 const status = stage === "nghiem-thu" ? acceptanceSummary(row) : onStationStatus(row);
+                if (stage === "on-tram") return <button type="button"
+                  className={`badge cursor-pointer gap-1 ${status === "DONE" ? "badge-success" : status === "DOING" ? "badge-info" : "badge-ghost"}`}
+                  onClick={() => setSelected(row)}>{INTEGRATION_LABELS[status]} <span aria-hidden>▾</span></button>;
                 return <Badge variant={status === "DONE" ? "success" : status === "DOING" ? "info" : "ghost"}>
                   {(stage === "nghiem-thu" ? ACCEPTANCE_SUMMARY_LABELS : INTEGRATION_LABELS)[status]}
                 </Badge>;
@@ -228,7 +232,7 @@ const ChargingStationWorklist = ({ stage }) => {
             : []),
         ]}
         actions={
-          stage === "lap-tru"
+          ["lap-tru", "on-tram"].includes(stage)
             ? undefined
             : (row) => (
                 <div className="flex items-center gap-1">
@@ -258,7 +262,9 @@ const ChargingStationWorklist = ({ stage }) => {
           onClose={() => setSelected(null)}
           onChanged={() => load(page)}
         />
-      ) : selected && ["nghiem-thu", "on-tram"].includes(stage) ? (
+      ) : stage === "on-tram" && selected ? (
+        <ChargingStationOnModal station={selected} onClose={() => setSelected(null)} onChanged={() => load(page)} />
+      ) : selected && stage === "nghiem-thu" ? (
         <ChargingStationGroupedProgress station={selected} stage={stage}
           onClose={() => setSelected(null)} onChanged={() => load(page)} />
       ) : (

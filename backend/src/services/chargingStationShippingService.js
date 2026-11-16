@@ -860,9 +860,9 @@ const getSummary = async (stationId, executor = pool, { initialize = true, allow
           GROUP BY commitment_id
        ) shipped ON shipped.commitment_id = c.id
        LEFT JOIN (
-         SELECT wei.commitment_id, SUM(d.quantity) AS quantity
+         SELECT wei.commitment_id, SUM(d.on_quantity) AS quantity
            FROM warehouse_export_items wei
-           JOIN charging_station_deployments d ON d.export_item_id = wei.id AND d.stage = 'OPERATING' AND d.returned_at IS NULL
+           JOIN charging_station_deployments d ON d.export_item_id = wei.id AND d.returned_at IS NULL
           WHERE wei.commitment_id IS NOT NULL
           GROUP BY wei.commitment_id
        ) operating ON operating.commitment_id = c.id

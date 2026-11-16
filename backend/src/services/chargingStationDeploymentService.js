@@ -45,13 +45,17 @@ const notify = async (connection, station, ctx, title, details, finance = false)
 
 const getDeployments = async (stationId, executor = pool) => {
   const [rows] = await executor.query(
-    `SELECT d.id, d.charging_station_id, d.export_item_id, d.quantity, d.stage, d.sub_status,
+    `SELECT d.id, d.charging_station_id, d.export_item_id, d.quantity, d.on_quantity, d.stage, d.sub_status,
             d.installation_status, d.installation_note, d.installation_version,
             d.acceptance_status, d.acceptance_legacy, d.acceptance_user_id, d.workflow_version, d.on_note,
             we.transport_status AS shipment_status,
             i.export_id, i.commitment_id, i.pole_id, i.supplier_id, cp.name AS pole_name, s.name AS supplier_name,
             d.acceptance_file_id, DATE_FORMAT(d.acceptance_date, '%Y-%m-%d') AS acceptance_date,
-            DATE_FORMAT(d.on_date, '%Y-%m-%d') AS on_date, d.created_at, d.updated_at,
+            DATE_FORMAT(d.on_date, '%Y-%m-%d') AS on_date,
+            (SELECT MIN(l.created_at) FROM charging_station_activity_logs l
+              WHERE l.charging_station_id=d.charging_station_id AND l.action='portion_complete_configuration'
+                AND CAST(JSON_UNQUOTE(JSON_EXTRACT(l.changed_fields,'$.deployment_id')) AS UNSIGNED)=d.id) AS on_first_at,
+            d.created_at, d.updated_at,
             f.original_name AS acceptance_file_name, f.mime_type AS acceptance_file_mime
        FROM charging_station_deployments d
        JOIN warehouse_export_items i ON i.id=d.export_item_id
@@ -130,7 +134,9 @@ const updatePortion = async (stationId, deploymentId, body = {}, user, ctx = {})
   }
   if (body?.action === 'complete-configuration') {
     return require('./chargingStationCompletionService').updateOn(stationId, {
-      ...body, items: [{ id: deploymentId, expected_version: body.expected_version, on_date: body.on_date, note: body.note }]
+      ...body, items: [{ id: deploymentId, expected_version: body.expected_version,
+        ...(body.on_quantity !== undefined ? { on_quantity: body.on_quantity } : {}),
+        on_date: body.on_date, note: body.note }]
     }, user, ctx);
   }
   const access = require('./chargingStationAccessService');

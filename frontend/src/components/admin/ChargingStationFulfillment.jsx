@@ -11,6 +11,7 @@ import ChargingStationOnModal from "./ChargingStationOnModal";
 import ChargingStationAcceptanceFields from "./ChargingStationAcceptanceFields";
 import ChargingStationTable from "./ChargingStationTable";
 import ChargingStationShipmentHistory from "./ChargingStationShipmentHistory";
+import ChargingStationStepHistory from "./ChargingStationStepHistory";
 import FileViewer from "../dynamic/FileViewer";
 import { formatCsDate } from "../../utils/chargingStation";
 import {
@@ -21,6 +22,7 @@ import {
   requestKeyForIntent,
   ACCEPTANCE_LABELS,
   portionUnavailable,
+  onDeploymentQuantity,
 } from "../../utils/chargingFulfillment";
 
 const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
@@ -405,9 +407,10 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
                     "Chưa nghiệm thu"}
                 </Badge>
                 <Badge
-                  variant={portion.stage === "OPERATING" ? "success" : "ghost"}
+                  variant={onDeploymentQuantity(portion) === Number(portion.quantity) ? "success"
+                    : onDeploymentQuantity(portion) > 0 ? "info" : "ghost"}
                 >
-                  {portion.stage === "OPERATING" ? "Đã ON" : "Chưa ON"}
+                  ON: {onDeploymentQuantity(portion)} / {portion.quantity}
                 </Badge>
                 <span>Ngày ON: {formatCsDate(portion.on_date)}</span>
                 {portion.on_note && (
@@ -485,7 +488,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         isOpen={!!intent}
         title={title || ""}
         onClose={() => !busy && setIntent(null)}
-        size="lg"
+        size="2xl"
         portal
       >
         {intent && (
@@ -640,6 +643,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
             </div>
           </form>
         )}
+        {intent && <ChargingStationStepHistory stationId={record.id} step="giao-tru" refreshKey={record.updated_at} />}
       </Dialog>
       {viewingFile && (
         <FileViewer

@@ -28,6 +28,7 @@ test('finance requires evidence and deposit before payment/refund; deposit saves
   });
   await page.addInitScript(() => localStorage.setItem('token', 'finance-test'));
   await page.goto('/admin/tai-chinh?tab=all');
+  await expect(page.getByText('6. Đang hoạt động', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Thanh toán', exact: true }).click();
   await page.getByRole('button', { name: 'Ghi nhận hóa đơn', exact: true }).click();
   const select = page.getByLabel('Loại hóa đơn', { exact: true });

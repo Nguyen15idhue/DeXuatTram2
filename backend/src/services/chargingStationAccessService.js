@@ -23,6 +23,39 @@ const permissions = async (user) => {
   };
 };
 
+const buildInfrastructureOwnerScope = async (user) => {
+  if (!user?.id) return { sql: '1 = 0', params: [] };
+  if (['SUPER_ADMIN', 'ADMIN', 'SALES', 'NPP'].includes(user.role)) {
+    return proposalAccess.buildOwnerScopeSql(user, 'p', { includeTgdGlobal: false });
+  }
+  return {
+    sql: `(p.user_id = ?
+      OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data,'$.nguoi_phu_trach.id')) AS UNSIGNED) = ?
+      OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data,'$.sales_quan_ly.id')) AS UNSIGNED) = ?)`,
+    params: [Number(user.id), Number(user.id), Number(user.id)]
+  };
+};
+
+const recordPermissions = async (id, user, basePermissions) => {
+  const base = basePermissions || await permissions(user);
+  if (user?.role === 'SUPER_ADMIN') return { ...base, infrastructure: true, infrastructure_task: true };
+  const scope = await buildInfrastructureOwnerScope(user);
+  const [rows] = await pool.query(`SELECT (${scope.sql}) AS owner_task
+    FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=?`,
+  [...scope.params, Number(id)]);
+  const ownerTask = Boolean(Number(rows[0]?.owner_task));
+  return { ...base, infrastructure: base.back_office || base.setup || ownerTask,
+    infrastructure_task: ownerTask };
+};
+
+const assertInfrastructure = async (id, user) => {
+  const base = await permissions(user);
+  if (base.back_office || base.setup) return;
+  if (!(await recordPermissions(id, user, base)).infrastructure) {
+    throw error('Chỉ người đề xuất, phụ trách, quản lý hợp lệ, Back Office hoặc Setup/Vận hành được cập nhật hạ tầng');
+  }
+};
+
 const buildViewScope = async (user) => {
   if (!user?.id) return { sql: '1 = 0', params: [] };
   const scope = await reports.resolveScope(user);
@@ -40,8 +73,10 @@ const buildViewScope = async (user) => {
   if (['SALES', 'NPP'].includes(user.role)) {
     const ids = await require('./adminUserService').getBranchIds(Number(user.id));
     if (ids.length) {
-      conditions.push('p.user_id IN (?)');
-      params.push(ids.map(Number));
+      conditions.push(`(p.user_id IN (?)
+        OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data,'$.nguoi_phu_trach.id')) AS UNSIGNED) IN (?)
+        OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data,'$.sales_quan_ly.id')) AS UNSIGNED) IN (?))`);
+      params.push(ids.map(Number), ids.map(Number), ids.map(Number));
     }
   }
   if (departmentScope && scope.roleKey === 'GDTTKD') {
@@ -83,6 +118,7 @@ const assertOwner = async (user, ownerId) => {
 
 module.exports = {
   permissions, buildViewScope, assertView, assertOwner, assertFinanceViewer, isSetup,
+  buildInfrastructureOwnerScope, recordPermissions, assertInfrastructure,
   assertBackOffice: requirePermission('back_office', 'Chỉ Back Office hoặc SUPER_ADMIN được thao tác'),
   assertSetup: requirePermission('setup', 'Chỉ Phòng Setup và Vận hành hoặc SUPER_ADMIN được thao tác'),
   assertFinance: requirePermission('finance', 'Chỉ Phòng Tài chính, Back Office hoặc SUPER_ADMIN được thao tác')

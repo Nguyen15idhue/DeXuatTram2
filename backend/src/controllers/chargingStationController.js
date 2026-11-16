@@ -43,6 +43,15 @@ exports.detail = async (req, res) => {
   }
 };
 
+exports.activity = async (req, res) => {
+  try {
+    const result = await chargingStationService.getChargingStationActivity(req.params.id, req.user, req.query);
+    res.json({ success: true, data: result.items, pagination: result.pagination });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.deletePreview = async (req, res) => {
   try {
     const data = await chargingStationDeletionService.getDeletePreview(req.params.id);

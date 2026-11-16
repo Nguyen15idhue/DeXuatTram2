@@ -8,6 +8,7 @@ test.after(async () => pool.end());
 
 test('ADMIN can perform only the workflow steps assigned to their department', async (t) => {
   let department;
+  t.mock.method(access, 'buildInfrastructureOwnerScope', async () => ({ sql: 'p.user_id=?', params: [1] }));
   t.mock.method(pool, 'query', async () => [[{ custom_data: { department } }]]);
   for (const [name, backOffice, setup] of [
     ['Back Office', true, false],
@@ -21,9 +22,8 @@ test('ADMIN can perform only the workflow steps assigned to their department', a
       back_office: backOffice, setup, finance: false, request_early: false
     });
     const { expressions } = await work.actionable(user);
-    for (const key of ['contract', 'infrastructure']) {
-      assert.equal(expressions[key] !== '0', backOffice, `${name}: ${key}`);
-    }
+    assert.equal(expressions.contract !== '0', backOffice, `${name}: contract`);
+    assert.match(expressions.infrastructure, /p.user_id=\?/, `${name}: infrastructure follows owner, not department`);
     for (const key of ['installation', 'acceptance', 'on_station']) {
       assert.equal(expressions[key] !== '0', setup, `${name}: ${key}`);
     }
@@ -66,7 +66,7 @@ test('receipt, installation, acceptance and operation filter separate progress',
   assert.match(work.stageFilters['giao-tru'].completed, /received_quantity/);
   assert.match(work.stageFilters['lap-tru'].need, /installation_status='DONE'/);
   assert.match(work.stageFilters['nghiem-thu'].need, /acceptance_status<>'PASSED'/);
-  assert.match(work.stageFilters['on-tram'].need, /stage<>'OPERATING'/);
+  assert.match(work.stageFilters['on-tram'].need, /on_quantity<d.quantity/);
   for (const stage of ['lap-tru', 'nghiem-thu', 'on-tram']) {
     assert.match(work.stageFilters[stage].need, /returned_at IS NULL/);
   }
@@ -76,7 +76,7 @@ test('receipt, installation, acceptance and operation filter separate progress',
 test('overview completion depends on all poles operating, not financial or contract paperwork', async () => {
   const completed = (await work.getFilter('thong-tin-chung', 'completed')).sql;
   assert.match(completed, /charging_station_commitments/);
-  assert.match(completed, /stage='OPERATING'/);
+  assert.match(completed, /SUM\(d.on_quantity\)/);
   assert.doesNotMatch(completed, /contract_status|infra_site_status|REFUND_PENDING|payment_status/);
   const pending = await work.getFilter('thong-tin-chung', 'need');
   assert.match(pending.sql, /NOT /);

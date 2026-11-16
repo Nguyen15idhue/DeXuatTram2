@@ -17,12 +17,12 @@ export const CS_STATUS_ORDER = [
 ];
 
 export const CS_STATUS_LABELS = {
-  ONBOARDING: 'Đang hoàn thiện thủ tục',
-  DELIVERING: 'Đang giao hàng',
-  INSTALLING: 'Đang lắp đặt',
-  ACCEPTANCE: 'Đang nghiệm thu',
-  CONFIGURING: 'Đang cấu hình',
-  OPERATING: 'Đang hoạt động',
+  ONBOARDING: '1. Đang hoàn thiện thủ tục',
+  DELIVERING: '2. Đang giao hàng',
+  INSTALLING: '3. Đang lắp đặt',
+  ACCEPTANCE: '4. Đang nghiệm thu',
+  CONFIGURING: '5. Đang cấu hình',
+  OPERATING: '6. Đang hoạt động',
   CANCELLED: 'Đã hủy'
 };
 

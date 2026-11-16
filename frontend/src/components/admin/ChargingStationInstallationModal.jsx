@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import { Button, Dialog, Input } from '../ui';
 import { portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
+import ChargingStationStepHistory from './ChargingStationStepHistory';
 
 export const INSTALLATION_LABELS = { NOT: 'Chưa lắp trụ', DOING: 'Đang lắp trụ', DONE: 'Đã lắp xong' };
 const RANKS = ['NOT', 'DOING', 'DONE'];
@@ -49,7 +50,7 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
     } catch (failure) { setError(failure.message); }
     finally { setBusy(false); saving.current = false; }
   };
-  return <Dialog isOpen onClose={() => !busy && onClose()} title={`Lắp trụ · ${station.ma_tram || station.id}`} size="lg" portal>
+  return <Dialog isOpen onClose={() => !busy && onClose()} title={`Lắp trụ · ${station.ma_tram || station.id}`} size="2xl" portal>
     <div className="space-y-4">
       {loading && <span className="loading loading-spinner" />}
       {error && <div role="alert" className="alert alert-error">{error}</div>}
@@ -72,6 +73,7 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
         <Button variant="ghost" disabled={busy} onClick={onClose}>Hủy</Button>
         {canEdit && <Button loading={busy} disabled={loading || busy || !rows.length} onClick={save}>Lưu</Button>}
       </div>
+      <ChargingStationStepHistory stationId={station.id} step="lap-tru" />
     </div>
   </Dialog>;
 };

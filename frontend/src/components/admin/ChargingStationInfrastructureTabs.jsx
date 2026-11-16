@@ -6,6 +6,7 @@ import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { canOperateStation } from '../../utils/chargingFulfillment';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
+import ChargingStationStepHistory from './ChargingStationStepHistory';
 import ChargingStationTable from './ChargingStationTable';
 import {
   CS_CONTRACT_LABELS,
@@ -135,7 +136,7 @@ const ChargingStationInfrastructureTabs = () => {
       key: item.field,
       label: item.columnLabel,
       render: (value, row) => {
-        const editable = row.status !== 'CANCELLED' && canOperateStation(user, row, 'back_office');
+        const editable = row.status !== 'CANCELLED' && canOperateStation(user, row, 'infrastructure');
         return editable ? (
           <button type="button" aria-label={`${item.columnLabel}: ${CS_FLOW_LABELS[value] || 'Chưa làm'}`}
             aria-haspopup="dialog" disabled={busyAction !== null}
@@ -269,6 +270,7 @@ const ChargingStationInfrastructureTabs = () => {
               value={note} disabled={!!busyAction} onChange={event => setNote(event.target.value)} />
           </label>
           <p className="text-xs text-base-content/60">Lùi trạng thái giữ ngày, ghi chú cũ và không tự lùi các bước khác.</p>
+          <ChargingStationStepHistory stationId={editing?.station.id} step="xay-dung-ha-tang" />
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={!!busyAction} onClick={() => setEditing(null)}>Hủy</Button>
             <Button variant="primary" loading={!!busyAction} disabled={!!busyAction} onClick={updateInfrastructure}>Xác nhận</Button>

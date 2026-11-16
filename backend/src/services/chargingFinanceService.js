@@ -138,7 +138,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
         throw err('Chỉ được hoàn cọc sau khi trạm đã ON', 409);
       }
       const [progress] = await connection.query(`SELECT c.id,c.quantity,
-        COALESCE(SUM(CASE WHEN d.stage='OPERATING' THEN d.quantity ELSE 0 END),0) AS operating
+        COALESCE(SUM(d.on_quantity),0) AS operating
         FROM charging_station_commitments c
         LEFT JOIN warehouse_export_items i ON i.commitment_id=c.id
         LEFT JOIN charging_station_deployments d ON d.export_item_id=i.id AND d.charging_station_id=c.charging_station_id AND d.returned_at IS NULL

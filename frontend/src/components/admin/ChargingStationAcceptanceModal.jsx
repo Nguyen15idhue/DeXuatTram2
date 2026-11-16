@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import { Button, Dialog } from '../ui';
 import ChargingStationAcceptanceFields, { acceptancePayload } from './ChargingStationAcceptanceFields';
+import ChargingStationStepHistory from './ChargingStationStepHistory';
 import { ACCEPTANCE_LABELS, canOperateStation, formatDeploymentScale, portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
 
 const ACTIONS = { NOT: 'acceptance-reset', FAILED: 'acceptance-failed', PASSED: 'acceptance-passed' };
@@ -69,7 +70,7 @@ const ChargingStationAcceptanceModal = ({ station, portionId, portionIds, initia
     } catch (failure) { setError(failure.message); }
     finally { saving.current = false; setBusy(false); }
   };
-  return <Dialog isOpen title="Cập nhật trạng thái" size="xl" portal onClose={() => !busy && !uploading && onClose()}>
+  return <Dialog isOpen title="Cập nhật trạng thái" size="2xl" portal onClose={() => !busy && !uploading && onClose()}>
     <form className="space-y-4" onSubmit={save}>
       {loading && <span className="loading loading-spinner" />}
       {error && <div role="alert" className="alert alert-error">{error}</div>}
@@ -106,6 +107,7 @@ const ChargingStationAcceptanceModal = ({ station, portionId, portionIds, initia
         {canEdit && <Button type="submit" disabled={busy || uploading || loading || !eligible.length} loading={busy}>Lưu</Button>}
       </div>
     </form>
+    <ChargingStationStepHistory stationId={station.id} step="nghiem-thu" />
   </Dialog>;
 };
 
