@@ -35,3 +35,39 @@ for (const configuredDate of [false, true]) {
     expect(errors).toEqual([]);
   });
 }
+
+test('exports all EV reports once regardless of search and shows API errors', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'ev-demand-fixture'));
+  let exportRequests = 0;
+  let failExport = false;
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/ev-reports/admin/export')) {
+      exportRequests++;
+      expect(url.search).toBe('');
+      expect(route.request().headers().authorization).toBe('Bearer ev-demand-fixture');
+      if (failExport) {
+        return route.fulfill({ status: 500, json: { success: false, message: 'Xuất thất bại' } });
+      }
+      return route.fulfill({
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers: { 'content-disposition': 'attachment; filename=nhu_cau.xlsx' },
+        body: 'excel fixture'
+      });
+    }
+    let data = [];
+    if (url.pathname.endsWith('/auth/me')) data = { user: { id: 1, role: 'SALES', full_name: 'Tester', custom_data: {} } };
+    else if (url.pathname.endsWith('/google-sheet/status')) data = { configured: false, lastRun: null };
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+  });
+  await page.goto('/admin/ev-reports');
+  await page.getByPlaceholder('Tìm theo tên, SĐT, địa chỉ, tỉnh...').fill('không lọc xuất');
+  const button = page.getByRole('button', { name: 'Xuất Excel' });
+  const downloadPromise = page.waitForEvent('download');
+  await button.click();
+  expect((await downloadPromise).suggestedFilename()).toBe('nhu_cau.xlsx');
+  expect(exportRequests).toBe(1);
+  failExport = true;
+  await button.click();
+  await expect(page.getByText('Xuất thất bại')).toBeVisible();
+});

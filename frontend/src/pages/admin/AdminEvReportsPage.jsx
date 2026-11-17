@@ -12,6 +12,7 @@ import useDefaultViewId from "../../hooks/useDefaultViewId";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import {
   Clock3,
+  Download,
   ExternalLink,
   MapPin,
   PlusCircle,
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 
 const AdminEvReportsPage = () => {
-  const { token, isSales } = useAuth();
+  const { token, isSales, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const evReportsViewId = useDefaultViewId("ev_charging_reports", null);
@@ -48,6 +49,7 @@ const AdminEvReportsPage = () => {
     error: "",
   });
   const [sheetSyncing, setSheetSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const loadReports = useCallback(async () => {
     try {
@@ -104,6 +106,17 @@ const AdminEvReportsPage = () => {
       await loadSheetStatus();
     } finally {
       setSheetSyncing(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await evReportService.adminExport(token);
+    } catch (err) {
+      setToast({ message: err.message || "Không thể xuất Excel", type: "error" });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -207,14 +220,21 @@ const AdminEvReportsPage = () => {
           <MapPin size={24} className="text-primary shrink-0" />
           <h1 className="text-2xl font-bold">Quản lý nhu cầu sạc xe</h1>
         </div>
-        <a
-          href="/nhu-cau-sac-xe"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-primary btn-sm gap-1 self-start sm:self-auto"
-        >
-          <PlusCircle size={16} /> Thêm nhu cầu sạc xe
-        </a>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          {["SUPER_ADMIN", "ADMIN", "SALES"].includes(user?.role) && (
+            <button type="button" className="btn btn-outline btn-sm gap-1" onClick={handleExport} disabled={exporting}>
+              <Download size={16} /> {exporting ? "Đang xuất..." : "Xuất Excel"}
+            </button>
+          )}
+          <a
+            href="/nhu-cau-sac-xe"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary btn-sm gap-1"
+          >
+            <PlusCircle size={16} /> Thêm nhu cầu sạc xe
+          </a>
+        </div>
       </div>
 
       <section className="rounded-lg border border-base-300 bg-base-100 p-4 mb-4">
