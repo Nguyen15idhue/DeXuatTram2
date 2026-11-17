@@ -10,10 +10,20 @@ const MANUAL_LOCK_NAME = 'proposal_google_sheet_daily_enqueue';
 const BATCH_SIZE = 100;
 const SHEET_WRITE_BATCH_SIZE = 100;
 const MAX_ATTEMPTS = 8;
-const EXPORT_FIELD_CACHE_KEY = 'fielddefs:export:station_proposals';
 const EXPORT_FIELD_CACHE_TTL = 120000;
 const EXPORT_EXCLUDED_FIELD_TYPES = new Set(['password', 'table']);
-const SHEET_MAX_READ_COLUMNS = 60;
+
+const POLE_CATEGORIES = [
+  ['AC7', 'AC 7 kW'], ['AC22', 'AC 22 kW'],
+  ['DC20', 'DC 20 kW'], ['DC30', 'DC 30 kW'], ['DC60', 'DC 60 kW'],
+  ['DC120', 'DC 120 kW'], ['DC240', 'DC 240 kW'], ['DC320', 'DC 320 kW'],
+  ['DC400', 'DC 400 kW'], ['DC480', 'DC 480 kW'], ['DC960', 'DC 960 kW'],
+  ['GBT60', 'GBT 60 kW']
+];
+
+const poleColumns = (group) => POLE_CATEGORIES.map(([code, header]) => ({
+  kind: 'poleCount', key: `__${group}_${code}`, header
+}));
 
 const BASE_COLUMNS = [
   { kind: 'serial', key: '__serial', header: 'STT' },
@@ -35,7 +45,9 @@ const BASE_COLUMNS = [
   { kind: 'landType', key: '__land_type', header: 'Loại đất' },
   { kind: 'area', key: '__area', header: 'Diện tích mặt bằng' },
   { kind: 'proposedScale', key: '__proposed_scale', header: 'Quy mô trụ đề xuất' },
+  ...poleColumns('proposed'),
   { kind: 'committedScale', key: '__committed_scale', header: 'Quy mô trụ chốt' },
+  ...poleColumns('committed'),
   { kind: 'totalCost', key: '__total_cost', header: 'Tổng chi phí' },
   { kind: 'committedTotal', key: '__committed_total', header: 'Tổng giá trị trụ chốt' },
   { kind: 'proposalStatus', key: '__proposal_status', header: 'Trạng thái đề xuất' },
@@ -56,42 +68,6 @@ const EXPLICIT_FIELD_KEYS = new Set([
   'chot_so_luong_tru', 'tong_chi_phi', 'tong_gia_tri_chot', 'status', 'review_level',
   'quy_hoach_score', 'phap_ly_score', 'note', 'ngay_du_kien_on', 'link_google_map', 'link_gg_map'
 ]);
-
-const LEGACY_HEADERS = [
-  'ID đề xuất',
-  'Mã đề xuất',
-  'Ngày tạo',
-  'Người đề xuất',
-  'Pháp nhân / Chủ trạm',
-  'SĐT liên hệ',
-  'Mô hình đầu tư',
-  'Địa chỉ',
-  'Phường/Xã',
-  'Tỉnh/Thành phố',
-  'Miền',
-  'Loại đất',
-  'Diện tích mặt bằng',
-  'Quy mô trụ chốt',
-  'Tổng chi phí',
-  'Tổng giá trị trụ chốt',
-  'Trạng thái đề xuất',
-  'Mức độ xem xét',
-  'Trạng thái Quy hoạch',
-  'Trạng thái Pháp lý',
-  'Ghi chú trạng thái',
-  'Ngày dự kiến ON',
-  'Ngày cập nhật',
-  'Google Maps'
-];
-
-const PREVIOUS_HEADERS = [
-  'STT', 'ID đề xuất', 'Mã đề xuất', 'Ngày tạo', 'Người đề xuất', 'GĐKV quản lý',
-  'Giám đốc TTKD', 'Pháp nhân / Chủ trạm', 'SĐT liên hệ', 'Mô hình đầu tư', 'Địa chỉ',
-  'Vĩ độ', 'Kinh độ', 'Phường/Xã', 'Tỉnh/Thành phố', 'Miền', 'Loại đất',
-  'Diện tích mặt bằng', 'Quy mô trụ đề xuất', 'Quy mô trụ chốt', 'Tổng chi phí',
-  'Tổng giá trị trụ chốt', 'Trạng thái đề xuất', 'Mức độ xem xét', 'Trạng thái Quy hoạch',
-  'Trạng thái Pháp lý', 'Ghi chú trạng thái', 'Ngày dự kiến ON', 'Ngày cập nhật', 'Google Maps'
-];
 
 const REVIEW_LEVEL_LABELS = {
   1: 'GĐTTKD xem xét',
@@ -154,7 +130,10 @@ const parseArray = (value) => {
   if (typeof value !== 'string' || !value) return [];
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.rows)) return parsed.rows;
+    if (parsed && Array.isArray(parsed.data)) return parsed.data;
+    return [];
   } catch {
     return [];
   }
@@ -248,6 +227,7 @@ const formatDate = (value) => {
 };
 
 const formatMoney = (value) => {
+  if (value === null || value === undefined || String(value).trim() === '') return '';
   const amount = typeof value === 'number'
     ? value
     : Number(String(value ?? '').replace(/[^\d.-]/g, ''));
@@ -256,14 +236,15 @@ const formatMoney = (value) => {
 
 const formatPoleScale = (value, definitions) => parseArray(value)
   .map((row) => {
-    const model = scalarValue(row.mo_hinh);
-    const quantity = Number(row.so_luong) || 0;
-    const pole = scalarValue(row.loai_tru);
-    if (!pole || quantity <= 0) return '';
+    const model = scalarValue(row?.mo_hinh);
+    const quantity = Number(row?.so_luong);
+    const pole = scalarValue(row?.loai_tru || row?.ten_loai_tru);
+    if (!pole) return '';
     const modelLabel = model
       ? optionLabel(definitions, 'mo_hinh_dau_tu', model, ({ NQ: 'Nhượng quyền', TDT: 'Tự đầu tư', LK: 'Liên kết', NQ_LK: 'Nhượng quyền + Liên kết' })[model] || model)
       : '';
-    return `${modelLabel ? `${modelLabel}: ` : ''}${quantity} × ${pole}`;
+    const quantityLabel = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : '?';
+    return `${modelLabel ? `${modelLabel}: ` : ''}${quantityLabel} × ${pole}`;
   })
   .filter(Boolean)
   .join('; ');
@@ -281,29 +262,80 @@ const getProposalModelCode = (value) => {
   return '';
 };
 
-const formatProposedScale = (custom, definitions) => {
+const parsePoleRows = (value, proposalId, field) => {
+  if (value === null || value === undefined || value === '') return [];
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      console.warn(`[ProposalSheetSync] Đề xuất ${proposalId}: dữ liệu bảng ${field} không hợp lệ`);
+      return [];
+    }
+  }
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && Array.isArray(parsed.rows)) return parsed.rows;
+  if (parsed && Array.isArray(parsed.data)) return parsed.data;
+  console.warn(`[ProposalSheetSync] Đề xuất ${proposalId}: dữ liệu bảng ${field} không hợp lệ`);
+  return [];
+};
+
+const getProposedPoleRows = (custom, proposalId) => {
   const model = getProposalModelCode(custom.mo_hinh_dau_tu);
-  const configs = PROPOSAL_POLE_FIELDS[model] || Object.values(PROPOSAL_POLE_FIELDS).flat();
-  const parts = configs.flatMap((config) => {
-    let rows = parseArray(custom[config.field]);
-    if (config.field === 'loai_tru_nq' && rows.length === 0) rows = parseArray(custom.loai_tru_nq_cs);
-    return rows.map((row) => {
-      const pole = scalarValue(row.loai_tru || row.ten_loai_tru);
-      const quantity = Number(row.so_luong) || 0;
-      if (!pole || quantity <= 0) return '';
-      const modelLabel = optionLabel(
-        definitions,
-        'mo_hinh_dau_tu',
-        config.model,
-        ({ NQ: 'Nhượng quyền', TDT: 'Tự đầu tư', LK: 'Liên kết' })[config.model] || config.model
-      );
-      return `${modelLabel}: ${quantity} × ${pole}`;
-    }).filter(Boolean);
+  const configs = PROPOSAL_POLE_FIELDS[model] || [
+    ...PROPOSAL_POLE_FIELDS.NQ, ...PROPOSAL_POLE_FIELDS.LK, ...PROPOSAL_POLE_FIELDS.TDT
+  ];
+  const rows = configs.flatMap((config) => {
+    let rows = parsePoleRows(custom[config.field], proposalId, config.field);
+    if (config.field === 'loai_tru_nq' && rows.length === 0) {
+      rows = parsePoleRows(custom.loai_tru_nq_cs, proposalId, 'loai_tru_nq_cs');
+    }
+    return rows.map((row) => ({ ...row, mo_hinh: config.model }));
   });
-  if (parts.length > 0) return parts.join('; ');
+  if (rows.length) return rows;
   const legacyPole = scalarValue(custom.loai_tru);
-  const legacyQuantity = Number(custom.so_luong_tru) || 0;
-  return legacyPole ? `${legacyQuantity || 1} × ${legacyPole}` : '';
+  if (!legacyPole) return [];
+  return legacyPole.split(/[;+\n]/).map((part) => {
+    const text = part.trim();
+    const match = /^(\d+)\s*(?:[x×]\s*)?((?:AC|DC|GBT)\s*\d+.*)$/i.exec(text);
+    return match
+      ? { loai_tru: match[2], so_luong: Number(match[1]) }
+      : { loai_tru: text, so_luong: custom.so_luong_tru };
+  }).filter((row) => row.loai_tru);
+};
+
+const getPoleCategory = (value) => {
+  const text = scalarValue(value).toUpperCase().trim();
+  const match = /^(AC|DC|GBT)\s*[-_]?\s*(\d+)(?:\s*KW(?=$|[\s\-_(])|(?=$|[\s\-_(])|(?=S$|AC$))/.exec(text)
+    || /^(\d+)\s*(GBT)(?:\s*KW)?$/.exec(text);
+  if (!match) return null;
+  const code = match[1] === 'GBT' || match[2] === 'GBT'
+    ? `GBT${match[1] === 'GBT' ? match[2] : match[1]}`
+    : `${match[1]}${match[2]}`;
+  return POLE_CATEGORIES.some(([category]) => category === code) ? code : null;
+};
+
+const countPoleRows = (rows, proposalId, group) => {
+  const counts = Object.fromEntries(POLE_CATEGORIES.map(([code]) => [code, rows.length ? 0 : '']));
+  let unknown = 0;
+  let invalid = 0;
+  const invalidCategories = new Set();
+  for (const row of rows) {
+    const category = getPoleCategory(row?.loai_tru || row?.ten_loai_tru);
+    const quantity = Number(row?.so_luong);
+    if (!category) unknown++;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      invalid++;
+      if (category) invalidCategories.add(category);
+    } else if (category) {
+      counts[category] += quantity;
+    }
+  }
+  for (const category of invalidCategories) counts[category] = '';
+  if (unknown || invalid) {
+    console.warn(`[ProposalSheetSync] Đề xuất ${proposalId}, ${group}: ${unknown} loại trụ chưa nhận diện, ${invalid} số lượng không hợp lệ`);
+  }
+  return counts;
 };
 
 const salesProfile = (user) => ({
@@ -314,22 +346,14 @@ const salesProfile = (user) => ({
 
 const resolveProposalManagers = (proposal) => {
   const chain = [
-    salesProfile({ full_name: proposal.submitter_name, department: proposal.submitter_department, chucVu: proposal.submitter_chuc_vu }),
-    salesProfile({ full_name: proposal.parent_name, department: proposal.parent_department, chucVu: proposal.parent_chuc_vu }),
-    salesProfile({ full_name: proposal.grandparent_name, department: proposal.grandparent_department, chucVu: proposal.grandparent_chuc_vu })
+    salesProfile({ full_name: proposal.submitter_name, department: proposal.submitter_department, chuc_vu: proposal.submitter_chuc_vu }),
+    salesProfile({ full_name: proposal.parent_name, department: proposal.parent_department, chuc_vu: proposal.parent_chuc_vu }),
+    salesProfile({ full_name: proposal.grandparent_name, department: proposal.grandparent_department, chuc_vu: proposal.grandparent_chuc_vu })
   ];
   return {
     areaDirector: chain.find((user) => isGdkv(user.chucVu, user.department))?.name || '',
     centerDirector: chain.find((user) => isGdtt(user.chucVu, user.department))?.name || ''
   };
-};
-
-const getLegalDocsState = (customData) => {
-  try {
-    return proposalGradingService.getLegalDocsState(customData);
-  } catch {
-    return { complete: true, required: false };
-  }
 };
 
 const departmentReviewLabel = ({ score, regradePending, legalDocsComplete, department }) => {
@@ -365,9 +389,69 @@ const buildColumns = (fields) => [
 
 const buildHeaderRow = (fields) => buildColumns(fields).map((column) => column.header);
 
+const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}) => {
+  const expected = buildHeaderRow(fields);
+  const previous = buildColumns(fields).filter((column) => column.kind !== 'poleCount').map((column) => column.header);
+  const [headerResponse, metadataResponse] = await Promise.all([
+    sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId,
+      range: `${quoteTab(config.tabName)}!1:1`
+    }),
+    sheets.spreadsheets.get({
+      spreadsheetId: config.spreadsheetId,
+      fields: 'sheets(properties(sheetId,title),merges)'
+    })
+  ]);
+  const existing = (headerResponse.data.values?.[0] || []).map((value) => String(value || '').trim());
+  const sheet = (metadataResponse.data.sheets || []).find((item) => item.properties?.title === config.tabName);
+  if (!sheet || !Number.isInteger(sheet.properties.sheetId)) throw new Error('Không tìm thấy tab Google Sheet cần chuyển đổi');
+  if (expected.every((header, index) => existing[index] === header)) return { status: 'already_migrated' };
+  if (!previous.every((header, index) => existing[index] === header)) {
+    throw new Error('Header hiện tại không khớp cấu trúc cũ; không thể tự chèn cột an toàn');
+  }
+  const proposedIndex = previous.indexOf('Quy mô trụ đề xuất') + 1;
+  const committedIndex = previous.indexOf('Quy mô trụ chốt') + 1;
+  const count = POLE_CATEGORIES.length;
+  if ((sheet.merges || []).some((range) =>
+    [proposedIndex, committedIndex].some((index) =>
+      (range.startColumnIndex || 0) < index && range.endColumnIndex > index))) {
+    throw new Error('Có ô gộp cắt qua vị trí chèn cột; cần kiểm tra và xử lý thủ công');
+  }
+  if (!apply) return { status: 'ready', columnsPerGroup: count };
+  const sheetId = sheet.properties.sheetId;
+  const insert = (index) => ({
+    insertDimension: {
+      range: { sheetId, dimension: 'COLUMNS', startIndex: index, endIndex: index + count },
+      inheritFromBefore: false
+    }
+  });
+  const header = (index) => ({
+    updateCells: {
+      range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: index, endColumnIndex: index + count },
+      rows: [{ values: POLE_CATEGORIES.map(([, title]) => ({ userEnteredValue: { stringValue: title } })) }],
+      fields: 'userEnteredValue'
+    }
+  });
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.spreadsheetId,
+    requestBody: {
+      requests: [insert(committedIndex), insert(proposedIndex), header(proposedIndex), header(committedIndex + count)]
+    }
+  });
+  const verification = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId,
+    range: `${quoteTab(config.tabName)}!1:1`
+  });
+  const updated = (verification.data.values?.[0] || []).map((value) => String(value || '').trim());
+  if (!expected.every((value, index) => updated[index] === value)) {
+    throw new Error('Đã gửi yêu cầu chèn cột nhưng header xác minh không khớp; kiểm tra Sheet trước khi chạy lại');
+  }
+  return { status: 'migrated', columnsPerGroup: count };
+};
+
 const resolveBaseRowValues = (proposal, definitions, serial) => {
   const custom = parseObject(proposal.custom_data);
-  const legalDocs = getLegalDocsState(custom);
+  const legalDocs = proposalGradingService.getLegalDocsState(custom);
   const modelCode = scalarValue(custom.mo_hinh_dau_tu);
   const modelFallback = {
     NQ: 'Nhượng quyền',
@@ -388,8 +472,12 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
   const province = scalarValue(custom.province);
   const ward = scalarValue(custom.xa_phuong || custom.ward);
   const region = optionLabel(definitions, 'vung_mien', custom.vung_mien, scalarValue(custom.vung_mien));
-  const proposalScale = formatProposedScale(custom, definitions);
-  const scale = formatPoleScale(proposal.chot_so_luong_tru, definitions);
+  const proposedRows = getProposedPoleRows(custom, proposal.id);
+  const committedRows = parsePoleRows(proposal.chot_so_luong_tru, proposal.id, 'chot_so_luong_tru');
+  const proposalScale = formatPoleScale(proposedRows, definitions);
+  const scale = formatPoleScale(committedRows, definitions);
+  const proposedCounts = countPoleRows(proposedRows, proposal.id, 'đề xuất');
+  const committedCounts = countPoleRows(committedRows, proposal.id, 'chốt');
   const mapUrl = proposal.latitude !== null && proposal.latitude !== undefined
     && proposal.longitude !== null && proposal.longitude !== undefined
     ? `https://www.google.com/maps?q=${encodeURIComponent(`${proposal.latitude},${proposal.longitude}`)}`
@@ -415,6 +503,8 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
     __area: scalarValue(custom.dien_tich_mat_bang),
     __proposed_scale: proposalScale,
     __committed_scale: scale,
+    ...Object.fromEntries(POLE_CATEGORIES.map(([code]) => [`__proposed_${code}`, proposedCounts[code]])),
+    ...Object.fromEntries(POLE_CATEGORIES.map(([code]) => [`__committed_${code}`, committedCounts[code]])),
     __total_cost: formatMoney(custom.tong_chi_phi),
     __committed_total: formatMoney(proposal.tong_gia_tri_chot),
     __proposal_status: statusLabel,
@@ -459,8 +549,12 @@ const resolveFieldValue = (proposal, custom, key, definitions, usersById) => {
       }).filter(Boolean);
       return labels.join('; ');
     }
-    case 'boolean':
-      return text ? 'Có' : 'Không';
+    case 'boolean': {
+      if (!text) return '';
+      if (['true', '1'].includes(text.toLowerCase())) return 'Có';
+      if (['false', '0'].includes(text.toLowerCase())) return 'Không';
+      throw new Error(`Giá trị boolean không hợp lệ cho trường ${key}: ${text}`);
+    }
     case 'user': {
       const rawId = raw && typeof raw === 'object'
         ? (raw.id ?? raw.user_id ?? null)
@@ -502,20 +596,22 @@ const readSheetRows = async (sheets, config) => {
   const rows = response.data.values || [];
   const rowById = new Map();
   let maxSerial = 0;
-  let legacyLayout = false;
+  const orphanSerialRows = [];
   rows.forEach((row, index) => {
     const first = String(row[0] ?? '').trim();
     const second = String(row[1] ?? '').trim();
     const firstNum = /^\d+$/.test(first) ? Number(first) : null;
     const secondNum = /^\d+$/.test(second) ? Number(second) : null;
-    if (firstNum !== null && secondNum === null) legacyLayout = true;
-    const id = secondNum !== null ? String(secondNum) : (firstNum !== null ? String(firstNum) : '');
+    if (firstNum !== null && !second) orphanSerialRows.push(index + 2);
+    if (second && secondNum === null) throw new Error(`ID đề xuất không hợp lệ tại dòng ${index + 2}`);
+    const id = secondNum !== null ? String(secondNum) : '';
     const serial = firstNum !== null && secondNum !== null ? firstNum : null;
     if (!id) return;
-    if (!rowById.has(id)) rowById.set(id, { row: index + 2, serial });
+    if (rowById.has(id)) throw new Error(`ID đề xuất ${id} bị trùng trên Google Sheet`);
+    rowById.set(id, { row: index + 2, serial });
     if (serial && serial > maxSerial) maxSerial = serial;
   });
-  return { rowById, maxSerial, legacyLayout };
+  return { rowById, maxSerial, orphanSerialRows };
 };
 
 const chunks = (items, size) => {
@@ -541,10 +637,7 @@ const compactSheetSerials = async (sheets, config, rowById) => {
 const loadProposals = async (proposalIds) => {
   if (!proposalIds.length) return [];
   const [rows] = await pool.query(
-    `SELECT p.id, p.ma_de_xuat_gen, p.created_at, p.updated_at, p.status, p.review_level,
-            p.quy_hoach_score, p.phap_ly_score, p.note, p.owner_name, p.owner_phone,
-            p.address, p.latitude, p.longitude, p.land_type, p.custom_data,
-            p.chot_so_luong_tru, p.tong_gia_tri_chot, p.ngay_du_kien_on,
+    `SELECT p.*,
             u.full_name AS submitter_name,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS submitter_department,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.chuc_vu')) AS submitter_chuc_vu,
@@ -574,62 +667,9 @@ const loadProposals = async (proposalIds) => {
   return rows;
 };
 
-const migrateLegacySheet = async (sheets, config, fields, definitions) => {
+const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, definitions, usersById = new Map()) => {
   const tab = quoteTab(config.tabName);
-  const dataRange = `${tab}!A2:${columnName(SHEET_MAX_READ_COLUMNS)}`;
-  const oldRowsResponse = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.spreadsheetId,
-    range: dataRange,
-    valueRenderOption: 'UNFORMATTED_VALUE'
-  });
-  const oldRows = oldRowsResponse.data.values || [];
-  const oldEntries = new Map();
-  oldRows.forEach((row, index) => {
-    if (!row.some((value) => String(value ?? '').trim())) return;
-    const first = String(row[0] ?? '').trim();
-    const second = String(row[1] ?? '').trim();
-    const firstNum = /^\d+$/.test(first) ? Number(first) : null;
-    const secondNum = /^\d+$/.test(second) ? Number(second) : null;
-    if (firstNum === null) return;
-    const id = secondNum !== null ? secondNum : firstNum;
-    const serial = secondNum !== null ? firstNum : null;
-    if (!oldEntries.has(String(id))) oldEntries.set(String(id), { row: index + 2, serial });
-  });
-
-  const [idRows] = await pool.query('SELECT id FROM station_proposals ORDER BY id ASC');
-  const proposals = [];
-  for (const idBatch of chunks(idRows.map((row) => Number(row.id)), BATCH_SIZE)) {
-    proposals.push(...await loadProposals(idBatch));
-  }
-  proposals.sort((a, b) => Number(a.id) - Number(b.id));
-  const migratedRows = [];
-  let serialCursor = 1;
-  for (const proposal of proposals) {
-    const oldEntry = oldEntries.get(String(proposal.id));
-    const serial = oldEntry?.serial || serialCursor++;
-    migratedRows.push(mapProposalToRow(proposal, fields, serial, new Map(), definitions));
-  }
-  const headerRow = buildHeaderRow(fields);
-  const rowCount = Math.max(oldRows.length, migratedRows.length);
-  const values = [headerRow, ...migratedRows];
-  while (values.length < rowCount + 1) values.push(Array(headerRow.length).fill(''));
-  const endColumn = columnName(headerRow.length);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range: `${tab}!A1:${endColumn}${Math.max(1, rowCount + 1)}`,
-    valueInputOption: 'RAW',
-    requestBody: { values }
-  });
-};
-
-const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, definitions) => {
-  const tab = quoteTab(config.tabName);
-  let sheetIndex = await readSheetRows(sheets, config);
-  if (sheetIndex.legacyLayout) {
-    await migrateLegacySheet(sheets, config, fields, definitions);
-    sheetIndex = await readSheetRows(sheets, config);
-  }
-  const { rowById, maxSerial } = sheetIndex;
+  const { rowById, maxSerial, orphanSerialRows } = await readSheetRows(sheets, config);
   const columns = buildColumns(fields);
   const endColumn = columnName(columns.length);
   const updates = [];
@@ -649,10 +689,10 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, defin
       const serial = existing.serial || nextSerial++;
       updates.push({
         range: `${tab}!A${existing.row}:${endColumn}${existing.row}`,
-        values: [mapProposalToRow(proposal, fields, serial, new Map(), definitions)]
+        values: [mapProposalToRow(proposal, fields, serial, usersById, definitions)]
       });
     } else {
-      appends.push(mapProposalToRow(proposal, fields, nextSerial++, new Map(), definitions));
+      appends.push(mapProposalToRow(proposal, fields, nextSerial++, usersById, definitions));
     }
   }
 
@@ -668,6 +708,14 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, defin
       requestBody: { ranges: batch }
     });
   }
+  if (orphanSerialRows.length) {
+    for (const batch of chunks(orphanSerialRows, SHEET_WRITE_BATCH_SIZE)) {
+      await sheets.spreadsheets.values.batchClear({
+        spreadsheetId: config.spreadsheetId,
+        requestBody: { ranges: batch.map((row) => `${tab}!A${row}`) }
+      });
+    }
+  }
   for (const batch of chunks(appends, SHEET_WRITE_BATCH_SIZE)) {
     await sheets.spreadsheets.values.append({
       spreadsheetId: config.spreadsheetId,
@@ -677,35 +725,39 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, defin
       requestBody: { values: batch }
     });
   }
-  if (clears.length > 0) await compactSheetSerials(sheets, config, rowById);
+  if (clears.length > 0 || orphanSerialRows.length > 0) {
+    const updatedIndex = await readSheetRows(sheets, config);
+    await compactSheetSerials(sheets, config, updatedIndex.rowById);
+  }
 };
 
-const assertHeader = async (sheets, config, fields, definitions) => {
+const assertHeader = async (sheets, config, fields) => {
   const tab = quoteTab(config.tabName);
   const columns = buildColumns(fields);
   const endColumn = columnName(columns.length);
-  const range = `${tab}!A1:${endColumn}1`;
-  const response = await sheets.spreadsheets.values.get({ spreadsheetId: config.spreadsheetId, range });
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId: config.spreadsheetId, range: `${tab}!1:1` });
   const existing = (response.data.values?.[0] || []).map((value) => String(value || '').trim());
   const expected = buildHeaderRow(fields);
-  if (!existing.length || existing.every((value) => !value)) {
+  if (expected.every((header, index) => existing[index] === header)) return;
+  const matchesPrefix = existing.every((header, index) => header === expected[index]);
+  if (matchesPrefix && existing.length < expected.length) {
+    const firstColumn = columnName(existing.length + 1);
+    const cells = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId,
+      range: `${tab}!${firstColumn}2:${endColumn}`
+    });
+    if ((cells.data.values || []).some((row) => row.some((value) => String(value ?? '').trim()))) {
+      throw new Error('Không thể thêm cột đồng bộ vì vùng cột mới đã có dữ liệu. Hãy sao lưu và kiểm tra Sheet.');
+    }
     await sheets.spreadsheets.values.update({
       spreadsheetId: config.spreadsheetId,
-      range,
+      range: `${tab}!${firstColumn}1:${endColumn}1`,
       valueInputOption: 'RAW',
-      requestBody: { values: [expected] }
+      requestBody: { values: [expected.slice(existing.length)] }
     });
     return;
   }
-  const isLegacy = LEGACY_HEADERS.every((header, index) => existing[index] === header);
-  const isPrevious = PREVIOUS_HEADERS.every((header, index) => existing[index] === header);
-  if (isLegacy || isPrevious) {
-    await migrateLegacySheet(sheets, config, fields, definitions);
-    return;
-  }
-  if (!expected.every((header, index) => existing[index] === header)) {
-    throw new Error(`Header Google Sheet không khớp. Các cột cần có lần lượt: ${expected.join(' | ')}`);
-  }
+  throw new Error('Header Google Sheet không khớp cấu hình hiện tại. Hãy sao lưu và đối chiếu cấu trúc trước khi đồng bộ.');
 };
 
 const refreshManualRun = async (runId) => {
@@ -810,16 +862,18 @@ const processBatch = async (limit = BATCH_SIZE) => {
       [MAX_ATTEMPTS, limit]
     );
     if (!jobs.length) return { processed: 0 };
-    selectedJobs = jobs;
-
+    const claimedJobs = [];
     for (const job of jobs) {
       job.attempt_number = Number(job.attempt_count || 0) + 1;
-      await pool.query(
+      const [claim] = await pool.query(
         `UPDATE proposal_sheet_sync_queue
             SET status = 'PROCESSING', attempt_count = ?, updated_at = NOW()
           WHERE proposal_id = ? AND requested_version = ? AND status IN ('PENDING','FAILED')`,
         [job.attempt_number, job.proposal_id, job.requested_version]
       );
+      if (!claim.affectedRows) continue;
+      claimedJobs.push(job);
+      selectedJobs.push(job);
       if (job.manual_run_id) {
         await pool.query(
           `UPDATE proposal_sheet_sync_runs SET status = 'RUNNING', started_at = COALESCE(started_at, NOW())
@@ -828,8 +882,9 @@ const processBatch = async (limit = BATCH_SIZE) => {
         );
       }
     }
+    if (!claimedJobs.length) return { processed: 0 };
 
-    const upsertIds = jobs.filter((job) => job.operation === 'UPSERT').map((job) => Number(job.proposal_id));
+    const upsertIds = claimedJobs.filter((job) => job.operation === 'UPSERT').map((job) => Number(job.proposal_id));
     const [proposalRows, definitions] = await Promise.all([
       loadProposals(upsertIds),
       getAllFieldDefinitions()
@@ -863,12 +918,12 @@ const processBatch = async (limit = BATCH_SIZE) => {
     }
     const proposalsById = new Map(proposalRows.map((proposal) => [Number(proposal.id), proposal]));
     const sheets = await createSheetsClient(config);
-    await assertHeader(sheets, config, fields, definitions);
-    await writeSheetRows(sheets, config, jobs, proposalsById, fields, definitions);
+    await assertHeader(sheets, config, fields);
+    await writeSheetRows(sheets, config, claimedJobs, proposalsById, fields, definitions, usersById);
 
-    for (const job of jobs) await updateSuccessfulJob(job);
-    await refreshRunsForJobs(jobs);
-    return { processed: jobs.length };
+    for (const job of claimedJobs) await updateSuccessfulJob(job);
+    await refreshRunsForJobs(claimedJobs);
+    return { processed: claimedJobs.length };
   } catch (error) {
     for (const job of selectedJobs) {
       job.attempt_number = Number(job.attempt_number || Number(job.attempt_count || 0) + 1);
@@ -985,7 +1040,7 @@ const startDailySync = async (triggeredBy) => {
 
 const getStatus = async () => {
   const config = getConfig();
-  const [[runs], [counts]] = await Promise.all([
+  const [[runs], [counts], [errors]] = await Promise.all([
     pool.query(
       `SELECT id, trigger_type, status, triggered_by, date_from, date_to,
               total_count, synced_count, failed_count, error_message, started_at, completed_at, created_at
@@ -995,6 +1050,11 @@ const getStatus = async () => {
       `SELECT SUM(status IN ('PENDING','PROCESSING')) AS pending_count,
               SUM(status = 'FAILED') AS failed_count
          FROM proposal_sheet_sync_queue`
+    ),
+    pool.query(
+      `SELECT last_error FROM proposal_sheet_sync_queue
+        WHERE status IN ('PENDING','FAILED') AND last_error IS NOT NULL
+        ORDER BY (status = 'FAILED') DESC, updated_at DESC LIMIT 1`
     )
   ]);
   return {
@@ -1006,6 +1066,7 @@ const getStatus = async () => {
     pollMs: config.pollMs,
     pendingCount: Number(counts[0]?.pending_count || 0),
     failedCount: Number(counts[0]?.failed_count || 0),
+    lastError: errors[0]?.last_error || null,
     activeRun: runs.find((run) => ['QUEUED','RUNNING'].includes(run.status)) || null,
     recentRuns: runs
   };
@@ -1020,3 +1081,9 @@ exports.mapProposalToRow = mapProposalToRow;
 exports.getExportFields = getExportFields;
 exports.buildColumns = buildColumns;
 exports.getAllFieldDefinitions = getAllFieldDefinitions;
+exports.assertHeader = assertHeader;
+exports.writeSheetRows = writeSheetRows;
+exports.loadProposals = loadProposals;
+exports.createSheetsClient = createSheetsClient;
+exports.migratePoleColumns = migratePoleColumns;
+exports.LOCK_NAME = LOCK_NAME;

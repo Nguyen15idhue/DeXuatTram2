@@ -117,6 +117,7 @@ const AdminProposalsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [proposalSheetSyncStatus, setProposalSheetSyncStatus] = useState(null);
   const [proposalSheetSyncLoading, setProposalSheetSyncLoading] = useState(false);
+  const [proposalSheetSyncError, setProposalSheetSyncError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [pageSize, setPageSize] = useState(20);
@@ -338,8 +339,12 @@ const AdminProposalsPage = () => {
     if (!token || !isAdmin) return;
     try {
       const res = await proposalSheetSyncService.getStatus(token);
-      if (res?.success) setProposalSheetSyncStatus(res.data || null);
-    } catch { /* status card is optional if the integration is unavailable */ }
+      if (!res?.success) throw new Error(res?.message || 'Không thể tải trạng thái đồng bộ');
+      setProposalSheetSyncStatus(res.data || null);
+      setProposalSheetSyncError('');
+    } catch (syncError) {
+      setProposalSheetSyncError(syncError?.message || 'Không thể tải trạng thái đồng bộ Google Sheets');
+    }
   }, [token, isAdmin]);
 
   const startProposalSheetDailySync = async () => {
@@ -372,8 +377,8 @@ const AdminProposalsPage = () => {
   }, [isAdmin, loadProposalSheetSyncStatus]);
 
   useEffect(() => {
-    if (!isAdmin || !proposalSheetSyncStatus?.activeRun) return undefined;
-    const timer = setInterval(loadProposalSheetSyncStatus, 3000);
+    if (!isAdmin) return undefined;
+    const timer = setInterval(loadProposalSheetSyncStatus, proposalSheetSyncStatus?.activeRun ? 3000 : 30000);
     return () => clearInterval(timer);
   }, [isAdmin, proposalSheetSyncStatus?.activeRun?.id, loadProposalSheetSyncStatus]);
 
@@ -1135,10 +1140,10 @@ const AdminProposalsPage = () => {
               type="button"
               className="btn btn-outline btn-sm gap-1"
               onClick={startProposalSheetDailySync}
-              disabled={!proposalSheetSyncStatus?.configured || proposalSheetSyncLoading || Boolean(proposalSheetSyncStatus?.activeRun)}
-              title={!proposalSheetSyncStatus?.configured
+              disabled={!proposalSheetSyncStatus?.configured || Boolean(proposalSheetSyncError) || proposalSheetSyncLoading || Boolean(proposalSheetSyncStatus?.activeRun)}
+              title={proposalSheetSyncError || (!proposalSheetSyncStatus?.configured
                 ? proposalSheetSyncStatus?.message || 'Google Sheets chưa được cấu hình'
-                : 'Đối soát toàn bộ đề xuất, hàng chờ và các mục đồng bộ lỗi'}
+                : 'Đối soát toàn bộ đề xuất, hàng chờ và các mục đồng bộ lỗi')}
             >
               <RefreshCw size={14} className={proposalSheetSyncStatus?.activeRun ? 'animate-spin' : ''} />
               {proposalSheetSyncStatus?.activeRun
@@ -1296,6 +1301,35 @@ const AdminProposalsPage = () => {
           </>)}
         </div>
       </div>
+
+      {isAdmin && activeTab === 'all' && (
+        <div className="mb-4 text-sm" role="status">
+          {proposalSheetSyncError ? (
+            <span className="text-error">{proposalSheetSyncError}</span>
+          ) : proposalSheetSyncStatus ? (
+            <>
+              <span>
+                Google Sheets: {proposalSheetSyncStatus.configured ? 'Đã cấu hình' : proposalSheetSyncStatus.message || 'Chưa cấu hình'}
+                {' · '}Đang chờ: {proposalSheetSyncStatus.pendingCount || 0}
+                {' · '}Thất bại: {proposalSheetSyncStatus.failedCount || 0}
+              </span>
+              {proposalSheetSyncStatus.recentRuns?.[0] && (
+                <span>
+                  {' · '}Lượt gần nhất: {({
+                    QUEUED: 'Đang chờ', RUNNING: 'Đang chạy', SUCCESS: 'Thành công', FAILED: 'Thất bại'
+                  })[proposalSheetSyncStatus.recentRuns[0].status] || proposalSheetSyncStatus.recentRuns[0].status}
+                  {' '}({proposalSheetSyncStatus.recentRuns[0].synced_count || 0}/{proposalSheetSyncStatus.recentRuns[0].total_count || 0})
+                </span>
+              )}
+              {(proposalSheetSyncStatus.lastError || proposalSheetSyncStatus.recentRuns?.[0]?.error_message) && (
+                <div className="text-error">
+                  Lỗi đồng bộ: {proposalSheetSyncStatus.lastError || proposalSheetSyncStatus.recentRuns[0].error_message}
+                </div>
+              )}
+            </>
+          ) : 'Đang tải trạng thái Google Sheets...'}
+        </div>
+      )}
 
       <div role="tablist" className="proposal-workflow-tabs mb-4">
         <button
