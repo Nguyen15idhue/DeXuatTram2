@@ -85,7 +85,7 @@ const SignatureOverlay = ({
       {canSign && (
         <button
           type="button"
-          className="btn btn-xs btn-success pointer-events-auto absolute -right-2 -top-2 z-20 gap-1"
+          className="btn btn-sm btn-success pointer-events-auto absolute right-1 top-1 z-20 gap-1"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();

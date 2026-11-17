@@ -92,12 +92,12 @@ test('ADMIN and SALES outside Back Office cannot update infrastructure', async t
   }
 });
 
-test('owner-level infrastructure permission applies to CTV/NPP/ancestors and departments without creating department-only tasks', async t => {
+test('infrastructure tasks include owners, ancestors and Setup but not unrelated Back Office', async t => {
   const { calls } = setup(t);
   const owners = new Set([5, 6, 7]);
   const originalQuery = pool.query;
-  t.mock.method(pool, 'query', async (sql, params) => sql.includes('AS owner_task')
-    ? [[{ owner_task: owners.has(params[0]) ? 1 : 0 }]] : originalQuery(sql, params));
+  t.mock.method(pool, 'query', async (sql, params) => sql.includes('AS infrastructure_task')
+    ? [[{ infrastructure_task: sql.includes('(1 = 1)') || owners.has(params[0]) ? 1 : 0 }]] : originalQuery(sql, params));
   t.mock.method(require('../src/services/adminProposalService'), 'getBranchUserIds', async id => [id]);
   t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
     isBackOffice: user.id === 2, department: user.id === 8 ? 'Phòng Setup và Vận hành' : ''
@@ -111,7 +111,7 @@ test('owner-level infrastructure permission applies to CTV/NPP/ancestors and dep
   for (const user of [{ id: 2, role: 'ADMIN' }, { id: 8, role: 'SALES' }]) {
     const permission = await access.recordPermissions(1, user);
     assert.equal(permission.infrastructure, true);
-    assert.equal(permission.infrastructure_task, false);
+    assert.equal(permission.infrastructure_task, user.id === 8);
     await service.updateInfrastructureStatus(1, 'power', body, user);
   }
   for (const role of ['CTV', 'NPP', 'SALES', 'ADMIN']) {
