@@ -8,7 +8,8 @@ test.after(async () => pool.end());
 
 test('ADMIN can perform only the workflow steps assigned to their department', async (t) => {
   let department;
-  t.mock.method(access, 'buildInfrastructureOwnerScope', async () => ({ sql: 'p.user_id=?', params: [1] }));
+  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql',
+    async () => ({ sql: 'p.user_id=?', params: [1] }));
   t.mock.method(pool, 'query', async () => [[{ custom_data: { department } }]]);
   for (const [name, backOffice, setup] of [
     ['Back Office', true, false],
@@ -23,7 +24,8 @@ test('ADMIN can perform only the workflow steps assigned to their department', a
     });
     const { expressions } = await work.actionable(user);
     assert.equal(expressions.contract !== '0', backOffice, `${name}: contract`);
-    assert.match(expressions.infrastructure, /p.user_id=\?/, `${name}: infrastructure follows owner, not department`);
+    assert.match(expressions.infrastructure, setup ? /AND \(1 = 1\)/ : /p.user_id=\?/,
+      `${name}: infrastructure follows owner or Setup`);
     for (const key of ['installation', 'acceptance', 'on_station']) {
       assert.equal(expressions[key] !== '0', setup, `${name}: ${key}`);
     }
@@ -34,6 +36,28 @@ test('ADMIN can perform only the workflow steps assigned to their department', a
     else await assert.rejects(() => access.assertSetup(user), { statusCode: 403 });
     await assert.rejects(() => access.assertFinance(user), { statusCode: 403 });
     await access.assertFinanceViewer(user);
+  }
+});
+
+test('infrastructure worklist and badge use the same scope without duplicating Setup owners', async t => {
+  const owner = { sql: 'p.user_id=?', params: [17] };
+  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql', async () => owner);
+  let setup;
+  t.mock.method(access, 'permissions', async () => ({ setup, request_early: false }));
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({
+    department: setup ? 'Phòng Setup và Vận hành' : 'Phòng khác'
+  }));
+  for (setup of [false, true]) {
+    const user = { id: 17, role: 'SALES' };
+    const filter = await work.getFilter('xay-dung-ha-tang', 'need', user);
+    const tasks = await work.actionable(user);
+    const need = work.stageFilters['xay-dung-ha-tang'].need;
+    assert.equal(filter.sql.replace(`(${need})`, need),
+      `cs.status<>'CANCELLED' AND ${tasks.expressions.infrastructure.slice(1, -1)}`);
+    assert.deepEqual(filter.params, tasks.params);
+    assert.deepEqual(filter.params, setup ? [] : [17]);
+    assert.match(filter.sql, /infra_power_status.* OR .*infra_site_status/);
+    assert.doesNotMatch(filter.sql, /UNION/);
   }
 });
 

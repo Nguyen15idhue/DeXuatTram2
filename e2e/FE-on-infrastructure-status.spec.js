@@ -6,6 +6,8 @@ for (const [role, department, allowed] of [
   ['SALES', 'Back Office', true],
   ['ADMIN', 'Back Office', true],
   ['SALES', 'Phòng Setup và Vận hành', true],
+  ['SALES', 'Người đề xuất', true],
+  ['SALES', 'Quản lý nhánh', true],
   ['CTV', 'Người phụ trách', true],
   ['NPP', 'Quản lý nhánh', true],
   ['ADMIN', 'Phòng khác', false]
@@ -32,6 +34,7 @@ for (const [role, department, allowed] of [
         const type = pathname.includes('/power/') ? 'power' : 'site';
         station[`infra_${type}_status`] = updates.at(-1).body.status;
       }
+
       await route.fulfill({ contentType: 'application/json',
         body: JSON.stringify({ success: true, data, pagination: { page: 1, total: 1, totalPages: 1 } }) });
     });
@@ -80,6 +83,55 @@ for (const [role, department, allowed] of [
         body: { status: target, expected_status: old, date: '2026-11-10', note: `Update ${type}` }
       });
     }
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const department of ['Người đề xuất', 'Quản lý nhánh', 'Phòng Setup và Vận hành']) {
+  test(`${department} sees pending infrastructure tasks and badge until both items are DONE`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const station = { id: 501, ma_tram: 'ON-TASK-501', proposal_id: 77, status: 'DELIVERING',
+      infra_power_status: 'NOT', infra_site_status: 'NOT',
+      permissions: { infrastructure: true, infrastructure_task: true } };
+    const pending = () => station.infra_power_status !== 'DONE' || station.infra_site_status !== 'DONE';
+    await page.addInitScript(() => localStorage.setItem('token', 'infra-task-test'));
+    await page.route('**/api/**', async route => {
+      const url = new URL(route.request().url());
+      let data = [];
+      if (url.pathname.endsWith('/auth/me')) data = { user: { id: 1, role: 'SALES', custom_data: { department } } };
+      else if (url.pathname.endsWith('/charging-stations/task-counts')) {
+        data = { total: pending() ? 1 : 0, counts: { infrastructure: pending() ? 1 : 0 } };
+      } else if (url.pathname.endsWith('/charging-stations')) {
+        expect(url.searchParams.get('stage')).toBe('xay-dung-ha-tang');
+        expect(url.searchParams.get('tab')).toBe('need');
+        data = pending() ? [station] : [];
+      } else if (/\/infrastructure\/(power|site)\/status$/.test(url.pathname)) {
+        const type = url.pathname.includes('/power/') ? 'power' : 'site';
+        const body = route.request().postDataJSON();
+        expect(body.expected_status).toBe('NOT');
+        expect(body.status).toBe('DONE');
+        station[`infra_${type}_status`] = body.status;
+      }
+      await route.fulfill({ json: { success: true, data,
+        pagination: { page: 1, total: pending() ? 1 : 0, totalPages: 1 } } });
+    });
+    await page.goto('/admin/on-tram/xay-dung-ha-tang');
+    const tab = page.getByRole('tab', { name: /Trạm sạc cần thực hiện/ });
+    await expect(tab.locator('.badge')).toHaveText('1');
+    await expect(page.getByRole('link', { name: 'ON-TASK-501', exact: true })).toBeVisible();
+    for (const [title, label] of [['Hạ tầng điện', 'Trạng thái điện'], ['Hạ tầng mặt bằng', 'Trạng thái mặt bằng']]) {
+      await page.getByRole('button', { name: new RegExp(`^${title}:`) }).click();
+      await page.getByLabel(label, { exact: true }).selectOption('DONE');
+      await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
+      await expect(page.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
+      if (pending()) {
+        await expect(tab.locator('.badge')).toHaveText('1');
+        await expect(page.getByRole('link', { name: 'ON-TASK-501', exact: true })).toBeVisible();
+      }
+    }
+    await expect(tab.locator('.badge')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'ON-TASK-501', exact: true })).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 }

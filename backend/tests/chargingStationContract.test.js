@@ -47,6 +47,7 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
   };
   t.mock.method(pool, 'getConnection', async () => connection);
   t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('proposal_lifecycle_configs')) return [[{ value: '1' }]];
     if (sql.includes('SELECT custom_data FROM users')) return [[{ custom_data: { department: 'Back Office' } }]];
     if (sql.includes('SELECT cs.id')) return [[record]];
     if (sql.includes('charging_station_contract_files')) return [files];

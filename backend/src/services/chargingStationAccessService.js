@@ -36,16 +36,22 @@ const buildInfrastructureOwnerScope = async (user) => {
   };
 };
 
+const buildInfrastructureTaskScope = async (user, basePermissions) => {
+  const base = basePermissions || await permissions(user);
+  if (base.setup) return { sql: '1 = 1', params: [] };
+  return buildInfrastructureOwnerScope(user);
+};
+
 const recordPermissions = async (id, user, basePermissions) => {
   const base = basePermissions || await permissions(user);
   if (user?.role === 'SUPER_ADMIN') return { ...base, infrastructure: true, infrastructure_task: true };
-  const scope = await buildInfrastructureOwnerScope(user);
-  const [rows] = await pool.query(`SELECT (${scope.sql}) AS owner_task
+  const scope = await buildInfrastructureTaskScope(user, base);
+  const [rows] = await pool.query(`SELECT (${scope.sql}) AS infrastructure_task
     FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=?`,
   [...scope.params, Number(id)]);
-  const ownerTask = Boolean(Number(rows[0]?.owner_task));
-  return { ...base, infrastructure: base.back_office || base.setup || ownerTask,
-    infrastructure_task: ownerTask };
+  const infrastructureTask = Boolean(Number(rows[0]?.infrastructure_task));
+  return { ...base, infrastructure: base.back_office || infrastructureTask,
+    infrastructure_task: infrastructureTask };
 };
 
 const assertInfrastructure = async (id, user) => {
@@ -118,7 +124,7 @@ const assertOwner = async (user, ownerId) => {
 
 module.exports = {
   permissions, buildViewScope, assertView, assertOwner, assertFinanceViewer, isSetup,
-  buildInfrastructureOwnerScope, recordPermissions, assertInfrastructure,
+  buildInfrastructureOwnerScope, buildInfrastructureTaskScope, recordPermissions, assertInfrastructure,
   assertBackOffice: requirePermission('back_office', 'Chỉ Back Office hoặc SUPER_ADMIN được thao tác'),
   assertSetup: requirePermission('setup', 'Chỉ Phòng Setup và Vận hành hoặc SUPER_ADMIN được thao tác'),
   assertFinance: requirePermission('finance', 'Chỉ Phòng Tài chính, Back Office hoặc SUPER_ADMIN được thao tác')

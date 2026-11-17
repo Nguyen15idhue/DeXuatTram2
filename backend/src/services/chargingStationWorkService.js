@@ -93,13 +93,13 @@ const stageFilters = {
 
 const actionable = async (user) => {
   const permissions = await access.permissions(user);
-  const infrastructureOwner = await access.buildInfrastructureOwnerScope(user);
+  const infrastructureScope = await access.buildInfrastructureTaskScope(user, permissions);
   const owner = permissions.request_early
     ? await require('./proposalAccessService').buildOwnerScopeSql(user)
     : { sql: '1 = 0', params: [] };
   const expressions = {
     contract: permissions.back_office ? stageFilters['khoi-tao-hop-dong'].need : '0',
-    infrastructure: `(${stageFilters['xay-dung-ha-tang'].need} AND (${infrastructureOwner.sql}))`,
+    infrastructure: `(${stageFilters['xay-dung-ha-tang'].need} AND (${infrastructureScope.sql}))`,
     delivery: `(${permissions.back_office ? "(cs.status<>'ONBOARDING' AND NOT " + deliveryComplete + ')' : '0'}
       OR (${permissions.request_early ? '1' : '0'} AND cs.status='ONBOARDING'
         AND (${owner.sql}) AND ${readiness.deliveryMissingSql('cs', 'p')}))`,
@@ -108,7 +108,7 @@ const actionable = async (user) => {
     on_station: permissions.setup ? stageFilters['on-tram'].need : '0',
     finance: permissions.finance ? financialOpen : '0'
   };
-  return { expressions, params: [...infrastructureOwner.params, ...owner.params], permissions };
+  return { expressions, params: [...infrastructureScope.params, ...owner.params], permissions };
 };
 
 const getFilter = async (stage, tab, user) => {
@@ -122,8 +122,8 @@ const getFilter = async (stage, tab, user) => {
   if (!definition) throw Object.assign(new Error('Bước ON trạm không hợp lệ'), { statusCode: 400 });
   let sql = definition[tab];
   if (stage === 'xay-dung-ha-tang' && tab === 'need') {
-    const owner = await access.buildInfrastructureOwnerScope(user);
-    return { sql: `cs.status<>'CANCELLED' AND (${sql}) AND (${owner.sql})`, params: owner.params };
+    const scope = await access.buildInfrastructureTaskScope(user);
+    return { sql: `cs.status<>'CANCELLED' AND (${sql}) AND (${scope.sql})`, params: scope.params };
   }
   if (stage === 'giao-tru' && tab !== 'completed') {
     const permission = await access.permissions(user);

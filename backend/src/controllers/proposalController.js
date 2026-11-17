@@ -1,13 +1,12 @@
 const proposalService = require('../services/proposalService');
 const proximityService = require('../services/proximityService');
+const { forMap } = require('../services/proposalMapDisplay');
 
 exports.getAll = async (req, res) => {
   try {
     const proposals = await proposalService.getAllProposals();
-    if (!req.user) {
-      proposals.forEach((p) => { delete p.owner_name; delete p.owner_phone; delete p.gdkv_name; delete p.gdkv_phone; delete p.gdkv_chuc_vu; delete p.phu_trach_name; delete p.phu_trach_phone; delete p.ptr_chuc_vu; });
-    }
-    res.json({ success: true, data: proposals });
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: proposals.map(p => forMap(p, req.user)) });
   } catch (error) {
     console.error('Get proposals error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -20,17 +19,8 @@ exports.getById = async (req, res) => {
     if (!proposal) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    if (!req.user) {
-      delete proposal.owner_name;
-      delete proposal.owner_phone;
-      delete proposal.gdkv_name;
-      delete proposal.gdkv_phone;
-      delete proposal.gdkv_chuc_vu;
-      delete proposal.phu_trach_name;
-      delete proposal.phu_trach_phone;
-      delete proposal.ptr_chuc_vu;
-    }
-    res.json({ success: true, data: proposal });
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: forMap(proposal, req.user) });
   } catch (error) {
     console.error('Get proposal error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

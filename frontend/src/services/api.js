@@ -245,6 +245,11 @@ export const api = {
   }
 };
 
+export const cmsReportService = {
+  getStatus: token => api.getWithAuth('/admin/cms-reports/status', token),
+  run: (from, to, token) => api.postWithAuth('/admin/cms-reports/run', { from, to }, token)
+};
+
 const _pendingGets = new Map();
 function dedupGet(endpoint) {
   if (_pendingGets.has(endpoint)) return _pendingGets.get(endpoint);

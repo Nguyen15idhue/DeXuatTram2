@@ -1520,6 +1520,7 @@ const extendOnboardingDeadline = async (id, { reason } = {}, user, ctx = {}) => 
 
 // Quá hạn (kể cả gia hạn) mà chưa có mục nào hoàn thành: hủy ON trạm và đề xuất.
 const cancelOverdueStations = async () => {
+  if (!readiness.ONBOARDING_AUTO_CANCEL_ENABLED) return 0;
   const [rows] = await pool.query(
     `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.contract_status,
             cs.infra_power_status, cs.infra_site_status, cs.deposit_status, cs.payment_status,

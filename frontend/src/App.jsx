@@ -47,6 +47,7 @@ const AdminProposalDetailPage = lazy(() => import('./pages/admin/AdminProposalDe
 const AdminProposalRequestUpdatePage = lazy(() => import('./pages/admin/AdminProposalRequestUpdatePage'));
 const AdminESignPage = lazy(() => import('./pages/admin/AdminESignPage'));
 const AdminEvReportsPage = lazy(() => import('./pages/admin/AdminEvReportsPage'));
+const AdminCmsReportsPage = lazy(() => import('./pages/admin/AdminCmsReportsPage'));
 const AdminCustomExcelExportPage = lazy(() => import('./pages/admin/AdminCustomExcelExportPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
 const AdminFormsPage = lazy(() => import('./pages/admin/AdminFormsPage'));
@@ -397,6 +398,7 @@ function App() {
               }
             />
             <Route path="/admin/ev-reports" element={<AdminEvReportsPage />} />
+            <Route path="/admin/cms-reports" element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminCmsReportsPage /></RoleRoute>} />
             <Route path="/admin/ev-reports/*" element={<AdminEvReportsPage />} />
             <Route
               path="/admin/excel-export"
