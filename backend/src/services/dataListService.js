@@ -218,19 +218,19 @@ exports.applyDiaGioi = async (dynamicData) => {
   return dynamicData;
 };
 
-exports.getDiaGioiByTenTinh = async (tenTinh) => {
+exports.getDiaGioiByTenTinh = async (tenTinh, executor = pool) => {
   const name = String(tenTinh || '').trim();
   if (!name) return null;
   const cacheKey = 'diagioi:tinh-rows';
-  let all = ttlCache.get(cacheKey);
+  let all = executor === pool ? ttlCache.get(cacheKey) : null;
   if (!all) {
     const inList = TINH_LIST_NAMES.map(() => '?').join(', ');
-    const [rows] = await pool.query(
+    const [rows] = await executor.query(
       `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${inList})`,
       TINH_LIST_NAMES
     );
     all = rows;
-    ttlCache.set(cacheKey, all, 60000);
+    if (executor === pool) ttlCache.set(cacheKey, all, 60000);
   }
   const normalize = (s) => String(s || '').trim().toLowerCase()
     .replace(/^(thành phố|tp\.?|tỉnh)\s+/i, '');

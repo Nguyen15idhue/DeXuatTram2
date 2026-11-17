@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const pool = require('../utils/db');
 const proposalLifecycle = require('./proposalLifecycle');
+const { stockAffectingItems } = require('./historicalOnImportInventory');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const toId = (value, label) => {
@@ -11,7 +12,7 @@ const toId = (value, label) => {
 
 const calculateRestockItems = (items = []) => {
   const grouped = new Map();
-  for (const item of items) {
+  for (const item of stockAffectingItems(items)) {
     const quantity = Number(item.quantity);
     const returnedQuantity = Number(item.returned_quantity || 0);
     if (!Number.isSafeInteger(quantity) || quantity < 0
@@ -72,7 +73,7 @@ const makePreviewToken = (snapshot) => crypto.createHash('sha256')
       sub_status: snapshot.station.sub_status,
       proposal_status: snapshot.station.proposal_status
     },
-    exports: snapshot.exports.map((row) => [Number(row.id), row.destination_type]),
+    exports: snapshot.exports.map((row) => [Number(row.id), row.destination_type, Number(row.historical_import)]),
     items: snapshot.items.map((row) => [
       Number(row.id), Number(row.export_id), row.supplier_id === null ? null : Number(row.supplier_id),
       Number(row.pole_id), Number(row.quantity), Number(row.returned_quantity || 0)
@@ -102,7 +103,7 @@ const loadSnapshot = async (connection, stationId, lock = false) => {
   const station = stationRows[0];
 
   const [exports] = await connection.query(
-    `SELECT id, destination_type
+    `SELECT id, destination_type, historical_import
        FROM warehouse_exports
       WHERE charging_station_id = ?
       ORDER BY id${lockClause}`,
@@ -112,10 +113,11 @@ const loadSnapshot = async (connection, stationId, lock = false) => {
   if (exports.length) {
     const exportIds = exports.map((row) => Number(row.id));
     [items] = await connection.query(
-      `SELECT id, export_id, supplier_id, pole_id, quantity, returned_quantity
-         FROM warehouse_export_items
-        WHERE export_id IN (${exportIds.map(() => '?').join(',')})
-        ORDER BY id${lockClause}`,
+      `SELECT wei.id, wei.export_id, wei.supplier_id, wei.pole_id, wei.quantity, wei.returned_quantity, we.historical_import
+         FROM warehouse_export_items wei
+         JOIN warehouse_exports we ON we.id = wei.export_id
+        WHERE wei.export_id IN (${exportIds.map(() => '?').join(',')})
+        ORDER BY wei.id${lockClause}`,
       exportIds
     );
   }

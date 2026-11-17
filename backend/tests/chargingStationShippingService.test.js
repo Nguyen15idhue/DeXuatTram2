@@ -252,6 +252,7 @@ test('return requests can reserve undelivered quantities but never return receiv
     if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }, []];
     throw new Error(`Unexpected query: ${sql}`);
   });
+
   const access = {
     assertBackOffice: async () => {},
     assertView: async () => {}
@@ -285,3 +286,70 @@ test('return requests can reserve undelivered quantities but never return receiv
     restore();
   }
 });
+
+for (const historical of [0, 1]) {
+  test(`partial return ${historical ? 'excludes historical' : 'restores real'} shipment from stock`, async () => {
+    const connection = createConnection(sql => {
+      if (sql.includes('FROM charging_stations WHERE id = ? FOR UPDATE')) return [[{ id: 5, status: 'DELIVERING' }]];
+      if (sql.includes('FROM charging_station_fulfillment_events')) return [[]];
+      if (sql.includes('FROM warehouse_export_items wei') && sql.includes('FOR UPDATE')) return [[{
+        id: 20, export_id: 7, charging_station_id: 5, destination_type: 'STATION',
+        transport_status: 'FAILED', commitment_id: 3, quantity: 4, received_quantity: 0,
+        returned_quantity: 0, return_pending_quantity: 2, supplier_id: 2, pole_id: 4,
+        historical_import: historical
+      }]];
+      if (sql.includes('SELECT supplier_id, charging_pole_id FROM supplier_charging_poles')) return [[{ supplier_id: 2, charging_pole_id: 4 }]];
+      if (sql.startsWith('UPDATE ')) return [{ affectedRows: 1 }];
+      if (sql.includes('AS remaining')) return [[{ remaining: 2, received: 0 }]];
+      if (sql.includes('SELECT * FROM warehouse_exports WHERE id = ?')) return [[{ id: 7 }]];
+      if (sql.includes('FROM warehouse_export_items wei') && sql.includes('WHERE wei.export_id = ?')) return [[]];
+      if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }];
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+      '../utils/db': { getConnection: async () => connection },
+      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
+      './chargingStationService': { writeActivity: async () => {} }
+    });
+    try {
+      await service.confirmReturn(5, 7, { request_id: 'partial-return', items: [{ item_id: 20, quantity: 2 }] },
+        { id: 9, role: 'SUPER_ADMIN' });
+      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE supplier_charging_poles SET quantity')), !historical);
+      assert.ok(connection.calls.some(call => call.sql?.startsWith('UPDATE warehouse_export_items')));
+      assert.ok(connection.calls.includes('commit'));
+    } finally { restore(); }
+  });
+
+  test(`whole return ${historical ? 'excludes historical' : 'restores real'} shipment from stock`, async () => {
+    const connection = createConnection(sql => {
+      if (sql.includes('FROM charging_stations WHERE id = ? FOR UPDATE')) return [[{ id: 5, status: 'DELIVERING' }]];
+      if (sql.includes('FROM charging_station_fulfillment_events')) return [[]];
+      if (sql.includes('SELECT * FROM warehouse_exports') && sql.includes('FOR UPDATE')) return [[{ id: 7, transport_status: 'RETURN_PENDING', historical_import: historical }]];
+      if (sql.includes('SELECT * FROM warehouse_export_items')) return [[{
+        id: 20, export_id: 7, commitment_id: 3, quantity: 4, received_quantity: 0,
+        returned_quantity: 0, return_pending_quantity: 4, supplier_id: 2, pole_id: 4
+      }]];
+      if (sql.includes('FROM charging_station_deployments d')) return [[]];
+      if (sql.includes('SELECT supplier_id, charging_pole_id FROM supplier_charging_poles')) return [[{ supplier_id: 2, charging_pole_id: 4 }]];
+      if (sql.startsWith('UPDATE ')) return [{ affectedRows: 1 }];
+      if (sql.includes('SELECT * FROM warehouse_exports WHERE id = ?')) return [[{ id: 7 }]];
+      if (sql.includes('FROM warehouse_export_items wei') && sql.includes('WHERE wei.export_id = ?')) return [[]];
+      if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }];
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+      '../utils/db': { getConnection: async () => connection },
+      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
+      './chargingStationService': { writeActivity: async () => {} },
+      './chargingStationDeploymentService': { refreshStationProgress: async () => {} }
+    });
+    try {
+      await service.updateShipmentStatus(5, 7, {
+        request_id: 'whole-return', status: 'RETURNED', expected_status: 'RETURN_PENDING', reason: 'Trả hàng'
+      }, { id: 9, role: 'SUPER_ADMIN' });
+      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE supplier_charging_poles SET quantity')), !historical);
+      assert.ok(connection.calls.some(call => call.sql?.startsWith('UPDATE warehouse_export_items')));
+      assert.ok(connection.calls.includes('commit'));
+    } finally { restore(); }
+  });
+}

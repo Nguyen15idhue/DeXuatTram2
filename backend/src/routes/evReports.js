@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireUserManager, optionalAuth } = require('../middlewares/auth');
-const { guestSubmitLimiter, guestTrackLimiter } = require('../middlewares/rateLimits');
+const { guestSubmitLimiter, guestTrackLimiter, excelLimiter } = require('../middlewares/rateLimits');
 const { adminLimiter } = require('../middlewares/rateLimits');
 const { validateCreateEvReport, validateUpdateEvReport } = require('../middlewares/validators');
 const evReportController = require('../controllers/evReportController');
@@ -138,6 +138,25 @@ router.post('/check-nearby-public', guestTrackLimiter, evReportController.checkN
  *         description: Thành công
  */
 router.get('/admin/list', requireAuth, requireUserManager, evReportController.adminList);
+
+/**
+ * @swagger
+ * /api/ev-reports/admin/export:
+ *   get:
+ *     tags: [EvReports]
+ *     summary: Xuất toàn bộ nhu cầu sạc xe ra Excel
+ *     description: Bao gồm các trường động và dữ liệu cũ; không áp dụng tìm kiếm.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: File Excel chứa toàn bộ nhu cầu
+ *       401:
+ *         description: Chưa đăng nhập
+ *       403:
+ *         description: Không có quyền xuất dữ liệu
+ */
+router.get('/admin/export', requireAuth, requireUserManager, adminLimiter, excelLimiter, evReportController.adminExportExcel);
 
 /**
  * @swagger

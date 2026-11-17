@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const { isDeepStrictEqual } = require('node:util');
+const { stockAffectingItems } = require('./historicalOnImportInventory');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const idOf = (value, label = 'Mã bản ghi') => {
@@ -423,7 +424,7 @@ const createExportWithinTransaction = async (connection, stationId, body = {}, u
 const lockShipmentItems = async (connection, stationId, exportId, items) => {
   const ids = items.map((item) => item.item_id);
   const [rows] = await connection.query(
-    `SELECT wei.*, we.transport_status, we.charging_station_id, we.destination_type
+    `SELECT wei.*, we.transport_status, we.charging_station_id, we.destination_type, we.historical_import
        FROM warehouse_export_items wei
        JOIN warehouse_exports we ON we.id = wei.export_id
       WHERE wei.id IN (${ids.map(() => '?').join(',')})
@@ -446,7 +447,7 @@ const lockShipmentItems = async (connection, stationId, exportId, items) => {
 
 const restockShipmentItems = async (connection, items) => {
   const inventory = new Map();
-  for (const item of items) {
+  for (const item of stockAffectingItems(items)) {
     const key = `${item.supplier_id}:${item.pole_id}`;
     inventory.set(key, (inventory.get(key) || 0) + Number(item.quantity));
   }
@@ -455,6 +456,7 @@ const restockShipmentItems = async (connection, items) => {
     const [bs, bp] = b.split(':').map(Number);
     return as - bs || ap - bp;
   });
+  if (!keys.length) return;
   const [stock] = await connection.query(`SELECT supplier_id, charging_pole_id FROM supplier_charging_poles
     WHERE ${keys.map(() => '(supplier_id = ? AND charging_pole_id = ?)').join(' OR ')}
     ORDER BY supplier_id, charging_pole_id FOR UPDATE`, keys.flatMap(key => key.split(':').map(Number)));
@@ -552,7 +554,9 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
       if (remaining.some(item => Number(item.return_pending_quantity) !== item.quantity)) {
         throw fail('Đơn chưa có yêu cầu hoàn toàn bộ số còn lại; cần đối soát', 409);
       }
-      await restockShipmentItems(connection, remaining);
+      await restockShipmentItems(connection, remaining.map(item => ({
+        ...item, historical_import: headers[0].historical_import
+      })));
       for (const item of remaining) {
         await connection.query(`UPDATE warehouse_export_items SET returned_quantity=returned_quantity+?,
           received_quantity=0,return_pending_quantity=0 WHERE id=?`, [item.quantity, item.id]);

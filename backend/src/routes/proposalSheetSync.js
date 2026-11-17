@@ -24,7 +24,7 @@ router.get('/status', requireAuth, requireAdmin, controller.status);
  * /api/admin/proposal-sheet-sync/daily:
  *   post:
  *     tags: [Admin - Proposals]
- *     summary: Xếp các đề xuất cập nhật hôm nay vào hàng đợi đồng bộ
+ *     summary: Đối soát toàn bộ đề xuất và các mục hàng đợi chưa hoàn tất
  *     description: Tác vụ bất đồng bộ; API trả về ngay sau khi đã tạo lượt đồng bộ.
  *     security:
  *       - bearerAuth: []

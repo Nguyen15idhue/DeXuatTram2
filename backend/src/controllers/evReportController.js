@@ -1,4 +1,5 @@
 const evReportService = require("../services/evReportService");
+const evReportExcelService = require("../services/evReportExcelService");
 const evReportSheetSyncService = require("../services/evReportSheetSyncService");
 const proximityService = require("../services/proximityService");
 
@@ -80,6 +81,25 @@ exports.adminList = async (req, res) => {
   } catch (error) {
     console.error("Admin list ev reports error:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
+exports.adminExportExcel = async (req, res) => {
+  try {
+    const buffer = await evReportExcelService.buildExport();
+    const stamp = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date()).replace(/-/g, '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${stamp}_nhu_cau_sac_xe.xlsx`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error('Export ev reports error:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : 'Không thể xuất dữ liệu nhu cầu sạc xe'
+    });
   }
 };
 

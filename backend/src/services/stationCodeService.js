@@ -13,7 +13,7 @@ exports.generatePendingCode = async (maTinh, connection) => {
   return formatStationCode(tinh, n);
 };
 
-exports.isCodeTaken = async (code, excludeProposalId) => {
+exports.isCodeTaken = async (code, excludeProposalId, executor = pool) => {
   const c = String(code || '').trim();
   if (!c) return false;
   const params = [c];
@@ -22,20 +22,20 @@ exports.isCodeTaken = async (code, excludeProposalId) => {
     excludeClause = ' AND id != ?';
     params.push(excludeProposalId);
   }
-  const [srows] = await pool.query(
+  const [srows] = await executor.query(
     "SELECT id FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) = ? LIMIT 1",
     [c]
   );
   if (srows.length > 0) return true;
-  const [prows] = await pool.query(
+  const [prows] = await executor.query(
     `SELECT id FROM station_proposals WHERE pending_station_code = ?${excludeClause} LIMIT 1`,
     params
   );
   return prows.length > 0;
 };
 
-exports.assertCodeFree = async (code, excludeProposalId) => {
-  if (await exports.isCodeTaken(code, excludeProposalId)) {
+exports.assertCodeFree = async (code, excludeProposalId, executor = pool) => {
+  if (await exports.isCodeTaken(code, excludeProposalId, executor)) {
     throw Object.assign(new Error(`Mã trạm "${code}" đã tồn tại`), { statusCode: 400 });
   }
 };

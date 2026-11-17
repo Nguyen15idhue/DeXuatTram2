@@ -14,6 +14,7 @@ import ProposalRequestsTab from '../../components/admin/ProposalRequestsTab';
 import ProposalCompletedTab from '../../components/admin/ProposalCompletedTab';
 import { ProposalCodeLink, ProposalPersonLink } from '../../components/admin/ProposalLinkCells';
 import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
+import HistoricalOnImportModal from '../../components/admin/HistoricalOnImportModal';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
@@ -116,6 +117,7 @@ const AdminProposalsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [proposalSheetSyncStatus, setProposalSheetSyncStatus] = useState(null);
   const [proposalSheetSyncLoading, setProposalSheetSyncLoading] = useState(false);
+  const [proposalSheetSyncError, setProposalSheetSyncError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [pageSize, setPageSize] = useState(20);
@@ -148,6 +150,7 @@ const AdminProposalsPage = () => {
     }
   };
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showHistoricalImport, setShowHistoricalImport] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmInfoBatchOpen, setConfirmInfoBatchOpen] = useState(false);
   const [batchConfirmLoading, setBatchConfirmLoading] = useState(false);
@@ -336,8 +339,12 @@ const AdminProposalsPage = () => {
     if (!token || !isAdmin) return;
     try {
       const res = await proposalSheetSyncService.getStatus(token);
-      if (res?.success) setProposalSheetSyncStatus(res.data || null);
-    } catch { /* status card is optional if the integration is unavailable */ }
+      if (!res?.success) throw new Error(res?.message || 'Không thể tải trạng thái đồng bộ');
+      setProposalSheetSyncStatus(res.data || null);
+      setProposalSheetSyncError('');
+    } catch (syncError) {
+      setProposalSheetSyncError(syncError?.message || 'Không thể tải trạng thái đồng bộ Google Sheets');
+    }
   }, [token, isAdmin]);
 
   const startProposalSheetDailySync = async () => {
@@ -370,8 +377,8 @@ const AdminProposalsPage = () => {
   }, [isAdmin, loadProposalSheetSyncStatus]);
 
   useEffect(() => {
-    if (!isAdmin || !proposalSheetSyncStatus?.activeRun) return undefined;
-    const timer = setInterval(loadProposalSheetSyncStatus, 3000);
+    if (!isAdmin) return undefined;
+    const timer = setInterval(loadProposalSheetSyncStatus, proposalSheetSyncStatus?.activeRun ? 3000 : 30000);
     return () => clearInterval(timer);
   }, [isAdmin, proposalSheetSyncStatus?.activeRun?.id, loadProposalSheetSyncStatus]);
 
@@ -1115,6 +1122,8 @@ const AdminProposalsPage = () => {
   return (
     <div>
       <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
+      {showHistoricalImport && <HistoricalOnImportModal isOpen onClose={() => setShowHistoricalImport(false)} token={token}
+        onImported={() => loadProposals(1)} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
@@ -1131,10 +1140,10 @@ const AdminProposalsPage = () => {
               type="button"
               className="btn btn-outline btn-sm gap-1"
               onClick={startProposalSheetDailySync}
-              disabled={!proposalSheetSyncStatus?.configured || proposalSheetSyncLoading || Boolean(proposalSheetSyncStatus?.activeRun)}
-              title={!proposalSheetSyncStatus?.configured
+              disabled={!proposalSheetSyncStatus?.configured || Boolean(proposalSheetSyncError) || proposalSheetSyncLoading || Boolean(proposalSheetSyncStatus?.activeRun)}
+              title={proposalSheetSyncError || (!proposalSheetSyncStatus?.configured
                 ? proposalSheetSyncStatus?.message || 'Google Sheets chưa được cấu hình'
-                : 'Đối soát toàn bộ đề xuất, hàng chờ và các mục đồng bộ lỗi'}
+                : 'Đối soát toàn bộ đề xuất, hàng chờ và các mục đồng bộ lỗi')}
             >
               <RefreshCw size={14} className={proposalSheetSyncStatus?.activeRun ? 'animate-spin' : ''} />
               {proposalSheetSyncStatus?.activeRun
@@ -1161,6 +1170,12 @@ const AdminProposalsPage = () => {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52 dropdown-center-mobile" style={moreTop != null ? { top: moreTop } : undefined}>
+                  {isSuperAdmin && (
+                    <button className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
+                      onClick={() => { setShowMoreMenu(false); setShowHistoricalImport(true); }}>
+                      <Upload size={14} className="text-primary" /> Import dữ liệu trạm cũ
+                    </button>
+                  )}
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
                     onClick={() => { setShowMoreMenu(false); handleExportReports(selectedIds); }}
@@ -1286,6 +1301,35 @@ const AdminProposalsPage = () => {
           </>)}
         </div>
       </div>
+
+      {isAdmin && activeTab === 'all' && (
+        <div className="mb-4 text-sm" role="status">
+          {proposalSheetSyncError ? (
+            <span className="text-error">{proposalSheetSyncError}</span>
+          ) : proposalSheetSyncStatus ? (
+            <>
+              <span>
+                Google Sheets: {proposalSheetSyncStatus.configured ? 'Đã cấu hình' : proposalSheetSyncStatus.message || 'Chưa cấu hình'}
+                {' · '}Đang chờ: {proposalSheetSyncStatus.pendingCount || 0}
+                {' · '}Thất bại: {proposalSheetSyncStatus.failedCount || 0}
+              </span>
+              {proposalSheetSyncStatus.recentRuns?.[0] && (
+                <span>
+                  {' · '}Lượt gần nhất: {({
+                    QUEUED: 'Đang chờ', RUNNING: 'Đang chạy', SUCCESS: 'Thành công', FAILED: 'Thất bại'
+                  })[proposalSheetSyncStatus.recentRuns[0].status] || proposalSheetSyncStatus.recentRuns[0].status}
+                  {' '}({proposalSheetSyncStatus.recentRuns[0].synced_count || 0}/{proposalSheetSyncStatus.recentRuns[0].total_count || 0})
+                </span>
+              )}
+              {(proposalSheetSyncStatus.lastError || proposalSheetSyncStatus.recentRuns?.[0]?.error_message) && (
+                <div className="text-error">
+                  Lỗi đồng bộ: {proposalSheetSyncStatus.lastError || proposalSheetSyncStatus.recentRuns[0].error_message}
+                </div>
+              )}
+            </>
+          ) : 'Đang tải trạng thái Google Sheets...'}
+        </div>
+      )}
 
       <div role="tablist" className="proposal-workflow-tabs mb-4">
         <button

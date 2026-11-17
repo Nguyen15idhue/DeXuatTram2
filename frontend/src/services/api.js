@@ -378,6 +378,18 @@ export const evReportService = {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
     return api.getWithAuth(`/ev-reports/admin/list${qs}`, token);
   },
+  async adminExport(token) {
+    const response = await api.downloadWithAuth('/ev-reports/admin/export', token);
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('spreadsheetml')) {
+      throw new Error('Máy chủ trả về nội dung không phải file Excel');
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const name = parseDispositionFilename(response.headers.get('content-disposition')) || `${fileStamp()}_nhu_cau_sac_xe.xlsx`;
+    triggerDownload(objectUrl, name);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+  },
   adminGetById(id, token) {
     return api.getWithAuth(`/ev-reports/admin/${id}`, token);
   },
@@ -1460,6 +1472,23 @@ export const excelService = {
   confirmDataListImport(listId, rows, token) {
     return api.postWithAuth(`/admin/data-lists/${listId}/import/confirm`, { rows }, token);
   },
+};
+
+export const historicalOnImportService = {
+  downloadTemplate(token) {
+    return excelService.downloadBlob('/admin/historical-on-import/template', token, 'import_tram_cu.xlsx');
+  },
+  preview(file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.uploadWithAuth('/admin/historical-on-import/preview', formData, token);
+  },
+  confirm(file, proof, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('proof', proof);
+    return api.uploadWithAuth('/admin/historical-on-import/confirm', formData, token);
+  }
 };
 
 export const dataListService = {
