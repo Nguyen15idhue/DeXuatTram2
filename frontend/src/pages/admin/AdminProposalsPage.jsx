@@ -14,6 +14,7 @@ import ProposalRequestsTab from '../../components/admin/ProposalRequestsTab';
 import ProposalCompletedTab from '../../components/admin/ProposalCompletedTab';
 import { ProposalCodeLink, ProposalPersonLink } from '../../components/admin/ProposalLinkCells';
 import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
+import HistoricalOnImportModal from '../../components/admin/HistoricalOnImportModal';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
@@ -148,6 +149,7 @@ const AdminProposalsPage = () => {
     }
   };
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showHistoricalImport, setShowHistoricalImport] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmInfoBatchOpen, setConfirmInfoBatchOpen] = useState(false);
   const [batchConfirmLoading, setBatchConfirmLoading] = useState(false);
@@ -1115,6 +1117,8 @@ const AdminProposalsPage = () => {
   return (
     <div>
       <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
+      {showHistoricalImport && <HistoricalOnImportModal isOpen onClose={() => setShowHistoricalImport(false)} token={token}
+        onImported={() => loadProposals(1)} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
@@ -1161,6 +1165,12 @@ const AdminProposalsPage = () => {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52 dropdown-center-mobile" style={moreTop != null ? { top: moreTop } : undefined}>
+                  {isSuperAdmin && (
+                    <button className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
+                      onClick={() => { setShowMoreMenu(false); setShowHistoricalImport(true); }}>
+                      <Upload size={14} className="text-primary" /> Import dữ liệu trạm cũ
+                    </button>
+                  )}
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
                     onClick={() => { setShowMoreMenu(false); handleExportReports(selectedIds); }}

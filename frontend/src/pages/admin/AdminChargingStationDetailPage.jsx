@@ -305,6 +305,8 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
           </div>
         )}
         <dl className="grid gap-3 sm:grid-cols-2">
+          <InfoItem label="Số hợp đồng" value={record.contract_number || '—'} />
+          <InfoItem label="Ngày ký hợp đồng" value={formatCsDate(record.contract_signed_date)} />
           <InfoItem label="Ngày hiệu lực hợp đồng" value={formatCsDate(record.contract_effective_date)} />
           <InfoItem label="Ngày hết hạn hợp đồng" value={formatCsDate(record.contract_expiry_date)} />
         </dl>

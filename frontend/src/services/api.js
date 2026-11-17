@@ -1462,6 +1462,23 @@ export const excelService = {
   },
 };
 
+export const historicalOnImportService = {
+  downloadTemplate(token) {
+    return excelService.downloadBlob('/admin/historical-on-import/template', token, 'import_tram_cu.xlsx');
+  },
+  preview(file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.uploadWithAuth('/admin/historical-on-import/preview', formData, token);
+  },
+  confirm(file, proof, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('proof', proof);
+    return api.uploadWithAuth('/admin/historical-on-import/confirm', formData, token);
+  }
+};
+
 export const dataListService = {
   getAll(params, token) {
     return api.getWithAuth(`/admin/data-lists?${params}`, token);

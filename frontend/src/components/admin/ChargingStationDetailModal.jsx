@@ -305,6 +305,8 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
                     {file.original_name || `Hợp đồng #${file.id}`}
                   </a>
                 ))}
+                <div className="text-sm">Số hợp đồng: {record.contract_number || '—'}</div>
+                <div className="text-sm">Ngày ký hợp đồng: {formatCsDate(record.contract_signed_date)}</div>
                 <div className="text-sm">Ngày hiệu lực hợp đồng: {formatCsDate(record.contract_effective_date)}</div>
                 <div className="text-sm">Ngày hết hạn hợp đồng: {formatCsDate(record.contract_expiry_date)}</div>
                 {record.contract_note && <div className="whitespace-pre-wrap text-sm">Ghi chú hợp đồng: {record.contract_note}</div>}

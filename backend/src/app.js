@@ -144,6 +144,7 @@ app.use('/api/proposals', proposalsRoutes);
 app.use('/api/ev-reports', evReportsRoutes);
 app.use('/api/admin/signatures', adminLimiter, signaturesRoutes);
 app.use('/api/admin/proposals', adminLimiter, adminProposalsRoutes);
+app.use('/api/admin/historical-on-import', adminLimiter, require('./routes/historicalOnImport'));
 app.use('/api/admin/proposal-sheet-sync', adminLimiter, proposalSheetSyncRoutes);
 app.use('/api/admin/on-station-sheet-sync', adminLimiter, onStationSheetSyncRoutes);
 app.use('/api/admin/proposal-requests', adminLimiter, proposalRequestsRoutes);
