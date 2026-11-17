@@ -23,3 +23,8 @@ export function isProposalAssignee(item, userId) {
   return Number(item.nguoi_phu_trach_id) === Number(userId)
     || Number(item.sales_quan_ly_id) === Number(userId);
 }
+
+export function canShowProposalMapField(item, user, field) {
+  return ['ADMIN', 'SUPER_ADMIN'].includes(user?.role)
+    && Object.prototype.hasOwnProperty.call(item, field);
+}

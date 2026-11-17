@@ -24,7 +24,10 @@ const setup = (t, overrides = {}) => {
     }
   };
   t.mock.method(pool, 'getConnection', async () => connection);
-  t.mock.method(pool, 'query', async sql => sql.includes('SELECT cs.id') ? [[record]] : [[]]);
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('proposal_lifecycle_configs')) return [[{ value: '1' }]];
+    return sql.includes('SELECT cs.id') ? [[record]] : [[]];
+  });
   t.mock.method(access, 'buildViewScope', async () => ({ sql: '1=1', params: [] }));
   t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
     isBackOffice: user.id === backOffice.id, department: user.custom_data?.department || ''

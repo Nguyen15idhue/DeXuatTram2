@@ -41,6 +41,7 @@ test('direct API extension is rejected for operating stations without changing r
 });
 
 test('overdue worker filters operating stations and rechecks status before cancellation', async (t) => {
+  t.mock.property(readiness, 'ONBOARDING_AUTO_CANCEL_ENABLED', true);
   let rolledBack = false;
   let transactions = 0;
   t.mock.method(pool, 'query', async sql => {
@@ -60,6 +61,12 @@ test('overdue worker filters operating stations and rechecks status before cance
   assert.equal(await stations.cancelOverdueStations(), 0);
   assert.equal(transactions, 1);
   assert.equal(rolledBack, true);
+});
+
+test('paused overdue cancellation never queries or modifies stations and proposals', async (t) => {
+  t.mock.method(pool, 'query', async () => { assert.fail('Deadline cancellation must not query the database while paused'); });
+  t.mock.method(pool, 'getConnection', async () => { assert.fail('Deadline cancellation must not start a transaction while paused'); });
+  assert.equal(await stations.cancelOverdueStations(), 0);
 });
 
 test.after(async () => { await pool.end(); });

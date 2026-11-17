@@ -6,7 +6,7 @@ import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
 import { getMapStatusLabel, getStatusLabel, getProposalMapStatus, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
-import { getProposalDisplayName, getProposalDisplayPhone, isProposalAssignee } from '../utils/proposalDisplay';
+import { getProposalDisplayName, getProposalDisplayPhone, isProposalAssignee, canShowProposalMapField } from '../utils/proposalDisplay';
 import { PROVINCES, ISLAND_POINTS, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
@@ -287,7 +287,7 @@ function createProposalPopupContent(item, user) {
   addRow('Mã đề xuất', item.ma_de_xuat);
   addRow('Người đề xuất', getProposalDisplayName(item));
   addRow('SĐT người đề xuất', getProposalDisplayPhone(item));
-  addRow('Địa chỉ', item.address);
+  if (canShowProposalMapField(item, user, 'address')) addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
   statusStrong.textContent = 'Trạng thái: ';
@@ -300,8 +300,8 @@ function createProposalPopupContent(item, user) {
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
   addRow('Trạng thái đề xuất', getMapStatusLabel(item.status, 'proposal'));
-  addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_dau_tu] || item.mo_hinh_dau_tu || '');
-  const proposalTru = pickProposalTru(item);
+  if (canShowProposalMapField(item, user, 'mo_hinh_dau_tu')) addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_dau_tu] || item.mo_hinh_dau_tu || '');
+  const proposalTru = item.map_pole_summary ?? pickProposalTru(item);
   addRow('Trụ', proposalTru);
 
   if (canViewProposal(item, user)) {

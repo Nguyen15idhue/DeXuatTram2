@@ -77,6 +77,7 @@ const deliveryMissingSql = (stationAlias = 'cs', proposalAlias = 'p') => `(
 
 const MAX_DEADLINE_EXTENSIONS = 3;
 const DEADLINE_EXTENSION_DAYS = 3;
+const ONBOARDING_AUTO_CANCEL_ENABLED = false;
 
 const isDeadlineActive = (station) => {
   if (station.status !== 'ONBOARDING') return false;
@@ -117,5 +118,6 @@ module.exports = {
   deadlineActiveSql,
   MAX_DEADLINE_EXTENSIONS,
   DEADLINE_EXTENSION_DAYS,
+  ONBOARDING_AUTO_CANCEL_ENABLED,
   MISSING_LABELS
 };

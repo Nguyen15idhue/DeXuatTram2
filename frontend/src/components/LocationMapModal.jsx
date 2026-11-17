@@ -7,7 +7,7 @@ import { getMarkerColor, getMapMarkerStyle } from '../utils/mapHelpers';
 import { getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
-import { getProposalDisplayName, getProposalDisplayPhone } from '../utils/proposalDisplay';
+import { getProposalDisplayName, getProposalDisplayPhone, canShowProposalMapField } from '../utils/proposalDisplay';
 import { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
@@ -96,7 +96,7 @@ function summarizeNearbyTru(item, entity) {
   return item.loai_tru || '';
 }
 
-function createNearbyPopup(title, item, status, entity) {
+function createNearbyPopup(title, item, status, entity, user) {
   const div = document.createElement('div');
   div.className = 'popup-content';
   const h3 = document.createElement('h3');
@@ -141,11 +141,11 @@ function createNearbyPopup(title, item, status, entity) {
   statusP.appendChild(span);
   div.appendChild(statusP);
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
-  addRow('Địa chỉ', item.address);
+  if (entity !== 'proposal' || canShowProposalMapField(item, user, 'address')) addRow('Địa chỉ', item.address);
   const moHinh = entity === 'station' ? item.mo_hinh_tram : item.mo_hinh_dau_tu;
   if (status !== 'PLANNING' || entity !== 'station') {
-    addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
-    addRow('Trụ', summarizeNearbyTru(item, entity));
+    if (entity !== 'proposal' || canShowProposalMapField(item, user, 'mo_hinh_dau_tu')) addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
+    addRow('Trụ', entity === 'proposal' ? (item.nearby_pole_summary ?? summarizeNearbyTru(item, entity)) : summarizeNearbyTru(item, entity));
   }
   return div;
 }
@@ -459,7 +459,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
   });
   const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
-  const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');
+  const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal', user);
   const renderEvReportPopup = (item) => createNearbyPopup('Nhu cầu sạc xe điện', item, item.status, 'ev_report');
 
   const isMaplibre = renderer === 'maplibre';

@@ -7,7 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { canOperateStation } from '../../utils/chargingFulfillment';
 import ChargingStationNeedBadge from '../../components/admin/ChargingStationNeedBadge';
-import { CS_DEPOSIT_LABELS, CS_DEPOSIT_VARIANT, CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS, getCsDeadlineLabel, isCsDeadlineStopped } from '../../utils/chargingStation';
+import { CS_DEADLINE_DISPLAY_ENABLED, CS_DEPOSIT_LABELS, CS_DEPOSIT_VARIANT, CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS, getCsDeadlineLabel, isCsDeadlineStopped } from '../../utils/chargingStation';
 
 const PAGE_SIZE = 20;
 const TABS = [
@@ -320,7 +320,7 @@ const AdminFinancePage = () => {
         </span>
       )
     }
-  ], []);
+  ].filter(column => CS_DEADLINE_DISPLAY_ENABLED || column.key !== 'finance_deadline_at'), []);
 
   const invoiceColumns = useMemo(() => [
     { key: 'invoice_type', label: 'Loại', render: (value) => <Badge variant="info" size="sm">{INVOICE_LABELS[value] || value}</Badge> },
@@ -381,7 +381,7 @@ const AdminFinancePage = () => {
 
       <div className="flex items-center justify-between text-sm text-base-content/60">
         <span>Tổng số trạm trong tab: <strong>{pagination.total}</strong></span>
-        <span>Hạn xử lý: 15 ngày từ khi tạo ON trạm</span>
+        {CS_DEADLINE_DISPLAY_ENABLED && <span>Hạn xử lý: 15 ngày từ khi tạo ON trạm</span>}
       </div>
 
       <DataTable

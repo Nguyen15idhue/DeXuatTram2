@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, optionalAuth } = require('../middlewares/auth');
+const { requireAuth } = require('../middlewares/auth');
 const { guestSubmitLimiter, guestTrackLimiter } = require('../middlewares/rateLimits');
 const { validateCreateProposal } = require('../middlewares/validators');
 const proposalController = require('../controllers/proposalController');
+
+const optionalVerifiedAuth = (req, res, next) => {
+  if (req.headers.authorization || req.query.token) return requireAuth(req, res, next);
+  return next();
+};
 
 /**
  * @swagger
@@ -11,7 +16,7 @@ const proposalController = require('../controllers/proposalController');
  *   get:
  *     tags: [Proposals]
  *     summary: Lấy danh sách đề xuất (công khai, rút gọn)
-  *     description: Hiển thị trên bản đồ, không phân trang. Kèm mã đề xuất/mô hình/trụ/loại ưu tiên; tên + SĐT người đề xuất chỉ trả khi có đăng nhập, không trả custom_data.
+ *     description: Dữ liệu bản đồ không phân trang. Địa chỉ và mô hình chỉ trả cho ADMIN/SUPER_ADMIN; vai trò khác nhận tóm tắt trụ, không nhận bảng trụ theo mô hình.
  *     responses:
  *       200:
  *         description: Thành công
@@ -27,7 +32,7 @@ const proposalController = require('../controllers/proposalController');
  *                   items:
  *                     $ref: '#/components/schemas/Proposal'
  */
-router.get('/', optionalAuth, proposalController.getAll);
+router.get('/', optionalVerifiedAuth, proposalController.getAll);
 
 /**
  * @swagger
@@ -35,7 +40,7 @@ router.get('/', optionalAuth, proposalController.getAll);
  *   get:
  *     tags: [Proposals]
  *     summary: Lấy thông tin đề xuất theo ID (công khai, rút gọn)
- *     description: Chỉ trả bản rút gọn id/latitude/longitude/address/status/created_at.
+ *     description: Dữ liệu bản đồ rút gọn; địa chỉ và mô hình chỉ trả cho ADMIN/SUPER_ADMIN.
  *     parameters:
  *       - in: path
  *         name: id
@@ -57,7 +62,7 @@ router.get('/', optionalAuth, proposalController.getAll);
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id', optionalAuth, proposalController.getById);
+router.get('/:id', optionalVerifiedAuth, proposalController.getById);
 
 /**
  * @swagger
