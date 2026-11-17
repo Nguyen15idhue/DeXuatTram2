@@ -147,6 +147,7 @@ app.use('/api/admin/proposals', adminLimiter, adminProposalsRoutes);
 app.use('/api/admin/historical-on-import', adminLimiter, require('./routes/historicalOnImport'));
 app.use('/api/admin/proposal-sheet-sync', adminLimiter, proposalSheetSyncRoutes);
 app.use('/api/admin/on-station-sheet-sync', adminLimiter, onStationSheetSyncRoutes);
+app.use('/api/admin/cms-reports', adminLimiter, require('./routes/cmsReports'));
 app.use('/api/admin/proposal-requests', adminLimiter, proposalRequestsRoutes);
 app.use('/api/admin/proposal-grading', adminLimiter, proposalGradingRoutes);
 app.use('/api/admin/proposal-reviews', adminLimiter, proposalReviewRoutes);
@@ -230,6 +231,7 @@ app.listen(PORT, '0.0.0.0', () => {
   onStationSheetSyncWorker.start().catch((err) => {
     console.error('[OnStationSheetSyncWorker] start error:', err.message);
   });
+  require('./workers/cmsReportWorker').start();
   crmInboundPollingWorker.start().catch((err) => {
     console.error('[CrmInboundPollingWorker] start error:', err.message);
   });

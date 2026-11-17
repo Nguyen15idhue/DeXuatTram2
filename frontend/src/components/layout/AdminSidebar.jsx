@@ -198,6 +198,12 @@ const navigationItems = [
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
+    path: "/admin/cms-reports",
+    label: "Thống kê phiên sạc CMS",
+    icon: BarChart3,
+    roles: ["SUPER_ADMIN", "ADMIN"],
+  },
+  {
     path: "/admin/excel-export",
     label: "Xuất Excel",
     icon: FileSpreadsheet,
@@ -241,6 +247,7 @@ const configGroups = [
       "/admin/on-tram",
       "/admin/tai-chinh",
       "/admin/kho",
+      "/admin/cms-reports",
     ].map((path) => navigationItems.find((item) => item.path === path)),
   },
   {
