@@ -1,4 +1,5 @@
 const authService = require('../services/authService');
+const { isLeadPortalUser } = require('../utils/leadPortal');
 
 exports.register = async (req, res) => {
   try {
@@ -83,7 +84,8 @@ exports.login = async (req, res) => {
           parent_id: user.parent_id || null,
           department: loginCd.department || null,
           chuc_vu: loginCd.chuc_vu || null,
-          avatar
+          avatar,
+          lead_portal: isLeadPortalUser(user)
         },
         token
       }
@@ -115,7 +117,7 @@ exports.getMe = async (req, res) => {
 
     res.json({
       success: true,
-      data: { user: { ...user, department: cd.department || null, chuc_vu: cd.chuc_vu || null, avatar, custom_data: undefined } }
+      data: { user: { ...user, department: cd.department || null, chuc_vu: cd.chuc_vu || null, avatar, custom_data: undefined, lead_portal: isLeadPortalUser(user) } }
     });
   } catch (error) {
     console.error('Get me error:', error);

@@ -67,9 +67,18 @@ const update = async (id, body, ctx) => {
   assertSuper(ctx);
   const reason = reasonOf(body.reason);
   const allowed = new Set([...Object.keys(ENUM_FIELDS), ...DATE_FIELDS, ...DATETIME_FIELDS, ...TEXT_FIELDS, ...FILE_FIELDS,
-    'acceptance_user_id', 'deadline_extension_count', 'sub_status', 'expected_token', 'reason', 'deployment_updates']);
+    'acceptance_user_id', 'deadline_extension_count', 'sub_status', 'expected_token', 'reason', 'deployment_updates', 'delivery_completed']);
   for (const key of Object.keys(body)) if (!allowed.has(key)) throw fail(`Không được sửa trường ${key}`);
+  if (body.delivery_completed !== undefined && body.delivery_completed !== true) {
+    throw fail('Chỉ được đánh dấu hoàn thành Giao trụ');
+  }
+  const deliveryOnly = body.delivery_completed === true
+    && Object.keys(body).every(key => ['delivery_completed', 'expected_token', 'reason'].includes(key));
+  if (body.delivery_completed === true && !deliveryOnly) {
+    throw fail('Xác nhận Giao trụ phải được gửi riêng với lý do và phiên bản dữ liệu');
+  }
   const patch = {};
+  let deliveryResult;
   for (const [key, options] of Object.entries(ENUM_FIELDS)) {
     if (body[key] !== undefined) {
       if (!options.includes(body[key])) throw fail(`Giá trị ${key} không hợp lệ`);
@@ -107,6 +116,19 @@ const update = async (id, body, ctx) => {
     if (!rows.length) throw fail('Không tìm thấy ON trạm', 404);
     const current = rows[0];
     await assertToken(id, body.expected_token, connection);
+    if (body.delivery_completed === true) {
+      if (current.status === 'CANCELLED') throw fail('ON trạm đã hủy; không thể hoàn thành Giao trụ', 409);
+      deliveryResult = await require('./chargingStationShippingService').completeDeliveryWithoutStock(connection, current, ctx, reason);
+      if (deliveryResult.station.status !== current.status || deliveryResult.station.sub_status !== current.sub_status) {
+        patch.status = deliveryResult.station.status;
+        patch.sub_status = deliveryResult.station.sub_status;
+      }
+      const previous = typeof current.workflow_override === 'string'
+        ? JSON.parse(current.workflow_override) : current.workflow_override;
+      if (previous?.delivery_completed !== true) {
+        patch.workflow_override = { ...previous, delivery_completed: true };
+      }
+    }
     if (body.sub_status !== undefined) {
       const options = require('../constants/chargingStations').SUB_STATUS_BY_STATUS[current.status] || [];
       const sub = body.sub_status || null;
@@ -114,11 +136,11 @@ const update = async (id, body, ctx) => {
       patch.sub_status = sub;
     }
     const merged = { ...current, ...patch };
-    if (merged.contract_effective_date && merged.contract_expiry_date
+    if (!deliveryOnly && merged.contract_effective_date && merged.contract_expiry_date
       && new Date(merged.contract_effective_date) >= new Date(merged.contract_expiry_date)) {
       throw fail('Ngày hết hạn hợp đồng phải sau ngày hiệu lực');
     }
-    if (merged.status === 'OPERATING' && (!merged.cms_station_code || !merged.on_date)) {
+    if (!deliveryOnly && merged.status === 'OPERATING' && (!merged.cms_station_code || !merged.on_date)) {
       throw fail('Trạm đã ON phải có mã CMS và ngày ON');
     }
     if (patch.acceptance_user_id) {
@@ -126,6 +148,9 @@ const update = async (id, body, ctx) => {
       if (!users.length) throw fail('Người nghiệm thu không tồn tại');
     }
     const collections = {};
+    if (deliveryResult?.received.length) collections.delivery_receipt = {
+      export_id: deliveryResult.export_id, items: deliveryResult.received, stock_exempt: true
+    };
     for (const key of FILE_FIELDS) if (body[key] !== undefined) {
       const values = key === 'acceptance_file_id' ? (body[key] ? [body[key]] : []) : body[key];
       if (!Array.isArray(values) || values.length > 100) throw fail(`Danh sách ${key} không hợp lệ`);
@@ -156,10 +181,13 @@ const update = async (id, body, ctx) => {
       await require('./chargingStationCompletionService').overridePortions(connection, current, body.deployment_updates,
         { id: ctx.actorId, role: ctx.actorRole }, ctx, reason);
     }
-    if (!keys.length && !Object.keys(collections).length && !body.deployment_updates) throw fail('Không có dữ liệu cập nhật');
+    if (!keys.length && !Object.keys(collections).length && !body.deployment_updates && !deliveryOnly) throw fail('Không có dữ liệu cập nhật');
     if (keys.length) await connection.query(`UPDATE charging_stations SET ${keys.map(key => `${key}=?`).join(',')} WHERE id=?`,
-      [...keys.map(key => patch[key]), id]);
-    await writeLog(connection, id, 'overview_overridden', current, patch, ctx, reason, collections);
+      [...keys.map(key => key === 'workflow_override' ? JSON.stringify(patch[key]) : patch[key]), id]);
+    if (keys.length || Object.keys(collections).length || body.deployment_updates) {
+      await writeLog(connection, id, body.delivery_completed === true ? 'delivery_completed_manually' : 'overview_overridden',
+        current, patch, ctx, reason, collections);
+    }
     await connection.commit();
   } catch (error) {
     await connection.rollback();

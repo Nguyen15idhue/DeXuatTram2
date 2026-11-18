@@ -26,13 +26,16 @@ exports.log = async (entry, conn = pool) => {
   return res.insertId;
 };
 
-exports.getTimeline = async (journeyId, limit = 200) => {
+exports.getTimeline = async (journeyId, limit = 200, { leadOnly = false } = {}) => {
   const n = Math.min(500, Math.max(1, parseInt(limit, 10) || 200));
+  const columns = leadOnly
+    ? 'l.id, l.entity_type, l.entity_id, l.action, l.stage_before, l.stage_after, l.changed_fields, l.actor_id, l.actor_role, l.source, l.reason, l.created_at'
+    : 'l.*';
   const [rows] = await pool.query(
-    `SELECT l.*, u.full_name AS actor_name
+    `SELECT ${columns}, u.full_name AS actor_name
        FROM journey_activity_logs l
        LEFT JOIN users u ON u.id = l.actor_id
-      WHERE l.journey_id = ?
+      WHERE l.journey_id = ? ${leadOnly ? "AND l.entity_type = 'lead'" : ''}
       ORDER BY l.created_at ASC, l.id ASC
       LIMIT ?`,
     [journeyId, n]

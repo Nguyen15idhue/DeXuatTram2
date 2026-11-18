@@ -811,6 +811,12 @@ export const chargingStationService = {
   update(id, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}`, data || {}, token));
   },
+  getCommitments(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/commitments`, token);
+  },
+  updateCommitments(id, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/commitments`, data, token));
+  },
   startContractSigning(id, token, data = {}) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/start`, data, token));
   },
@@ -846,6 +852,33 @@ export const chargingStationService = {
   },
   updateAcceptanceResult(id, result, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/acceptance/result`, { result }, token));
+  },
+  async previewBulkAcceptance(token) {
+    try {
+      const response = await fetch(`${API_URL}/admin/charging-stations/acceptance/bulk/preview`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(20000),
+      });
+      handleUnauthorized(response);
+      return await response.json();
+    } catch {
+      throw new Error('Không tải được bản xem trước. Vui lòng tải lại.');
+    }
+  },
+  executeBulkAcceptance(data, token) {
+    return runChargingStationTaskMutation(async () => {
+      try {
+        const response = await fetch(`${API_URL}/admin/charging-stations/acceptance/bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(data),
+          signal: AbortSignal.timeout(20000),
+        });
+        handleUnauthorized(response);
+        if (response.status < 500 && response.headers.get('content-type')?.includes('json')) return await response.json();
+      } catch {}
+      throw new Error('Chưa nhận được kết quả của lô này. Bấm Thử lại để tiếp tục an toàn.');
+    });
   },
   completeConfiguration(id, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/configuration/complete`, data || {}, token));

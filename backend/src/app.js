@@ -137,6 +137,7 @@ if (process.env.ENABLE_SWAGGER !== 'false') {
 }
 
 // Routes
+app.use(require('./middlewares/auth').restrictLeadPortal);
 app.use('/api', testRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/stations', stationsRoutes);

@@ -299,6 +299,10 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  *               infra_site_status: { type: string, enum: [NOT, DOING, DONE] }
  *               payment_status: { type: string, enum: [NOT_REQUIRED, NOT, DOING, DONE] }
  *               deposit_status: { type: string, enum: [NOT_REQUIRED, NOT_RECEIVED, RECEIVED, REFUND_PENDING, REFUNDED] }
+ *               delivery_completed:
+ *                 type: boolean
+ *                 enum: [true]
+ *                 description: SUPER_ADMIN xác nhận nhận đủ trụ, tạo phiếu xuất nội bộ cho phần còn thiếu và mở việc Lắp trụ; không thay đổi tồn kho, không cần file hoặc hóa đơn tài chính. Gửi riêng với reason và expected_token.
  *               contract_file_ids: { type: array, items: { type: integer } }
  *               image_ids: { type: array, items: { type: integer } }
  *               acceptance_file_id: { type: integer, nullable: true }
@@ -346,6 +350,77 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  *         description: Không có quyền
  */
 router.put('/:id', requireSuperAdmin, chargingStationController.update);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/commitments:
+ *   get:
+ *     tags: [Charging Stations]
+ *     summary: Xem trụ chốt hoặc quy mô đề xuất mặc định (SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Các dòng trụ, mức đã xuất ròng và token phiên bản
+ *       403:
+ *         description: Không có quyền
+ *       409:
+ *         description: Dữ liệu cần đối soát
+ *   put:
+ *     tags: [Charging Stations]
+ *     summary: Cập nhật trụ chốt, không thay đổi tồn kho (SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rows, reason, expected_token]
+ *             properties:
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     source_key: { type: string, nullable: true }
+ *                     mo_hinh: { type: string, enum: [NQ, LK, TDT] }
+ *                     pole_id: { type: integer }
+ *                     so_luong: { type: integer, minimum: 1 }
+ *               reason: { type: string }
+ *               expected_token: { type: string }
+ *     responses:
+ *       200:
+ *         description: Đã lưu trụ chốt
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *       403:
+ *         description: Không có quyền
+ *       409:
+ *         description: Phiên bản cũ hoặc số lượng thấp hơn đã xuất ròng
+ */
+const commitmentService = require('../services/chargingStationCommitmentService');
+router.get('/:id/commitments', requireSuperAdmin, async (req, res) => {
+  try { res.json({ success: true, data: await commitmentService.get(req.params.id, req.user) }); }
+  catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' }); }
+});
+router.put('/:id/commitments', requireSuperAdmin, async (req, res) => {
+  try { res.json({ success: true, data: await commitmentService.update(req.params.id, req.body, req.user, { ip: req.ip }) }); }
+  catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' }); }
+});
 
 /**
  * @swagger
@@ -552,7 +627,7 @@ router.post('/:id/infrastructure/:type/status', requireChargingStationViewer, ch
  *   post:
  *     tags: [Charging Stations]
  *     summary: Đề xuất giao trụ sớm
- *     description: Người đề xuất hoặc người quản lý trong phạm vi được xem có thể yêu cầu giao sớm; yêu cầu phải có ngày mong muốn và lý do.
+ *     description: Người đề xuất, người phụ trách hoặc quản lý hợp lệ có thể gửi yêu cầu từ Thông tin chung sau khi hợp đồng đã ký và trạm chưa vào hàng chờ giao.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -565,13 +640,15 @@ router.post('/:id/infrastructure/:type/status', requireChargingStationViewer, ch
  *         application/json:
  *           schema:
  *             type: object
- *             required: [desired_delivery_date, reason]
+ *             required: [desired_delivery_date, reason, accept_missing]
  *             properties:
  *               desired_delivery_date: { type: string, format: date }
- *               reason: { type: string }
+ *               reason: { type: string, maxLength: 5000 }
+ *               accept_missing: { type: boolean, enum: [true] }
  *     responses:
  *       200: { description: Đã gửi đề xuất giao trụ sớm }
  *       403: { description: Không thuộc phạm vi đề xuất }
+ *       409: { description: Hợp đồng chưa ký, đã vào hàng chờ hoặc không còn trụ phải giao }
  */
 router.post('/:id/delivery/early-request', requireChargingStationViewer, chargingStationController.requestEarlyDelivery);
 
@@ -717,6 +794,51 @@ router.post('/:id/installation/complete', requireChargingStationViewer, charging
  *       403: { description: Không thuộc Phòng Setup và Vận hành }
  */
 router.put('/:id/acceptance/result', requireChargingStationViewer, chargingStationController.updateAcceptanceResult);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/acceptance/bulk/preview:
+ *   get:
+ *     summary: Xem trước tất cả trạm đủ điều kiện nghiệm thu hàng loạt (chỉ SUPER_ADMIN)
+ *     tags: [Charging Stations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Danh sách không phụ thuộc bộ lọc hoặc phân trang; trả request_id, batch_size và token cho mỗi trạm }
+ *       403: { description: Chỉ SUPER_ADMIN }
+ * /api/admin/charging-stations/acceptance/bulk:
+ *   post:
+ *     summary: Đánh dấu nghiệm thu đạt hàng loạt, không tạo hồ sơ (chỉ SUPER_ADMIN)
+ *     tags: [Charging Stations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [request_id, reason, stations]
+ *             properties:
+ *               request_id: { type: string, description: Giữ nguyên khi thử lại }
+ *               reason: { type: string, minLength: 3, maxLength: 5000 }
+ *               stations:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 20
+ *                 items:
+ *                   type: object
+ *                   required: [id, token]
+ *                   properties:
+ *                     id: { type: integer, minimum: 1 }
+ *                     token: { type: string, description: Token từ bản xem trước }
+ *     responses:
+ *       200: { description: Tổng hợp updated/skipped/failed và kết quả từng trạm; trạm thay đổi sau xem trước bị bỏ qua }
+ *       400: { description: Nội dung yêu cầu không hợp lệ }
+ *       403: { description: Chỉ SUPER_ADMIN }
+ */
+router.get('/acceptance/bulk/preview', requireSuperAdmin, chargingStationController.previewBulkAcceptance);
+router.post('/acceptance/bulk', requireSuperAdmin, chargingStationController.executeBulkAcceptance);
 
 /**
  * @swagger

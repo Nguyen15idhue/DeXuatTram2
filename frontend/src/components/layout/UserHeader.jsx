@@ -1,8 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Map, ClipboardList, User, Settings, Menu, LogOut, BookOpen } from 'lucide-react';
+import { Map, User, Settings, Menu, LogOut, Users } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import { getAdminPanelRedirect } from '../../utils/adminPanelRedirect';
+import { isLeadPortal } from '../../utils/leadAccess';
 
 const navItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
@@ -14,6 +15,8 @@ const navItems = [
 const UserHeader = ({ onMenuToggle }) => {
   const { user, canAccessPanel, logout } = useAuth();
   const location = useLocation();
+  const portal = isLeadPortal(user);
+  const items = portal ? [navItems[0], { path: '/leads', label: 'Khách hàng', icon: Users }] : navItems;
 
   const isActive = (path) => {
     if (path === '/map') return location.pathname === '/map';
@@ -23,9 +26,9 @@ const UserHeader = ({ onMenuToggle }) => {
   return (
     <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-2 sm:px-4 lg:px-6 gap-1">
       <div className="navbar-start min-w-0">
-        <label className="btn btn-square btn-ghost lg:hidden" onClick={onMenuToggle}>
+        <button type="button" aria-label="Mở menu" className="btn btn-square btn-ghost lg:hidden" onClick={onMenuToggle}>
           <Menu size={20} />
-        </label>
+        </button>
         <Link to="/map" className="btn btn-ghost text-lg sm:text-xl font-bold text-primary px-1 sm:px-2 min-w-0">
           <span className="truncate">TMT-EGREEN</span>
         </Link>
@@ -33,7 +36,7 @@ const UserHeader = ({ onMenuToggle }) => {
 
       {/* Desktop nav */}
       <nav className="navbar-center hidden lg:flex gap-1">
-        {navItems.map((item) => (
+        {items.map((item) => (
           <Link
             key={item.path}
             to={item.path}
@@ -45,7 +48,7 @@ const UserHeader = ({ onMenuToggle }) => {
             {item.label}
           </Link>
         ))}
-        {canAccessPanel && (
+        {!portal && canAccessPanel && (
           <>
             <div className="divider divider-horizontal mx-1 h-6"></div>
             <Link
@@ -62,7 +65,7 @@ const UserHeader = ({ onMenuToggle }) => {
       </nav>
 
       <div className="navbar-end gap-1">
-        <NotificationBell />
+        {!portal && <NotificationBell />}
         <button onClick={logout} className="btn btn-sm btn-ghost text-error gap-1 hidden lg:inline-flex" title="Đăng xuất">
           <LogOut size={16} />
           <span>Đăng xuất</span>

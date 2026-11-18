@@ -199,7 +199,7 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
       }
 
       if (entity === 'leads') {
-        if (user?.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được nhập khách hàng'), { statusCode: 403 });
+        if (!require('../utils/leadPortal').canManageAllLeads(user)) throw Object.assign(new Error('Không có quyền nhập khách hàng'), { statusCode: 403 });
         const leadService = require('./leadService');
         const crypto = require('crypto');
         const fullName = String(fixedData.full_name || '').trim();

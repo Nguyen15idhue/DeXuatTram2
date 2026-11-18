@@ -63,7 +63,11 @@ exports.getById = async (id) => {
 exports.getByIdScoped = async (id, user) => {
   const job = await exports.getById(id);
   if (!job) return null;
-  if (job.entity === 'leads' && user?.role !== 'SUPER_ADMIN') {
+  const { isLeadPortalUser, canManageAllLeads } = require('../utils/leadPortal');
+  if (isLeadPortalUser(user) && job.entity !== 'leads') {
+    throw Object.assign(new Error('Không có quyền xem job này'), { statusCode: 403 });
+  }
+  if (job.entity === 'leads' && !canManageAllLeads(user)) {
     const err = new Error('Chỉ Super Admin được xem lịch sử nhập khách hàng');
     err.statusCode = 403;
     throw err;

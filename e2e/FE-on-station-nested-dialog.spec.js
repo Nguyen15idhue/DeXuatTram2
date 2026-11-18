@@ -38,18 +38,18 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 640 
       });
     });
     await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
-    await page.goto('/admin/on-tram/giao-tru');
-    await page.getByRole('button', { name: 'Các phần trụ / thao tác' }).click();
+    await page.goto('/admin/on-tram/giao-tru?tab=all');
+    await page.getByRole('button', { name: 'Cập nhật trạng thái', exact: true }).click();
     const parent = page.locator('.modal-box').filter({
       has: page.getByRole('heading', { name: 'Triển khai · TEST-501', exact: true })
     });
     await expect(parent).toBeVisible();
+    await expect(parent.getByRole('button', { name: /Đề xuất giao sớm|Đề xuất đi trụ sớm/ })).toHaveCount(0);
     await expect(parent.getByText('DC120-14', { exact: true })).toBeVisible();
     await page.setViewportSize(viewport);
 
     for (const [button, title] of [
-      ['Xuất trụ theo số lượng', 'Tạo phiếu xuất kho'],
-      ['Đề xuất giao sớm', 'Đề xuất giao trụ sớm']
+      ['Xuất trụ theo số lượng', 'Tạo phiếu xuất kho']
     ]) {
       await parent.getByRole('button', { name: button, exact: true }).click();
       const child = page.locator('body > .modal').filter({

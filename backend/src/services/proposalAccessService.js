@@ -128,14 +128,14 @@ const buildOwnerScopeSql = async (user, alias = 'p', { includeTgdGlobal = true }
   return { sql: `${alias}.user_id = ?`, params: [Number(user.id)] };
 };
 
-const buildOwnerMatcher = async (user) => {
+const buildOwnerMatcher = async (user, { includeAssigned = false } = {}) => {
   if (!user?.id) return () => false;
   if (user.role === 'SUPER_ADMIN' || await isTgdUser(user)) return () => true;
-  if (['ADMIN', 'SALES', 'NPP'].includes(user.role)) {
-    const ids = new Set([Number(user.id), ...((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number)]);
-    return (ownerId) => ids.has(Number(ownerId));
-  }
-  return (ownerId) => Number(ownerId) === Number(user.id);
+  const branchIds = ['ADMIN', 'SALES', 'NPP'].includes(user.role)
+    ? (await adminProposalService.getBranchUserIds(user.id)) || [] : [];
+  const ids = new Set([Number(user.id), ...branchIds.map(Number)]);
+  return (ownerId, assigneeId, managerId) => ids.has(Number(ownerId))
+    || (includeAssigned && [assigneeId, managerId].some(id => id && ids.has(Number(id))));
 };
 
 exports.isTgdUser = isTgdUser;

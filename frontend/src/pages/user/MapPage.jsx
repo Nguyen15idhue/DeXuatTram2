@@ -9,9 +9,11 @@ import Toast from '../../components/Toast';
 import { getProposalMinDistanceM } from '../../utils/proposalZone';
 import AssistantChat from '../../components/help/AssistantChat';
 import { MapPin, MapPinned, X } from 'lucide-react';
+import { isLeadPortal } from '../../utils/leadAccess';
 
 const MapPage = () => {
   const { token, user } = useAuth();
+  const portal = isLeadPortal(user);
   const [showForm, setShowForm] = useState(false);
   const [showStationForm, setShowStationForm] = useState(false);
   const [coords, setCoords] = useState({ lat: 0, lng: 0 });
@@ -53,7 +55,7 @@ const MapPage = () => {
   const [quickMode, setQuickMode] = useState(false);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || portal) return;
     let cancelled = false;
     formService.getQuickCreate('station_proposals', token)
       .then(res => {
@@ -62,7 +64,7 @@ const MapPage = () => {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, portal]);
 
   useEffect(() => {
     setIsMobile(window.innerWidth < 768);
@@ -225,13 +227,14 @@ const MapPage = () => {
 
       <MapView
         selectingLocation={selectingLocation}
-        onLocationSelected={handleLocationSelected}
+        onLocationSelected={portal ? undefined : handleLocationSelected}
         onMapSelectClick={handleMapSelectClick}
         highlightPosition={highlightPosition}
         refreshKey={mapKey}
         user={user}
         filters={filters}
-        fabSlot={<AssistantChat variant="inline" />}
+        readOnly={portal}
+        fabSlot={portal ? null : <AssistantChat variant="inline" />}
       />
 
       <MapFilterPanel filters={filters} onChange={setFilters} isMobile={isMobile} />

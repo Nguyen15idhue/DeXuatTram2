@@ -69,7 +69,7 @@ const deliveryMissingSql = (stationAlias = 'cs', proposalAlias = 'p') => `(
   OR (
     ${modelSql(proposalAlias)} <> 'TDT'
     AND (
-      ${stationAlias}.deposit_status NOT IN ('RECEIVED', 'REFUND_PENDING', 'REFUNDED')
+      COALESCE(${stationAlias}.deposit_status, 'NOT_RECEIVED') NOT IN ('RECEIVED', 'REFUND_PENDING', 'REFUNDED')
       OR COALESCE(${stationAlias}.payment_status, 'NOT') NOT IN ('DOING', 'DONE')
     )
   )

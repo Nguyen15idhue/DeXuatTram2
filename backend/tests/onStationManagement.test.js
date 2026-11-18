@@ -29,6 +29,123 @@ test('overview rejects unauthorized edits and invalid dates before writes', asyn
   await assert.rejects(override.update(1, { reason: 'Reason', id: 2 }, ctx), /Không được sửa trường id/);
 });
 
+const deliveryFixture = (t, values = {}) => {
+  const record = { id: 1, status: 'DELIVERING', sub_status: 'NOT_DELIVERED',
+    workflow_override: { existing_flag: true }, ...values };
+  const calls = [];
+  const connection = {
+    beginTransaction: async () => calls.push(['begin']),
+    commit: async () => calls.push(['commit']),
+    rollback: async () => calls.push(['rollback']),
+    release: () => {},
+    query: async (sql, params) => {
+      calls.push([sql, params]);
+      if (sql.startsWith('SELECT * FROM charging_stations')) return [[{ ...record }]];
+      if (sql.startsWith('UPDATE charging_stations SET workflow_override=')) {
+        record.workflow_override = JSON.parse(params[0]);
+      }
+      return [[]];
+    }
+  };
+  t.mock.method(pool, 'getConnection', async () => connection);
+  t.mock.method(station, 'getChargingStationDetail', async () => ({ ...record }));
+  t.mock.method(shipping, 'completeDeliveryWithoutStock', async () => ({ station: { ...record }, export_id: null, received: [] }));
+  return { record, calls, connection };
+};
+
+test('direct delivery delegates receipts, preserves existing JSON and advanced progress, and is repeat-safe', async t => {
+  const { record, calls, connection } = deliveryFixture(t, {
+    status: 'OPERATING', sub_status: 'ACTIVE', cms_station_code: null, on_date: null,
+    workflow_override: JSON.stringify({ existing_flag: true })
+  });
+  const request = { delivery_completed: true, reason: 'Confirm delivery',
+    expected_token: await override.getEditToken(1, connection) };
+  const result = await override.update(1, request, ctx);
+  assert.deepEqual(result.workflow_override, { existing_flag: true, delivery_completed: true });
+  assert.equal(result.status, 'OPERATING');
+  assert.equal(result.sub_status, 'ACTIVE');
+  assert.equal(result.cms_station_code, null);
+  assert.equal(result.on_date, null);
+  const writes = calls.filter(([sql]) => /^(UPDATE|INSERT|DELETE)/.test(sql));
+  assert.equal(writes.length, 2);
+  assert.match(writes[0][0], /^UPDATE charging_stations SET workflow_override=\? WHERE id=\?$/);
+  assert.equal(writes[1][1][1], 'delivery_completed_manually');
+  assert.match(writes[1][0], /'admin_override'/);
+  assert.equal(writes[1][1][5], request.reason);
+  const oldToken = request.expected_token;
+  await override.update(1, { ...request, expected_token: await override.getEditToken(1, connection) }, ctx);
+  assert.equal(calls.filter(([sql]) => /^(UPDATE|INSERT|DELETE)/.test(sql)).length, 2);
+  await assert.rejects(override.update(1, { ...request, expected_token: oldToken }, ctx), { statusCode: 409 });
+  assert.ok(calls.some(([sql]) => sql === 'rollback'));
+  assert.equal(record.workflow_override.completed, undefined);
+});
+
+test('delivery override rejects cancelled stations, invalid values, forged JSON and blank reasons without writes', async t => {
+  const { calls, connection } = deliveryFixture(t, { status: 'CANCELLED' });
+  const request = { delivery_completed: true, reason: 'Confirm delivery',
+    expected_token: await override.getEditToken(1, connection) };
+  await assert.rejects(override.update(1, request, ctx), { statusCode: 409 });
+  for (const delivery_completed of [false, null, 1, 'true', {}]) {
+    await assert.rejects(override.update(1, { ...request, delivery_completed }, ctx), { statusCode: 400 });
+  }
+  await assert.rejects(override.update(1, { ...request, workflow_override: { completed: true } }, ctx), { statusCode: 400 });
+  await assert.rejects(override.update(1, { ...request, reason: ' ' }, ctx), { statusCode: 400 });
+  await assert.rejects(override.update(1, { ...request, expected_token: undefined }, ctx), { statusCode: 409 });
+  for (const actorRole of ['ADMIN', 'SALES', 'CTV', 'NPP', 'MKT']) {
+    await assert.rejects(override.update(1, request, { actorId: 1, actorRole }), { statusCode: 403 });
+  }
+  assert.equal(calls.some(([sql]) => /^(UPDATE|INSERT|DELETE)/.test(sql)), false);
+});
+
+test('delivery completion is rolled back when its audit cannot be saved', async t => {
+  const { calls, connection } = deliveryFixture(t);
+  const query = connection.query;
+  connection.query = async (sql, params) => {
+    if (sql.startsWith('INSERT INTO charging_station_activity_logs')) throw new Error('Audit unavailable');
+    return query(sql, params);
+  };
+  await assert.rejects(override.update(1, {
+    delivery_completed: true, reason: 'Confirm delivery', expected_token: await override.getEditToken(1, connection)
+  }, ctx), /Audit unavailable/);
+  assert.ok(calls.some(([sql]) => sql === 'rollback'));
+  assert.equal(calls.some(([sql]) => sql === 'commit'), false);
+});
+
+test('HTTP delivery override uses the existing SUPER_ADMIN-only update route', async t => {
+  let role = 'SUPER_ADMIN';
+  const updates = [];
+  t.mock.method(pool, 'query', async sql => {
+    assert.match(sql, /SELECT id, email, role, status, token_version/);
+    return [[{ id: 1, email: 'fixture@example.invalid', role, status: 'ACTIVE', token_version: 0 }]];
+  });
+  t.mock.method(station, 'updateChargingStation', async (id, body, actor) => {
+    updates.push({ id, body, actor });
+    return { id: Number(id), workflow_override: { delivery_completed: true } };
+  });
+  process.env.JWT_SECRET ||= 'delivery-test-only-secret';
+  const app = require('express')();
+  app.use(require('express').json());
+  app.use('/api/admin/charging-stations', require('../src/routes/chargingStations'));
+  const server = await new Promise(resolve => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  try {
+    const token = require('jsonwebtoken').sign({ id: 1, tokenVersion: 0 }, process.env.JWT_SECRET, { expiresIn: '1m' });
+    const body = { delivery_completed: true, expected_token: 'fixture-token', reason: 'Confirm delivery' };
+    for (role of ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT']) {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/charging-stations/1`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      assert.equal(response.status, role === 'SUPER_ADMIN' ? 200 : 403, role);
+      assert.equal((await response.json()).success, role === 'SUPER_ADMIN');
+    }
+    assert.equal(updates.length, 1);
+    assert.deepEqual(updates[0].body, body);
+    assert.equal(updates[0].actor.actorRole, 'SUPER_ADMIN');
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
 const rollbackFixture = t => {
   const access = require('../src/services/chargingStationAccessService');
   const calls = [];
@@ -100,7 +217,8 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
       'users', 'station_proposals', 'charging_stations', 'files', 'charging_station_contract_files',
       'charging_station_images', 'charging_station_activity_logs', 'warehouse_exports', 'warehouse_export_items',
       'shipping_carriers', 'charging_station_commitments', 'charging_station_deployments',
-      'charging_station_fulfillment_events', 'charging_poles', 'suppliers', 'supplier_charging_poles', 'charging_station_invoices'
+      'charging_station_fulfillment_events', 'charging_poles', 'suppliers', 'supplier_charging_poles', 'charging_station_invoices',
+      'charging_station_acceptance_documents', 'charging_station_acceptance_images', 'notifications'
     ]) await admin.query(`CREATE TABLE \`${database}\`.\`${table}\` LIKE \`${original.name}\`.\`${table}\``);
     fixture = mysql.createPool({
       host: process.env.DB_HOST, port: process.env.DB_PORT || 3306, user: process.env.DB_USER,
@@ -119,6 +237,9 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     await fixture.query("INSERT INTO users(id,full_name,email,password,role) VALUES(1,'Fixture','fixture@example.invalid','not-a-login','SUPER_ADMIN')");
     await fixture.query("INSERT INTO users(id,full_name,email,password,role,custom_data) VALUES(2,'Setup fixture','setup@example.invalid','not-a-login','SALES',?)",
       [JSON.stringify({ department: 'Phòng Setup và Vận hành' })]);
+    await fixture.query("INSERT INTO users(id,full_name,email,password,role,custom_data) VALUES(3,'Back Office fixture','bo@example.invalid','not-a-login','SALES',?)",
+      [JSON.stringify({ department: 'Back Office' })]);
+    const backOfficeUser = { id: 3, role: 'SALES' };
     await fixture.query(`INSERT INTO station_proposals(id,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru)
       VALUES(1,1,10,106,'Fixture','0000000000','DEPLOYING',?,?)`,
     [JSON.stringify({ mo_hinh_dau_tu: 'LK' }), JSON.stringify([{ mo_hinh: 'LK', so_luong: 2, pole_id: 1, loai_tru: 'Fixture DC60' }])]);
@@ -131,18 +252,144 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     await fixture.query("INSERT INTO warehouse_exports(id,exporter_user_id,export_date,charging_station_id,destination_type,transport_status) VALUES(1,1,NOW(),1,'STATION','DELIVERED')");
     await fixture.query('INSERT INTO warehouse_export_items(id,export_id,pole_id,supplier_id,commitment_id,quantity,received_quantity) VALUES(1,1,1,1,1,1,1)');
     await fixture.query("INSERT INTO charging_station_deployments(id,charging_station_id,export_item_id,quantity,stage,sub_status) VALUES(1,1,1,1,'INSTALLING','NOT_INSTALLED')");
+    const unchangedTables = ['supplier_charging_poles', 'charging_poles', 'charging_station_invoices',
+      'charging_station_commitments', 'station_proposals'];
+    const snapshot = async () => Promise.all(unchangedTables.map(async table =>
+      (await fixture.query(`SELECT * FROM ${table} ORDER BY ${table === 'supplier_charging_poles' ? 'supplier_id,charging_pole_id' : 'id'}`))[0]));
+    const originalData = await snapshot();
+    const otherTasks = async () => {
+      const keys = ['khoi-tao-hop-dong', 'xay-dung-ha-tang', 'lap-tru', 'nghiem-thu', 'on-tram', 'tai-chinh'];
+      return (await fixture.query(`SELECT ${keys.map((key, index) =>
+        `${work.stageFilters[key].need} AS task_${index}`).join(',')}
+        FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=1`))[0];
+    };
+    const beforeTasks = await otherTasks();
+    const [[oldExport]] = await fixture.query('SELECT * FROM warehouse_exports WHERE id=1');
+    const [[oldItem]] = await fixture.query('SELECT * FROM warehouse_export_items WHERE id=1');
+    const [[oldPortion]] = await fixture.query('SELECT * FROM charging_station_deployments WHERE id=1');
+    await override.update(1, { delivery_completed: true, reason: 'Manual delivery only',
+      expected_token: await override.getEditToken(1) }, ctx);
+    const [[deliveryDone]] = await fixture.query('SELECT * FROM charging_stations WHERE id=1');
+    assert.equal(deliveryDone.workflow_override.delivery_completed, true);
+    assert.equal(deliveryDone.status, 'INSTALLING');
+    assert.equal(deliveryDone.fulfillment_review_required, 0);
+    assert.deepEqual((await fixture.query('SELECT * FROM warehouse_exports WHERE id=1'))[0][0], oldExport);
+    assert.deepEqual((await fixture.query('SELECT * FROM warehouse_export_items WHERE id=1'))[0][0], oldItem);
+    assert.deepEqual((await fixture.query('SELECT * FROM charging_station_deployments WHERE id=1'))[0][0], oldPortion);
+    const [[directHeader]] = await fixture.query('SELECT * FROM warehouse_exports WHERE id<>1');
+    assert.equal(directHeader.transport_status, 'DELIVERED');
+    assert.equal(directHeader.historical_import, 0);
+    const directPortions = (await deployment.getDeployments(1)).filter(row => row.id !== 1);
+    assert.equal(directPortions.length, 1);
+    assert.equal(directPortions[0].quantity, 1, 'only the missing quantity is added');
+    assert.equal(directPortions[0].installation_status, 'NOT');
+    assert.deepEqual(await snapshot(), originalData);
+    assert.deepEqual(await otherTasks(), beforeTasks);
+    const [[countsBeforeRepeat]] = await fixture.query('SELECT COUNT(*) AS n FROM charging_station_deployments WHERE charging_station_id=1');
+    await override.update(1, { delivery_completed: true, reason: 'Repeat confirmed delivery',
+      expected_token: await override.getEditToken(1) }, ctx);
+    assert.equal((await fixture.query('SELECT COUNT(*) AS n FROM charging_station_deployments WHERE charging_station_id=1'))[0][0].n, countsBeforeRepeat.n);
+    for (const status of ['ONBOARDING', 'DELIVERING', 'INSTALLING']) {
+      await fixture.query('UPDATE charging_stations SET status=? WHERE id=1', [status]);
+      const { expressions, params } = await work.actionable(superUser);
+      const [[tasks]] = await fixture.query(`SELECT ${expressions.delivery} AS badge,
+        ${work.stageFilters['giao-tru'].need} AS needed, ${work.stageFilters['giao-tru'].completed} AS completed
+        FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=1`, params);
+      assert.equal(Number(tasks.badge), 0, status);
+      assert.equal(Number(tasks.needed), 0, status);
+      assert.equal(Number(tasks.completed), 1, status);
+    }
+    await station.changeStatus(1, { to_status: 'ONBOARDING', reason: 'Preserve delivery flag',
+      expected_token: await override.getEditToken(1) }, ctx);
+    assert.equal((await fixture.query('SELECT workflow_override FROM charging_stations WHERE id=1'))[0][0].workflow_override.delivery_completed, true);
+    await fixture.query('DELETE FROM charging_station_deployments WHERE export_item_id IN (SELECT id FROM warehouse_export_items WHERE export_id=?)', [directHeader.id]);
+    await fixture.query('DELETE FROM warehouse_export_items WHERE export_id=?', [directHeader.id]);
+    await fixture.query('DELETE FROM warehouse_exports WHERE id=?', [directHeader.id]);
+    await fixture.query("DELETE FROM charging_station_fulfillment_events WHERE request_id=?", [`direct-delivery:${directHeader.id}`]);
+    await fixture.query("UPDATE charging_stations SET status='INSTALLING',fulfillment_review_required=1 WHERE id=1");
+
+    await t.test('early delivery enters only the Back Office queue; direct receipt opens installation and return preserves inventory', async () => {
+      await fixture.query(`INSERT INTO station_proposals(id,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru)
+        SELECT 2,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru FROM station_proposals WHERE id=1`);
+      await fixture.query(`INSERT INTO charging_stations(id,proposal_id,ma_tram,status,workflow_override)
+        VALUES(2,2,'FIXTURE-2','ONBOARDING',JSON_OBJECT('delivery_completed',true))`);
+      const task = async (viewer = backOfficeUser) => {
+        const { expressions, params } = await work.actionable(viewer);
+        const filter = await work.getFilter('giao-tru', 'need', viewer);
+        const [[visible]] = await fixture.query(`SELECT COUNT(*) AS n FROM charging_stations cs
+          JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=2 AND (${filter.sql})`, filter.params);
+        const { expressions: setupExpressions, params: setupParams } = await work.actionable(superUser);
+        assert.deepEqual(setupParams, []);
+        const [[row]] = await fixture.query(`SELECT ${expressions.delivery} AS delivery,${setupExpressions.installation} AS installation
+          FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=2`, params);
+        assert.equal(Number(visible.n), Number(row.delivery), 'need tab and badge use the same criteria');
+        return row;
+      };
+      const early = { desired_delivery_date: '2027-01-15', reason: 'Ship before infrastructure', accept_missing: true };
+      await fixture.query(`UPDATE station_proposals SET custom_data=JSON_SET(custom_data,'$.nguoi_phu_trach',JSON_OBJECT('id',2)) WHERE id=2`);
+      const assignee = { id: 2, role: 'SALES' };
+      const assignedActor = { ...ctx, actorId: 2, actorRole: 'SALES' };
+      assert.equal(Number((await task()).delivery), 0);
+      await assert.rejects(station.requestEarlyDelivery(2, early, assignee, assignedActor), { statusCode: 409 });
+      await fixture.query("UPDATE charging_stations SET contract_status='DONE',infra_power_status='DONE',payment_status='DOING',deposit_status='RECEIVED' WHERE id=2");
+      assert.equal(Number((await task()).delivery), 1, 'ready workflow counts even before parent stage synchronizes');
+      await fixture.query("UPDATE charging_stations SET status='DELIVERING',infra_power_status='NOT' WHERE id=2");
+      assert.equal(Number((await task()).delivery), 0, 'parent status is not evidence of early delivery');
+      await fixture.query("UPDATE charging_stations SET status='ONBOARDING' WHERE id=2");
+      await assert.rejects(station.requestEarlyDelivery(2, early, backOfficeUser, { ...ctx, actorId: 3, actorRole: 'SALES' }), { statusCode: 403 });
+      await station.requestEarlyDelivery(2, early, assignee, assignedActor);
+      await assert.rejects(station.requestEarlyDelivery(2, early, assignee, assignedActor), { statusCode: 409 });
+      assert.equal(Number((await task()).delivery), 1, 'saved early request counts despite missing prerequisites and old override marker');
+      assert.equal(Number((await task(assignee)).delivery), 0);
+      assert.equal(Number((await task(superUser)).delivery), 0);
+      await override.update(2, { delivery_completed: true, reason: 'Upgrade old delivery marker',
+        expected_token: await override.getEditToken(2) }, ctx);
+      assert.deepEqual(Object.fromEntries(Object.entries(await task()).map(([key, value]) => [key, Number(value)])),
+        { delivery: 0, installation: 1 });
+      let portions = await deployment.getDeployments(2);
+      assert.equal(portions.length, 1);
+      assert.equal(portions[0].quantity, 2);
+      const exportId = portions[0].export_id;
+      await shipping.updateShipmentStatus(2, exportId, { request_id: 'direct-return-request', status: 'RETURN_PENDING',
+        expected_status: 'DELIVERED', reason: 'Return uninstalled direct receipt' }, superUser);
+      await shipping.updateShipmentStatus(2, exportId, { request_id: 'direct-return-confirm', status: 'RETURNED',
+        expected_status: 'RETURN_PENDING', reason: 'Return uninstalled direct receipt' }, superUser);
+      assert.equal((await fixture.query('SELECT quantity FROM supplier_charging_poles'))[0][0].quantity, 5);
+      assert.equal((await fixture.query('SELECT quantity FROM charging_poles'))[0][0].quantity, 5);
+      assert.equal(Number((await task()).delivery), 1, 'return reopens delivery despite source marker');
+      await override.update(2, { delivery_completed: true, reason: 'Deliver again without changing stock',
+        expected_token: await override.getEditToken(2) }, ctx);
+      portions = await deployment.getDeployments(2);
+      assert.equal(portions.length, 1);
+      await deployment.updateInstallation(2, { request_id: 'direct-installation-start',
+        items: [{ id: portions[0].id, status: 'DOING', expected_version: 0, note: 'Start direct receipt installation' }] }, superUser);
+      portions = await deployment.getDeployments(2);
+      assert.equal(portions[0].installation_status, 'DOING');
+      await deployment.updateInstallation(2, { request_id: 'direct-installation-complete',
+        items: [{ id: portions[0].id, status: 'DONE', expected_version: 1, note: 'Installed direct receipt' }] }, superUser);
+      assert.equal(Number((await task()).installation), 0);
+      assert.equal((await fixture.query('SELECT quantity FROM supplier_charging_poles'))[0][0].quantity, 5);
+      assert.equal((await fixture.query('SELECT quantity FROM charging_poles'))[0][0].quantity, 5);
+      assert.equal((await fixture.query('SELECT COUNT(*) AS n FROM charging_station_invoices'))[0][0].n, 0);
+    });
+
     const token = await override.getEditToken(1);
     const before = (await fixture.query('SELECT * FROM warehouse_export_items'))[0];
     await station.changeStatus(1, { to_status: 'OPERATING', cms_station_code: 'CMS-1', on_date: '2026-11-13',
       reason: 'Fixture override', expected_token: token }, ctx);
     const [[activated]] = await fixture.query('SELECT * FROM charging_stations WHERE id=1');
     assert.equal(activated.workflow_override.completed, true);
+    assert.equal(activated.workflow_override.delivery_completed, true);
     assert.equal(activated.contract_status, 'DONE');
     assert.equal(activated.infra_power_status, 'DONE');
     assert.equal(activated.infra_site_status, 'DONE');
     assert.equal(activated.payment_status, 'DOING');
     assert.equal(activated.deposit_status, 'RECEIVED');
     assert.equal(activated.fulfillment_review_required, 1);
+    await fixture.query("UPDATE charging_stations SET workflow_override=JSON_OBJECT('delivery_completed',true) WHERE id=1");
+    await station.changeStatus(1, { to_status: 'OPERATING', cms_station_code: 'CMS-1', on_date: '2026-11-13',
+      reason: 'Finish ON after delivery-only override', expected_token: await override.getEditToken(1) }, ctx);
+    assert.equal((await fixture.query('SELECT workflow_override FROM charging_stations WHERE id=1'))[0][0].workflow_override.completed, true);
     assert.deepEqual((await fixture.query('SELECT * FROM warehouse_export_items'))[0], before);
     assert.equal((await fixture.query('SELECT quantity FROM supplier_charging_poles'))[0][0].quantity, 5);
     for (const stage of ['giao-tru', 'lap-tru', 'nghiem-thu', 'on-tram']) {
@@ -165,7 +412,7 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     const request = { request_id: 'install-1', items: [{ id: 1, status: 'DONE', note: 'Installed', expected_version: 0 }] };
     await deployment.updateInstallation(1, request, superUser);
     await deployment.updateInstallation(1, request, superUser);
-    assert.equal((await fixture.query("SELECT COUNT(*) AS n FROM charging_station_activity_logs WHERE action='installation_updated'"))[0][0].n, 1);
+    assert.equal((await fixture.query("SELECT COUNT(*) AS n FROM charging_station_activity_logs WHERE charging_station_id=1 AND action='installation_updated'"))[0][0].n, 1);
     const [[partial]] = await fixture.query(`SELECT ${work.stageFilters['lap-tru'].completed} AS completed FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=1`);
     assert.equal(Number(partial.completed), 0, 'not complete until all committed quantity installed');
     await fixture.query("UPDATE charging_station_deployments SET stage='OPERATING',sub_status='ACTIVE',on_date='2026-11-13',acceptance_date='2026-11-12' WHERE id=1");

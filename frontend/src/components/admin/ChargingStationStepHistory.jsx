@@ -25,7 +25,8 @@ const ACTION_LABELS = {
   acceptance_failed: 'Nghiệm thu không đạt', portion_acceptance_passed: 'Nghiệm thu đạt',
   portion_acceptance_failed: 'Nghiệm thu không đạt', portion_acceptance_reset: 'Chưa nghiệm thu',
   portion_complete_configuration: 'Cập nhật ON trạm', configuration_completed: 'Hoàn tất ON trạm',
-  manual_marked_active: 'Đánh dấu đã ON trạm', portion_documents_overridden: 'Điều chỉnh hồ sơ'
+  manual_marked_active: 'Đánh dấu đã ON trạm', portion_documents_overridden: 'Điều chỉnh hồ sơ',
+  delivery_completed_manually: 'Đã giao hàng thành công · Giao trực tiếp không đổi tồn kho'
 };
 const valueText = value => value == null || value === '' ? '—' : typeof value === 'object' ? 'Hồ sơ' : String(value);
 const summary = entry => {
@@ -39,6 +40,7 @@ const summary = entry => {
     const delta = Number(changes.on_quantity.new) - Number(changes.on_quantity.old);
     lines.push(`Số lượng ON: ${changes.on_quantity.old} → ${changes.on_quantity.new} (${delta > 0 ? '+' : ''}${delta} trụ)`);
   }
+  if (entry.action === 'delivery_completed_manually') lines.push(ACTION_LABELS.delivery_completed_manually);
   if (!lines.length && (entry.from_status || entry.to_status)) {
     const labels = { ...CS_STATUS_LABELS, ...CS_SUB_STATUS_LABELS };
     lines.push(`${labels[entry.from_status] || valueText(entry.from_status)} → ${labels[entry.to_status] || valueText(entry.to_status)}`);

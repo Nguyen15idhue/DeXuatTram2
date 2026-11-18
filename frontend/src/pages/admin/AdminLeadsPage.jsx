@@ -19,12 +19,12 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { leadFocusSectionForRole } from '../../utils/leadSectionPerms';
-import { canAccessCustomers, canEditLead, canAssignLead, canWriteLeadGeneral, LEAD_CONSULTATION_OPTIONS, leadConsultationTiming, leadTabPolicy } from '../../utils/leadAccess';
+import { canAccessCustomers, canEditLead, canAssignLead, canManageAllLeads, canWriteLeadGeneral, LEAD_CONSULTATION_OPTIONS, leadConsultationTiming, leadTabPolicy } from '../../utils/leadAccess';
 import useLeadTaskCounts from '../../hooks/useLeadTaskCounts';
 import { notifyLeadTaskCountsChanged } from '../../utils/leadTaskCounts';
 import { Users, Upload, Plus, Search, RotateCcw, X, Trash2, Split, SlidersHorizontal } from 'lucide-react';
 
-const AdminLeadsPage = () => {
+const AdminLeadsPage = ({ basePath = '/admin/leads' }) => {
   const { token, user } = useAuth();
   const role = (user && user.role) || '';
   const navigate = useNavigate();
@@ -34,7 +34,7 @@ const AdminLeadsPage = () => {
   const activeTab = tabs.some(tab => tab.key === requestedTab) ? requestedTab : defaultTab;
   const { data: taskCounts, error: taskCountError } = useLeadTaskCounts(token, canAccessCustomers(user));
   const listSequence = useRef(0);
-  const leadPath = (path) => `${path}${location.search}`;
+  const leadPath = (suffix = '') => `${basePath}${suffix}${location.search}`;
   useEffect(() => {
     if (requestedTab === activeTab) return;
     const params = new URLSearchParams(location.search);
@@ -113,7 +113,7 @@ const AdminLeadsPage = () => {
   const departmentOptions = Array.from(new Set(gdkvOptions.map(o => o.department).filter(Boolean))).sort();
 
   useEffect(() => {
-    const match = location.pathname.match(/\/admin\/leads\/(view|edit)=(\d+)/);
+    const match = location.pathname.slice(basePath.length).match(/^\/(view|edit)=(\d+)\/?$/);
     if (match) {
       const mode = match[1];
       const id = parseInt(match[2]);
@@ -121,7 +121,7 @@ const AdminLeadsPage = () => {
     } else {
       setPopup({ open: false, recordId: null, mode: 'view' });
     }
-  }, [location.pathname]);
+  }, [location.pathname, basePath]);
 
   const loadLeads = useCallback(async (page = 1, overrides = {}) => {
     const sequence = ++listSequence.current;
@@ -186,7 +186,7 @@ const AdminLeadsPage = () => {
   const changeTab = (tab) => {
     const params = new URLSearchParams(location.search);
     params.set('tab', tab);
-    navigate({ pathname: '/admin/leads', search: params.toString() });
+    navigate({ pathname: basePath, search: params.toString() });
   };
 
   const handleColumnFiltersChange = useCallback((next) => {
@@ -485,13 +485,13 @@ const AdminLeadsPage = () => {
 
   const renderUpdateAction = (row) => {
     if (!canEditLead(user, row)) return null;
-    const focus = leadFocusSectionForRole(role);
+    const focus = canManageAllLeads(user) ? null : leadFocusSectionForRole(role);
     const focusLabel = focus === 'tvbh' ? 'TVBH' : focus === 'marketing' ? 'Marketing/CSKH' : '';
     return (
       <button
         className="btn btn-sm btn-info"
         title={focusLabel ? `Cập nhật section ${focusLabel}` : 'Cập nhật Lead'}
-        onClick={() => navigate(leadPath(`/admin/leads/edit=${row.id}`), focus ? { state: { focusSection: focus } } : undefined)}
+        onClick={() => navigate(leadPath(`/edit=${row.id}`), focus ? { state: { focusSection: focus } } : undefined)}
       >
         Cập nhật
       </button>
@@ -501,8 +501,8 @@ const AdminLeadsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1 items-center">
       {row.deleted_at && <span className="badge badge-error badge-sm mr-1">Đã xóa</span>}
-      <button className="btn btn-sm btn-primary" onClick={() => navigate(leadPath(`/admin/leads/view=${row.id}`))}>Xem</button>
-      {canEditLead(user, row) && <button className="btn btn-sm btn-warning" onClick={() => navigate(leadPath(`/admin/leads/edit=${row.id}`))}>Sửa</button>}
+      <button className="btn btn-sm btn-primary" onClick={() => navigate(leadPath(`/view=${row.id}`))}>Xem</button>
+      {canEditLead(user, row) && <button className="btn btn-sm btn-warning" onClick={() => navigate(leadPath(`/edit=${row.id}`))}>Sửa</button>}
       {canAssignLead(user, row) && <button className="btn btn-sm btn-outline" onClick={() => { setSelectedIds([row.id]); setAssignOpen(true); }}>Phân chia</button>}
       {canWriteLeadGeneral(user, row) && (
         <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
@@ -748,9 +748,9 @@ const AdminLeadsPage = () => {
         <LeadDetailPopup
           recordId={popup.recordId}
           mode={popup.mode}
-          onClose={() => { setPopup({ open: false, recordId: null, mode: 'view' }); navigate(leadPath('/admin/leads')); }}
+          onClose={() => { setPopup({ open: false, recordId: null, mode: 'view' }); navigate(leadPath()); }}
           onSaved={() => loadLeads(pagination.page)}
-          onSwitchMode={(newMode) => navigate(leadPath(`/admin/leads/${newMode}=${popup.recordId}`), { replace: true })}
+          onSwitchMode={(newMode) => navigate(leadPath(`/${newMode}=${popup.recordId}`), { replace: true })}
         />
       )}
 

@@ -265,6 +265,26 @@ exports.updateAcceptanceResult = async (req, res) => {
   }
 };
 
+exports.previewBulkAcceptance = async (req, res) => {
+  try {
+    const data = await require('../services/chargingStationBulkAcceptanceService').preview(req.user);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.executeBulkAcceptance = async (req, res) => {
+  try {
+    const data = await require('../services/chargingStationBulkAcceptanceService').execute(req.body, req.user, {
+      ...actorOf(req), disconnected: () => res.destroyed
+    });
+    if (!res.destroyed) res.json({ success: true, data });
+  } catch (error) {
+    if (!res.destroyed) sendError(res, error);
+  }
+};
+
 exports.completeConfiguration = async (req, res) => {
   try {
     const data = await chargingStationService.completeConfiguration(

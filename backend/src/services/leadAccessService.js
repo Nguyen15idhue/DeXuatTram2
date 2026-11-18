@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const { canManageAllLeads } = require('../utils/leadPortal');
 const { isGdtt, isGdkv } = require('../constants/salesRanks');
 
 const normalize = (value) => String(value || '').normalize('NFD')
@@ -11,7 +12,7 @@ const context = (user) => {
   const department = cd.department || '';
   const title = normalize(cd.chuc_vu);
   const dept = normalize(department);
-  const isSuper = user?.role === 'SUPER_ADMIN';
+  const isSuper = canManageAllLeads(user);
   const isTgd = ['tong giam doc', 'tgd'].includes(title);
   const isPlanning = /(?:cong nghe|quan he) va quy hoach/.test(dept);
   const isBusiness = /(?:kinh doanh|trung tam kd).*mien (?:bac|trung|nam)/.test(dept);

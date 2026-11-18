@@ -6,7 +6,7 @@ export const LEAD_TVBH_ROLES = ['SUPER_ADMIN'];
 
 export { SECTION_PERM_ROLES } from './formSectionPerms';
 import { canViewSection, userCtxFromAuthUser } from './formSectionPerms';
-import { canAccessCustomers, isLeadCeo, isLeadPlanning, isLeadCenterDirector, isLeadAreaDirector } from './leadAccess';
+import { canManageAllLeads, isLeadPortal, canAccessCustomers, isLeadCeo, isLeadPlanning, isLeadCenterDirector, isLeadAreaDirector } from './leadAccess';
 
 const norm = (s) => String(s || '').toLowerCase();
 
@@ -36,6 +36,7 @@ export const leadSectionNotice = (role) => {
 };
 
 export const canViewLeadSection = (section, user) => {
+  if (isLeadPortal(user)) return true;
   const ctx = (user && typeof user === 'object' && ('role' in user || 'id' in user))
     ? userCtxFromAuthUser(user) : { role: user, id: null, department: '', chuc_vu: '' };
   if (getLeadSectionKind(section?.title) === 'tvbh' && canAccessCustomers(user)) return true;
@@ -45,7 +46,7 @@ export const canViewLeadSection = (section, user) => {
 export const canEditLeadSection = (section, user) => {
   const ctx = (user && typeof user === 'object' && ('role' in user || 'id' in user))
     ? userCtxFromAuthUser(user) : { role: user, id: null, department: '', chuc_vu: '' };
-  if (ctx.role === 'SUPER_ADMIN') return true;
+  if (ctx.role === 'SUPER_ADMIN' || canManageAllLeads(user)) return true;
   if (!canAccessCustomers(user) || isLeadPlanning(user) || isLeadCeo(user)) return false;
   const kind = getLeadSectionKind(section && section.title);
   if (kind !== 'tvbh' || (!isLeadCenterDirector(user) && !isLeadAreaDirector(user))) return false;

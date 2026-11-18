@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { chargingStationService } from "../../services/api";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
-import { Badge, Button, Dialog, FilterBar, Input, Pagination } from "../ui";
+import { Badge, Button, Dialog, FilterBar, Input, PageHeader, Pagination } from "../ui";
 import ChargingStationTable from "./ChargingStationTable";
 import ChargingStationFulfillment from "./ChargingStationFulfillment";
 import ChargingStationGroupedProgress from "./ChargingStationGroupedProgress";
@@ -13,6 +13,7 @@ import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRAT
 import {
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
+  getStageConfig,
 } from "../../utils/chargingStation";
 import { CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT } from "../../utils/chargingStationTaskCounts";
 import { CS_TASK_KEY } from "./ChargingStationNeedBadge";
@@ -26,8 +27,133 @@ const TABS = [
   { key: "all", label: "Tất cả trạm sạc" },
 ];
 
+const BulkAcceptanceAction = ({ token, onChanged }) => {
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+
+  const loadPreview = async () => {
+    if (running.current) return;
+    running.current = true;
+    setOpen(true);
+    setBusy(true);
+    setPreview(null);
+    setReason("");
+    setSubmitted(false);
+    setResults(null);
+    setError("");
+    try {
+      const response = await chargingStationService.previewBulkAcceptance(token);
+      if (!response.success) throw new Error(response.message || "Không tải được bản xem trước");
+      setPreview(response.data);
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  };
+  const stations = preview?.stations || [];
+  const pending = stations.filter(({ id }) => !results?.has(id) || results.get(id).retryable);
+  const submit = async (event) => {
+    event.preventDefault();
+    if (running.current || !pending.length) return;
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 3 || cleanReason.length > 5000) {
+      setError("Lý do bắt buộc từ 3–5000 ký tự");
+      return;
+    }
+    running.current = true;
+    setSubmitted(true);
+    setBusy(true);
+    setError("");
+    try {
+      const batchSize = preview.batch_size || 20;
+      for (let start = 0; start < pending.length; start += batchSize) {
+        const response = await chargingStationService.executeBulkAcceptance({
+          request_id: preview.request_id,
+          reason: cleanReason,
+          stations: pending.slice(start, start + batchSize).map(({ id, token: stationToken }) => ({ id, token: stationToken })),
+        }, token);
+        if (!response.success) throw new Error(response.message || "Không thể hoàn tất nghiệm thu");
+        setResults(previous => {
+          const merged = new Map(previous);
+          for (const result of response.data.stations) merged.set(result.id, result);
+          return merged;
+        });
+      }
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      running.current = false;
+      setBusy(false);
+      onChanged();
+    }
+  };
+  const close = () => { if (!running.current) setOpen(false); };
+  const summary = results && [...results.values()].reduce((counts, item) => {
+    counts[item.status]++;
+    if (item.status === "updated") {
+      counts.portions += item.portions;
+      counts.quantity += item.quantity;
+    }
+    return counts;
+  }, { updated: 0, skipped: 0, failed: 0, portions: 0, quantity: 0 });
+
+  return (
+    <>
+      <Button onClick={loadPreview}>Nghiệm thu hàng loạt</Button>
+      <Dialog isOpen={open} onClose={close} title="Nghiệm thu hàng loạt" size="lg" portal>
+        <form onSubmit={submit} className="space-y-4">
+          <p>Áp dụng cho mọi trang và không phụ thuộc tab hay bộ lọc đang chọn.</p>
+          <p className="text-sm">Chỉ đánh dấu nghiệm thu đạt; giữ nguyên hồ sơ, lắp đặt và kết quả ON. Không tạo biên bản hay ảnh.</p>
+          {!preview && busy && <p role="status">Đang tải bản xem trước…</p>}
+          {preview && !stations.length && <p>Không có trạm đủ điều kiện nghiệm thu.</p>}
+          {!!stations.length && (
+            <>
+              {summary ? <p role="status" className="font-semibold">
+                Đã cập nhật: {summary.updated} trạm ({summary.portions} phần trụ / {summary.quantity} trụ) · Bỏ qua: {summary.skipped} · Lỗi: {summary.failed} · Chưa có kết quả: {stations.length - results.size}
+              </p> : <p className="font-semibold">
+                {stations.length} trạm · {stations.reduce((sum, row) => sum + row.portions, 0)} phần trụ · {stations.filter(row => row.legacy).length} trạm theo quy trình cũ
+              </p>}
+              <ul aria-label="Danh sách trạm nghiệm thu" className="max-h-48 overflow-auto rounded border border-base-300 p-2 text-sm">
+                {stations.map(station => {
+                  const result = results?.get(station.id);
+                  return <li key={station.id} className="py-1">
+                    <strong>{station.ma_tram || `#${station.id}`}</strong>
+                    {" · "}{station.legacy ? "Quy trình cũ" : `${station.portions} phần trụ / ${station.quantity} trụ`}
+                    {result && ` · ${result.status === "updated" ? "Đã cập nhật" : result.message}`}
+                  </li>;
+                })}
+              </ul>
+              <label className="form-control">
+                <span className="label-text mb-1">Lý do nghiệm thu hàng loạt</span>
+                <textarea className="textarea textarea-bordered" value={reason} maxLength={5000}
+                  onChange={event => setReason(event.target.value)} disabled={submitted || busy} />
+              </label>
+            </>
+          )}
+          {error && <div role="alert" className="alert alert-error">{error}</div>}
+          <div className="modal-action">
+            <Button type="button" variant="ghost" onClick={close} disabled={busy}>Đóng</Button>
+            {!preview && error && <Button type="button" onClick={loadPreview}>Tải lại bản xem trước</Button>}
+            {!!pending.length && <Button type="submit" disabled={busy}>
+              {busy ? "Đang cập nhật…" : submitted ? "Thử lại" : "Xác nhận nghiệm thu đạt"}
+            </Button>}
+          </div>
+        </form>
+      </Dialog>
+    </>
+  );
+};
+
 const ChargingStationWorklist = ({ stage }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const tab = TABS.some((item) => item.key === params.get("tab"))
@@ -42,6 +168,11 @@ const ChargingStationWorklist = ({ stage }) => {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
   const [counts, setCounts] = useState({});
+  const [deliveryStation, setDeliveryStation] = useState(null);
+  const [deliveryReason, setDeliveryReason] = useState("");
+  const [deliveryError, setDeliveryError] = useState("");
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const savingDelivery = useRef(false);
   const load = useCallback(
     async (targetPage = 1) => {
       setLoading(true);
@@ -56,6 +187,7 @@ const ChargingStationWorklist = ({ stage }) => {
           }).toString(),
           token,
         );
+        if (!response.success) throw new Error(response.message || "Không tải được danh sách ON trạm");
         setItems(response.data || []);
         setPagination(response.pagination || {});
         setError("");
@@ -93,8 +225,41 @@ const ChargingStationWorklist = ({ stage }) => {
       );
     };
   }, [token]);
+  const completeDelivery = async (event) => {
+    event.preventDefault();
+    if (savingDelivery.current) return;
+    const reason = deliveryReason.trim();
+    if (reason.length < 3 || reason.length > 5000) {
+      setDeliveryError("Lý do bắt buộc từ 3–5000 ký tự");
+      return;
+    }
+    savingDelivery.current = true;
+    setDeliveryBusy(true);
+    setDeliveryError("");
+    try {
+      const response = await chargingStationService.update(deliveryStation.id, {
+        delivery_completed: true,
+        expected_token: deliveryStation.edit_token,
+        reason,
+      }, token);
+      if (!response.success) throw new Error(response.message || "Không đánh dấu hoàn thành Giao trụ được");
+      setDeliveryStation(null);
+      await load(page);
+    } catch (failure) {
+      setDeliveryError(failure.message);
+      await load(page);
+    } finally {
+      savingDelivery.current = false;
+      setDeliveryBusy(false);
+    }
+  };
   return (
     <div className="space-y-4">
+      {stage === "nghiem-thu" && (
+        <PageHeader title={getStageConfig(stage).title} subtitle="Quản lý ON trạm từ đề xuất đã ký"
+          actions={user?.role === "SUPER_ADMIN" ? <BulkAcceptanceAction token={token} onChanged={() => load(page)} /> : undefined}
+        />
+      )}
       <div role="tablist" className="tabs tabs-boxed w-fit">
         {TABS.map((item) => (
           <button
@@ -230,6 +395,27 @@ const ChargingStationWorklist = ({ stage }) => {
                 },
               ]
             : []),
+          ...(stage === "giao-tru" ? [{
+            key: "delivery_summary",
+            label: "Trạng thái giao trụ",
+            render: (_, row) => {
+              const manual = row.workflow_override?.delivery_completed;
+              const totals = row.fulfillment?.totals;
+              const complete = (row.status === "OPERATING" && row.workflow_override?.completed)
+                || (!row.fulfillment?.needs_review && Number(totals?.committed) > 0
+                  && Number(totals?.received) >= Number(totals?.committed));
+              const shipping = Number(totals?.exported) > Number(totals?.returned);
+              return <div>
+                <Badge variant={complete ? "success" : shipping ? "info" : "ghost"}>
+                  {complete ? "Đã giao hàng thành công" : shipping ? "Đang giao" : "Chưa giao"}
+                </Badge>
+                {!!Number(row.early_delivery_requested) && <Badge variant="info" className="ml-1">Đi trụ sớm</Badge>}
+                {manual && <span className="block text-xs text-info">
+                  {complete ? "Xác nhận giao trực tiếp" : "Cần hoàn tất giao nhận"}
+                </span>}
+              </div>;
+            },
+          }] : []),
         ]}
         actions={
           ["lap-tru", "on-tram"].includes(stage)
@@ -243,6 +429,16 @@ const ChargingStationWorklist = ({ stage }) => {
                   >
                     Cập nhật trạng thái
                   </Button>
+                  {stage === "giao-tru" && user?.role === "SUPER_ADMIN"
+                    && row.status !== "CANCELLED" && !row.workflow_override?.completed && (
+                      <Button size="xs" variant="outline" onClick={() => {
+                        setDeliveryStation(row);
+                        setDeliveryReason("");
+                        setDeliveryError("");
+                      }}>
+                        Đổi trạng thái
+                      </Button>
+                    )}
                 </div>
               )
         }
@@ -256,6 +452,31 @@ const ChargingStationWorklist = ({ stage }) => {
           load(next);
         }}
       />
+      <Dialog isOpen={!!deliveryStation} title="Đổi trạng thái Giao trụ" portal
+        onClose={() => !deliveryBusy && setDeliveryStation(null)}>
+        <form className="space-y-4" onSubmit={completeDelivery}>
+          <p>Trạm: <strong>{deliveryStation?.ma_tram || `#${deliveryStation?.id}`}</strong></p>
+          <p>Trạng thái mới: <strong>Đã giao hàng thành công</strong></p>
+          <div className="alert alert-info text-sm">
+            Xác nhận đã nhận đủ trụ, tạo phiếu xuất nội bộ cho phần còn thiếu và chuyển sang việc Lắp trụ.
+            Không thay đổi tồn kho, không cần upload file hoặc tạo hóa đơn tài chính.
+          </div>
+          <label className="block text-sm">
+            Lý do *
+            <textarea aria-label="Lý do hoàn thành Giao trụ" className="textarea textarea-bordered mt-1 w-full"
+              required minLength={3} maxLength={5000} disabled={deliveryBusy}
+              value={deliveryReason} onChange={(event) => setDeliveryReason(event.target.value)} />
+          </label>
+          {deliveryError && <div role="alert" className="alert alert-error">{deliveryError}</div>}
+          {deliveryStation && !deliveryStation.edit_token && <div role="alert" className="alert alert-error">
+            Thiếu phiên bản dữ liệu; hãy tải lại trang trước khi lưu.
+          </div>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" disabled={deliveryBusy} onClick={() => setDeliveryStation(null)}>Hủy</Button>
+            <Button type="submit" loading={deliveryBusy} disabled={deliveryBusy || !deliveryStation?.edit_token}>Xác nhận</Button>
+          </div>
+        </form>
+      </Dialog>
       {stage === "lap-tru" && selected ? (
         <ChargingStationInstallationModal
           station={selected}

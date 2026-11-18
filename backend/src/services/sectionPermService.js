@@ -197,6 +197,7 @@ const defaultEditDenied = (kind, role) => {
 };
 
 exports.enforceLeadEdit = async (user, data, conn = pool, before = null) => {
+  if (require('../utils/leadPortal').isLeadPortalUser(user)) return;
   const touched = Object.keys(data || {}).filter((k) => data[k] !== undefined);
   if (touched.length === 0) return;
   const changed = before
@@ -234,7 +235,7 @@ exports.enforceLeadEdit = async (user, data, conn = pool, before = null) => {
 const ALWAYS_VISIBLE = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
 
 exports.stripLeadView = async (record, user, conn = pool) => {
-  if (!record || !user) return record;
+  if (!record || !user || require('../utils/leadPortal').isLeadPortalUser(user)) return record;
   const ctx = await getUserCtx(user, conn);
   let fieldMap = {};
   try {
