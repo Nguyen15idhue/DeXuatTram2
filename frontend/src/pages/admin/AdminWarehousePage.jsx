@@ -9,6 +9,7 @@ import FileUpload from '../../components/dynamic/FileUpload';
 import WarehouseFilterBar from '../../components/admin/WarehouseFilterBar';
 import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import { comparePolesByPower } from '../../utils/warehouse';
 
 const TABS = [
   { key: 'stock', label: 'Tồn kho' },
@@ -424,26 +425,26 @@ const StockTab = ({ token, onToast }) => {
       setLoading(true);
       try {
         const supplierRes = await supplierService.getAll('limit=200', token);
+        if (!supplierRes?.success) throw new Error(supplierRes?.message || 'Không tải được danh sách nhà cung cấp');
         const suppliers = supplierRes?.data || [];
         if (!cancelled) setSuppliers(suppliers);
         const rows = [];
         await Promise.all(suppliers.map(async (supplier) => {
           if (filters.supplier_id && String(supplier.id) !== String(filters.supplier_id)) return;
-          try {
-            const res = await supplierService.getPoles(supplier.id, token);
-            (res?.data || []).forEach((pole) => {
-              rows.push({
-                supplier_id: supplier.id,
-                supplier_name: supplier.name,
-                supplier_logo: supplier.logo,
-                pole_id: pole.charging_pole_id || pole.id,
-                name: pole.name,
-                charging_type: pole.charging_type,
-                power_kw: pole.power_kw,
-                quantity: Number(pole.quantity || 0)
-              });
+          const res = await supplierService.getPoles(supplier.id, token);
+          if (!res?.success) throw new Error(res?.message || 'Không tải được tồn kho nhà cung cấp');
+          (res.data || []).forEach((pole) => {
+            rows.push({
+              supplier_id: supplier.id,
+              supplier_name: supplier.name,
+              supplier_logo: supplier.logo,
+              pole_id: pole.charging_pole_id || pole.id,
+              name: pole.name,
+              charging_type: pole.charging_type,
+              power_kw: pole.power_kw,
+              quantity: Number(pole.quantity || 0)
             });
-          } catch { /* silent */ }
+          });
         }));
         if (cancelled) return;
         const map = new Map();
@@ -460,9 +461,12 @@ const StockTab = ({ token, onToast }) => {
           result = result.filter((group) => `${group.charging_type} ${group.power_kw}`.toLowerCase().includes(q)
             || group.items.some((item) => (item.name || '').toLowerCase().includes(q) || (item.supplier_name || '').toLowerCase().includes(q)));
         }
-        setGroups(result);
+        setGroups(result.sort(comparePolesByPower));
       } catch (error) {
-        if (!cancelled) onToast(error?.message || 'Không tải được tồn kho', 'error');
+        if (!cancelled) {
+          setGroups([]);
+          onToast(error?.message || 'Không tải được tồn kho', 'error');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

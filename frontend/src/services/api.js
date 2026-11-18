@@ -703,6 +703,13 @@ export const warehouseService = {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/warehouse/stock${qs}`, token);
   },
+  async adjustStock(supplierId, poleId, data, token) {
+    const response = await api.patchWithAuth(`/admin/warehouse/stock/${supplierId}/${poleId}`, data, token);
+    if (!response?.success) {
+      throw Object.assign(new Error(response?.message || 'Cập nhật tồn kho thất bại'), { code: response?.code });
+    }
+    return response;
+  },
   exportExcel(resource, token, queryString = '') {
     return excelService.downloadBlob(`/admin/warehouse/export/${resource}${queryString ? `?${queryString}` : ''}`, token, `warehouse_${resource}.xlsx`);
   }

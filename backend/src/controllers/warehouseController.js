@@ -87,6 +87,21 @@ exports.getStock = async (req, res) => {
   } catch (error) { sendError(res, error); }
 };
 
+exports.adjustStock = async (req, res) => {
+  try {
+    const data = await require('../services/supplierService').adjustStock(
+      req.params.supplierId, req.params.poleId, req.body, req.user
+    );
+    res.json({ success: true, data, message: 'Đã cập nhật tồn kho' });
+  } catch (error) {
+    if (error.statusCode === 409) {
+      console.error('Warehouse stock conflict:', error.message);
+      return res.status(409).json({ success: false, code: 'STOCK_CONFLICT', message: error.message });
+    }
+    sendError(res, error);
+  }
+};
+
 exports.exportExcel = async (req, res) => {
   try {
     await require('../services/warehouseExcelService').export(req, res);

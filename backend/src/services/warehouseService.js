@@ -66,7 +66,7 @@ const listPoles = async ({ search = '', page = 1, limit = 20 } = {}) => {
      LEFT JOIN suppliers s ON s.id = scp.supplier_id
      ${whereClause}
      GROUP BY cp.id
-     ORDER BY cp.id DESC LIMIT ? OFFSET ?`,
+     ORDER BY cp.power_kw ASC, cp.charging_type ASC, cp.name ASC, cp.id ASC LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
   );
 
@@ -522,7 +522,7 @@ const getStock = async ({ search = '' } = {}) => {
   const [rows] = await pool.query(
     `SELECT id, name, charging_type, power_kw, quantity, supplier, updated_at
      FROM charging_poles ${whereClause}
-     ORDER BY name ASC, id ASC`,
+     ORDER BY power_kw ASC, charging_type ASC, name ASC, id ASC`,
     params
   );
   return rows;

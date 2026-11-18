@@ -61,7 +61,7 @@ const stageFilters = {
     completed: "cs.contract_status='DONE'", all: '1=1'
   },
   'xay-dung-ha-tang': {
-    need: "(COALESCE(cs.infra_power_status,'NOT')<>'DONE' OR COALESCE(cs.infra_site_status,'NOT')<>'DONE')",
+    need: "(cs.contract_status='DONE' AND (COALESCE(cs.infra_power_status,'NOT')<>'DONE' OR COALESCE(cs.infra_site_status,'NOT')<>'DONE'))",
     completed: "(cs.infra_power_status='DONE' AND cs.infra_site_status='DONE')", all: '1=1'
   },
   'giao-tru': {
