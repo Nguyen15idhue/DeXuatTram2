@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const pool = require('../utils/db');
 const { isGdtt, isGdkv } = require('../constants/salesRanks');
 const leadAccess = require('./leadAccessService');
+const { canManageAllLeads } = require('../utils/leadPortal');
 const consultation = require('./leadConsultationService');
 
 const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
@@ -267,7 +268,7 @@ const getLeadRow = async (id, conn = pool) => {
 };
 
 exports.createLead = async (data, user, opts = {}) => {
-  if (user.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được tạo khách hàng'), { statusCode: 403 });
+  if (!canManageAllLeads(user)) throw Object.assign(new Error('Không có quyền tạo khách hàng'), { statusCode: 403 });
   const fullName = String(data.full_name || '').trim();
   const phone = String(data.phone || '').trim();
   if (!fullName) {
@@ -715,7 +716,7 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
 };
 
 exports.deleteLead = async (id, user) => {
-  if (user.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được xóa khách hàng'), { statusCode: 403 });
+  if (!canManageAllLeads(user)) throw Object.assign(new Error('Không có quyền xóa khách hàng'), { statusCode: 403 });
   const lead = await getLeadRow(id);
   if (!lead) {
     const err = new Error('Không tìm thấy Lead');
@@ -741,7 +742,7 @@ exports.deleteLead = async (id, user) => {
 };
 
 exports.bulkDeleteLeads = async (ids, user) => {
-  if (user.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được xóa khách hàng'), { statusCode: 403 });
+  if (!canManageAllLeads(user)) throw Object.assign(new Error('Không có quyền xóa khách hàng'), { statusCode: 403 });
   const list = [...new Set((ids || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   if (list.length === 0) {
     const err = new Error('Danh sách id không hợp lệ');

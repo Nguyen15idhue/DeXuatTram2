@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { isLeadPortalId, isLeadPortalUser, canManageAllLeads } = require('../utils/leadPortal');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -147,16 +148,46 @@ const requireLeadManager = async (req, res, next) => {
   }
 };
 
-const LEAD_WRITER_ROLES = ['SUPER_ADMIN'];
-
 const requireLeadWriter = (req, res, next) => {
-  if (!LEAD_WRITER_ROLES.includes(req.user.role)) {
+  if (!canManageAllLeads(req.user)) {
     return res.status(403).json({
       success: false,
       message: 'Không có quyền tạo/sửa/xóa Lead'
     });
   }
   next();
+};
+
+const isLeadPortalRequestAllowed = (req) => {
+  const { method, path, query } = req;
+  if (method === 'GET') {
+    if (['/api/auth/me', '/api/proposals', '/api/ev-reports', '/api/map-configs'].includes(path)) return true;
+    if (path === '/api/stations') return query.limit === undefined;
+    if (path === '/api/views') return query.entity === 'leads';
+    if (['/api/admin/excel/views', '/api/admin/excel/template'].includes(path)) return query.entity === 'leads';
+    if (path === '/api/admin/excel/export/leads') return true;
+    if (/^\/api\/admin\/excel\/import\/progress\/[\w-]+$/.test(path)) return true;
+    return /^\/api\/admin\/leads(?:\/(?:task-counts|assignee-options|\d+(?:\/(?:journey|assignments))?))?$/.test(path);
+  }
+  if (method === 'POST') {
+    if (path === '/api/admin/excel/import/preview') return query.entity === 'leads';
+    if (path === '/api/admin/excel/import/confirm') return req.body?.entity === 'leads';
+    return /^\/api\/admin\/leads(?:\/(?:bulk-delete|bulk-assign|\d+\/assign))?$/.test(path);
+  }
+  return ['PUT', 'DELETE'].includes(method) && /^\/api\/admin\/leads\/\d+$/.test(path);
+};
+
+const restrictLeadPortal = (req, res, next) => {
+  const header = req.headers.authorization;
+  const token = header?.startsWith('Bearer ') ? header.split(' ')[1] : req.query?.token;
+  if (typeof token !== 'string') return next();
+  if (!isLeadPortalId(jwt.decode(token)?.id)) return next();
+  return requireAuth(req, res, () => {
+    if (!isLeadPortalUser(req.user) || !isLeadPortalRequestAllowed(req)) {
+      return res.status(403).json({ success: false, message: 'Tài khoản này chỉ có quyền sử dụng Khách hàng và Bản đồ' });
+    }
+    return next();
+  });
 };
 
 const requireReportViewer = (req, res, next) => {
@@ -267,6 +298,7 @@ module.exports = {
   requireProposalReportManager,
   requireLeadManager,
   requireLeadWriter,
+  restrictLeadPortal,
   requireReportViewer,
   requireReportConfigurator,
   requireChargingStationViewer,

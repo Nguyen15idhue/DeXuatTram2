@@ -13,7 +13,7 @@ const processJob = async (job) => {
   const params = typeof job.params === 'string'
     ? JSON.parse(job.params || '{}')
     : (job.params || {});
-  const [uRows] = await require('../utils/db').query('SELECT id, role FROM users WHERE id = ?', [job.created_by]);
+  const [uRows] = await require('../utils/db').query('SELECT id, role, status FROM users WHERE id = ?', [job.created_by]);
   const user = uRows.length > 0 ? uRows[0] : null;
   const runner = getRunner();
   const result = await runner.runImportRows({

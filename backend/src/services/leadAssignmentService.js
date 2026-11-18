@@ -2,6 +2,7 @@ const pool = require('../utils/db');
 const { isGdkv, isGdtt } = require('../constants/salesRanks');
 const leadService = require('./leadService');
 const access = require('./leadAccessService');
+const { canManageAllLeads } = require('../utils/leadPortal');
 const consultation = require('./leadConsultationService');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -35,7 +36,7 @@ const assignInTransaction = async (leadId, targetUserId, actor, opts, conn) => {
   if (!target || !targetCtx.isBusiness || (opts.systemAuto ? !targetCtx.isGdtt : !targetCtx.isGdkv)) {
     throw fail(opts.systemAuto ? 'Không tìm thấy GĐTTKD phù hợp' : 'Chỉ được phân bổ cho GĐKV đang hoạt động');
   }
-  if (!opts.systemAuto && actor.role !== 'SUPER_ADMIN' && targetCtx.department !== lead.assigned_department) {
+  if (!opts.systemAuto && !canManageAllLeads(actor) && targetCtx.department !== lead.assigned_department) {
     throw fail('GĐKV phải thuộc cùng phòng ban với khách hàng', 403);
   }
   if (Number(lead.assigned_user_id) === targetId) {

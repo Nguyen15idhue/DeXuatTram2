@@ -1,5 +1,6 @@
 const leadService = require('../services/leadService');
 const leadAssignmentService = require('../services/leadAssignmentService');
+const { isLeadPortalUser } = require('../utils/leadPortal');
 
 exports.taskCounts = async (req, res) => {
   try {
@@ -131,10 +132,11 @@ exports.journey = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền xem Lead này' });
     }
     const journeyActivityService = require('../services/journeyActivityService');
+    const portal = isLeadPortalUser(req.user);
     const [journey, timeline, proposals] = await Promise.all([
-      journeyActivityService.getJourney(lead.journey_id),
-      journeyActivityService.getTimeline(lead.journey_id, req.query.limit),
-      leadService.getJourneyProposals
+      portal ? null : journeyActivityService.getJourney(lead.journey_id),
+      journeyActivityService.getTimeline(lead.journey_id, req.query.limit, { leadOnly: portal }),
+      !portal && leadService.getJourneyProposals
         ? leadService.getJourneyProposals(lead.journey_id)
         : Promise.resolve([]),
     ]);
@@ -150,6 +152,9 @@ exports.journey = async (req, res) => {
 
 exports.createProposal = async (req, res) => {
   try {
+    if (isLeadPortalUser(req.user)) {
+      return res.status(403).json({ success: false, message: 'Tài khoản này không có quyền tạo đề xuất' });
+    }
     const leadProposalService = require('../services/leadProposalService');
     const result = await leadProposalService.createProposalFromLead(
       req.params.id,

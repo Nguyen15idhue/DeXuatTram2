@@ -10,22 +10,24 @@ export const isLeadBusinessCenter = (user) => /^trung tam (kinh doanh|kd) mien (
 export const isLeadCenterDirector = (user) => isLeadBusinessCenter(user)
   && ['giam doc trung tam kinh doanh', 'giam doc trung tam kd', 'gdttkd'].includes(titleOf(user));
 export const isLeadAreaDirector = (user) => ['giam doc khu vuc', 'gdkv'].includes(titleOf(user));
-export const canAccessCustomers = (user) => !!user && (user.role === 'SUPER_ADMIN'
+export const isLeadPortal = (user) => user?.role === 'MKT' && user.lead_portal === true;
+export const canManageAllLeads = (user) => user?.role === 'SUPER_ADMIN' || isLeadPortal(user);
+export const canAccessCustomers = (user) => !!user && (canManageAllLeads(user)
   || isLeadCeo(user) || isLeadPlanning(user) || isLeadBusinessCenter(user));
 export const canManageBusinessCalendar = (user) => !!user && (user.role === 'SUPER_ADMIN'
   || departmentOf(user).replace(/\s+/g, '').includes('backoffice'));
-export const canWriteLeadGeneral = (user, record) => user?.role === 'SUPER_ADMIN'
+export const canWriteLeadGeneral = (user, record) => canManageAllLeads(user)
   && record?.permissions?.can_write_general !== false;
 export const canAssignLead = (user, record) => canAccessCustomers(user)
-  && (user?.role === 'SUPER_ADMIN' || (!isLeadCeo(user) && !isLeadPlanning(user) && isLeadCenterDirector(user)))
+  && (canManageAllLeads(user) || (!isLeadCeo(user) && !isLeadPlanning(user) && isLeadCenterDirector(user)))
   && record?.permissions?.can_assign !== false;
 export const canConsultLead = (user, record) => {
   if (!user) return false;
-  if (user.role !== 'SUPER_ADMIN' && (isLeadCeo(user) || isLeadPlanning(user)
+  if (!canManageAllLeads(user) && (isLeadCeo(user) || isLeadPlanning(user)
     || !isLeadBusinessCenter(user) || (!isLeadCenterDirector(user) && !isLeadAreaDirector(user)))) return false;
   if (typeof record?.permissions?.can_consult === 'boolean') return record.permissions.can_consult;
   if (!canAccessCustomers(user)) return false;
-  return user?.role === 'SUPER_ADMIN';
+  return canManageAllLeads(user);
 };
 export const LEAD_TABS = [
   { key: 'allocation', label: 'Cần phân chia', task: true },
@@ -36,7 +38,7 @@ export const LEAD_TABS = [
   { key: 'all', label: 'Tất cả' },
 ];
 export const leadTabPolicy = (user) => {
-  if (user?.role === 'SUPER_ADMIN' || isLeadCeo(user) || isLeadPlanning(user)) {
+  if (canManageAllLeads(user) || isLeadCeo(user) || isLeadPlanning(user)) {
     return { tabs: LEAD_TABS, defaultTab: 'all' };
   }
   const keys = isLeadCenterDirector(user) ? ['allocation', 'allocated', 'all']

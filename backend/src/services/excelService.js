@@ -1639,6 +1639,9 @@ exports.importConfirmDynamic = async (req, res) => {
       columns: Array.isArray(req.body.columns) ? req.body.columns : null,
       createdBy: req.user ? req.user.id : null
     });
+    if (isLeadPortalUser(req.user) && (job.entity !== 'leads' || Number(job.created_by) !== Number(req.user.id))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xem job này' });
+    }
     return res.status(202).json({
       success: true,
       data: { jobId: job.id, status: job.status, total: job.total },
@@ -1804,11 +1807,12 @@ exports.exportProposalsByModel = async (req, res) => {
 const SALES_ALLOWED_EXCEL_WRITE = new Set(['station_proposals']);
 const SALES_ALLOWED_EXCEL_READ = new Set(['station_proposals', 'leads']);
 const MKT_ALLOWED_EXCEL_ENTITIES = new Set(['leads']);
+const { canManageAllLeads, isLeadPortalUser } = require('../utils/leadPortal');
 
 const denyEntityByRole = (req, res, entity, mode = 'write') => {
   const role = req.user && req.user.role;
   if (entity === 'leads') {
-    if (mode !== 'read' && role !== 'SUPER_ADMIN') {
+    if (mode !== 'read' && !canManageAllLeads(req.user)) {
       res.status(403).json({ success: false, message: 'Chỉ Super Admin được nhập hoặc tạo khách hàng' });
       return true;
     }

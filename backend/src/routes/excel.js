@@ -5,7 +5,8 @@ const { adminLimiter, excelLimiter } = require('../middlewares/rateLimits');
 const excelService = require('../services/excelService');
 const requireLeadManager = async (req, res, next) => {
   try {
-    let entity = req.query.entity || req.body?.entity || (req.path === '/export/leads' ? 'leads' : null);
+    let entity = req.path === '/export/leads' ? 'leads' : req.path === '/import/confirm'
+      ? req.body?.entity : req.query.entity;
     const jobId = req.params.jobId || req.params.id;
     if (jobId) {
       const job = await require('../services/importJobService').getByIdScoped(jobId, req.user);

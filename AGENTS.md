@@ -166,6 +166,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - Row data lưu JSON cột `data`
 - Delete row → orphaned children set `parent_row_id = NULL`
 ### 4.12. Security & Rate Limiting
+- Cổng khách hàng `/leads`: đặt `LEAD_PORTAL_USER_ID` trong môi trường backend bằng `users.id` của một tài khoản `MKT` chuyên dùng, rồi khởi động lại backend. Trống thì không bật. Tài khoản giữ role `MKT`, có quyền quản lý toàn bộ Lead và nhập/xuất Excel Lead, chỉ đọc bản đồ theo quyền bản đồ hiện hữu; không mở các module khác, tạo đề xuất hay truy cập kho file chung. Hành trình chỉ trả nhật ký Lead. Khóa tài khoản để thu hồi quyền; không bỏ cấu hình ID khi tài khoản vẫn hoạt động nếu muốn duy trì giới hạn này.
 - Mật khẩu bcrypt; JWT 12h (`JWT_EXPIRES_IN`) + `token_version` revoke; FE `api.js` interceptor 401 → xóa token + về `/login`
 - Đăng nhập bằng **email hoặc SĐT** (`authService.findByEmailOrPhone`, chuẩn hóa `0`/`84`/`+84`); tick "Ghi nhớ đăng nhập 30 ngày" → token `30d` (FE lưu `remember_until` = mốc hết hạn), không tick → `12h`. `AuthContext` lưu lựa chọn tick vào `remember_login` (LoginPage tự tick sẵn lần sau) và định kỳ 30s kiểm tra `remember_until` để **tự logout client-side đúng hạn**; `fetchUser` bỏ qua kết quả trả về nếu token đã bị xóa (chống race hồi sinh phiên)
 - `helmet`, CORS theo `CORS_ORIGINS`, body limit 10MB, `compression`, `trust proxy 1`

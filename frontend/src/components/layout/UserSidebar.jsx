@@ -1,7 +1,8 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Map, ClipboardList, User, Settings, LogOut, X, BookOpen } from 'lucide-react';
+import { Map, ClipboardList, User, Settings, LogOut, X, BookOpen, Users } from 'lucide-react';
 import { getAdminPanelRedirect } from '../../utils/adminPanelRedirect';
+import { isLeadPortal } from '../../utils/leadAccess';
 
 const menuItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
@@ -13,6 +14,8 @@ const menuItems = [
 const UserSidebar = ({ isOpen, onClose }) => {
   const { user, canAccessPanel, logout } = useAuth();
   const location = useLocation();
+  const portal = isLeadPortal(user);
+  const items = portal ? [menuItems[0], { path: '/leads', label: 'Khách hàng', icon: Users }] : menuItems;
 
   const isActive = (path) => {
     if (path === '/map') return location.pathname === '/map';
@@ -38,7 +41,7 @@ const UserSidebar = ({ isOpen, onClose }) => {
 
         {/* Navigation */}
         <nav className="p-2">
-          {menuItems.map((item) => (
+          {items.map((item) => (
             <Link
               key={item.path}
               to={item.path}
@@ -53,7 +56,7 @@ const UserSidebar = ({ isOpen, onClose }) => {
               {item.label}
             </Link>
           ))}
-          {canAccessPanel && (
+          {!portal && canAccessPanel && (
             <>
               <div className="border-t border-base-300 my-2"></div>
               <Link

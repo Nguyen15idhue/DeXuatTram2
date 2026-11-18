@@ -10,7 +10,8 @@ import AdminLayout from './layouts/AdminLayout';
 import RoleRoute from './components/RoleRoute';
 import AssistantChat from './components/help/AssistantChat';
 import { canSeeApprovalPage, canSeeFinancePage, canSeeReviewRequestsPage } from './utils/proposalAccess';
-import { canAccessCustomers, canManageBusinessCalendar } from './utils/leadAccess';
+import { canAccessCustomers, canManageBusinessCalendar, isLeadPortal } from './utils/leadAccess';
+import RouteFallback from './components/RouteFallback';
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
@@ -112,10 +113,23 @@ function AdminLanding() {
   return <AdminDashboard />;
 }
 
-function App() {
+function AppRoutes() {
+  const { user, loading } = useAuth();
+  if (loading) return <RouteFallback />;
+  if (isLeadPortal(user)) {
+    return (
+      <Routes>
+        <Route element={<UserLayout />}>
+          <Route path="/map" element={<MapPage />} />
+          <Route path="/leads/*" element={<AdminLeadsPage basePath="/leads" />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/map" replace />} />
+      </Routes>
+    );
+  }
+
   return (
-    <AuthProvider>
-      <Router>
+    <>
         <GlobalAssistantChat />
         <Routes>
           <Route element={<PublicLayout />}>
@@ -134,6 +148,14 @@ function App() {
             <Route path="/my-proposals/*" element={<MyProposalsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/huong-dan" element={<HelpPage />} />
+            <Route
+              path="/leads/*"
+              element={
+                <CustomerAccessRoute>
+                  <AdminLeadsPage basePath="/leads" />
+                </CustomerAccessRoute>
+              }
+            />
           </Route>
 
           <Route element={<AdminLayout />}>
@@ -424,6 +446,15 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppRoutes />
       </Router>
     </AuthProvider>
   );

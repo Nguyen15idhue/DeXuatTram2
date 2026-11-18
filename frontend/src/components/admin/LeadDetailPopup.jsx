@@ -41,6 +41,8 @@ import {
   canConsultLead,
   canAssignLead,
   canWriteLeadGeneral,
+  canManageAllLeads,
+  isLeadPortal,
   LEAD_CONSULTATION_OPTIONS,
 } from "../../utils/leadAccess";
 
@@ -106,8 +108,8 @@ const LeadDetailPopup = ({
     }
   }, [location && location.search]);
   const focusSection =
-    focusFromNav || focusFromQuery || leadFocusSectionForRole(role);
-  const sectionNotice = leadSectionNotice(role);
+    focusFromNav || focusFromQuery || (canManageAllLeads(user) ? null : leadFocusSectionForRole(role));
+  const sectionNotice = canManageAllLeads(user) ? "" : leadSectionNotice(role);
   const leadsViewId = useDefaultViewId("leads", null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -537,7 +539,7 @@ const LeadDetailPopup = ({
     });
 
   const canCreateProposal =
-    record?.consultation_status === "SUCCESS" && canConsultLead(user, record);
+    !isLeadPortal(user) && record?.consultation_status === "SUCCESS" && canConsultLead(user, record);
   const crmExtraNoteText = record
     ? buildCrmExtraNote(
         record.custom_data && typeof record.custom_data === "object"
