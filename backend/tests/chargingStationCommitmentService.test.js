@@ -6,12 +6,13 @@ const service = require('../src/services/chargingStationCommitmentService');
 const superAdmin = { id: 8, role: 'SUPER_ADMIN' };
 test.after(() => pool.end());
 
-const setup = (t, { snapshot = null, commitments = [], evidence = [], custom = {} } = {}) => {
+const setup = (t, { snapshot = null, commitments = [], evidence = [], custom = {}, needsReview = 1, failAudit = false } = {}) => {
   const calls = [];
   const query = async (sql, params) => {
     calls.push({ sql, params });
     if (sql.includes('FROM charging_stations cs JOIN station_proposals')) return [[{
-      id: 1, proposal_id: 2, chot_so_luong_tru: snapshot, tong_gia_tri_chot: 100, custom_data: custom
+      id: 1, proposal_id: 2, chot_so_luong_tru: snapshot, tong_gia_tri_chot: 100, custom_data: custom,
+      fulfillment_review_required: needsReview
     }]];
     if (sql.includes('FROM charging_station_commitments')) return [commitments];
     if (sql.includes('FROM warehouse_export_items i JOIN')) return [evidence];
@@ -19,6 +20,7 @@ const setup = (t, { snapshot = null, commitments = [], evidence = [], custom = {
     if (sql.includes('SELECT data FROM data_list_rows')) return [[
       { data: { ten: 'DC120', gia: 999 } }, { data: { ten: 'DC60', gia: 200 } }
     ]];
+    if (failAudit && sql.includes('INSERT INTO charging_station_activity_logs')) throw new Error('Audit failed');
     if (/^(INSERT|UPDATE|DELETE)/.test(sql.trim())) return [{}];
     throw new Error(`Unexpected SQL ${sql}`);
   };
@@ -39,6 +41,12 @@ test('proposal fallback is read-only and becomes a priced snapshot only on save'
   assert.equal(calls.some(c => /^(UPDATE|INSERT|DELETE)/.test(c.sql.trim())), false);
   const result = await service.update(1, { expected_token: current.token, rows: current.rows, reason: 'Chốt' }, superAdmin);
   assert.equal(result.total, '2198.00');
+  assert.equal(result.needs_review, false);
+  const clearIndex = calls.findIndex(c => c.sql.includes('SET fulfillment_review_required=0'));
+  const auditIndex = calls.findIndex(c => c.sql.includes('INSERT INTO charging_station_activity_logs'));
+  assert.ok(clearIndex > calls.findIndex(c => c.sql.startsWith('UPDATE station_proposals')));
+  assert.ok(auditIndex > clearIndex);
+  assert.deepEqual(JSON.parse(calls[auditIndex].params[1]).fulfillment_review_required, { old: 1, new: 0 });
   assert.equal(calls.filter(c => c.sql.includes('INSERT INTO charging_station_commitments')).length, 2);
   assert.ok(calls.some(c => c.sql.includes('charging_station_activity_logs')));
   assert.ok(calls.some(c => c.sql === 'commit'));
@@ -56,6 +64,7 @@ test('preserves stable row and price, enforces net exported floor and evidence',
   await assert.rejects(update([{ ...current.rows[0], so_luong: 2 }]), { statusCode: 409 });
   await assert.rejects(update([{ ...current.rows[0], pole_id: 6 }]), { statusCode: 409 });
   await assert.rejects(update([{ mo_hinh: 'LK', pole_id: 6, so_luong: 1 }]), { statusCode: 409 });
+  assert.equal(calls.some(c => c.sql.includes('SET fulfillment_review_required=0')), false);
   const result = await update([{ ...current.rows[0], so_luong: 3 }, { mo_hinh: 'LK', pole_id: 6, so_luong: 2 }]);
   assert.equal(result.total, '700.00');
   assert.equal(result.rows[0].gia_chot, 100);
@@ -63,6 +72,36 @@ test('preserves stable row and price, enforces net exported floor and evidence',
   assert.equal(result.rows[0].source_key, 'line:1');
   assert.ok(calls.some(c => c.sql.startsWith('UPDATE charging_station_commitments') && c.params.at(-1) === 11));
   assert.equal(calls.some(c => c.sql.startsWith('DELETE FROM charging_station_commitments')), false);
+  assert.ok(calls.some(c => c.sql.includes('SET fulfillment_review_required=0')));
+});
+
+test('unmapped or inconsistent evidence blocks reconciliation without clearing the flag', async t => {
+  const snapshot = [{ source_key: 'x', mo_hinh: 'NQ', pole_id: 5, loai_tru: 'DC120', so_luong: 5, gia_chot: 100 }];
+  const commitments = [{ id: 11, source_key: 'x', model: 'NQ', pole_id: 5, quantity: 5 }];
+  for (const evidence of [
+    [{ commitment_id: null, pole_id: 5, quantity: 1, returned_quantity: 0 }],
+    [{ commitment_id: 11, pole_id: 6, quantity: 1, returned_quantity: 0 }],
+    [{ commitment_id: 11, pole_id: 5, quantity: 1, returned_quantity: 2 }]
+  ]) {
+    const calls = setup(t, { snapshot, commitments, evidence });
+    await assert.rejects(service.update(1, {
+      expected_token: 'version', rows: snapshot, reason: 'Đối soát'
+    }, superAdmin), { statusCode: 409 });
+    assert.equal(calls.some(c => /^(UPDATE|INSERT|DELETE)/.test(c.sql.trim())), false);
+    assert.ok(calls.some(c => c.sql === 'rollback'));
+    t.mock.restoreAll();
+  }
+});
+
+test('audit failure rolls back the snapshot and review flag in the same transaction', async t => {
+  const calls = setup(t, { failAudit: true });
+  const current = await service.get(1, superAdmin);
+  await assert.rejects(service.update(1, {
+    expected_token: current.token, rows: [{ mo_hinh: 'NQ', pole_id: 5, so_luong: 1 }], reason: 'Đối soát'
+  }, superAdmin), /Audit failed/);
+  assert.ok(calls.some(c => c.sql.includes('SET fulfillment_review_required=0')));
+  assert.ok(calls.some(c => c.sql === 'rollback'));
+  assert.equal(calls.some(c => c.sql === 'commit'), false);
 });
 
 test('stale version, role and inconsistent legacy evidence fail without writes', async t => {
@@ -85,7 +124,7 @@ test('fallback changes invalidate token and NQ legacy table is supported', async
 test('invalid inputs are rejected and decimal totals are exact', async t => {
   const snapshot = [{ source_key: 'x', mo_hinh: 'NQ', pole_id: 5, loai_tru: 'DC120', so_luong: 1, gia_chot: '10.05' }];
   const commitments = [{ id: 11, source_key: 'x', model: 'NQ', pole_id: 5, quantity: 1 }];
-  const calls = setup(t, { snapshot, commitments });
+  const calls = setup(t, { snapshot, commitments, needsReview: 0 });
   const current = await service.get(1, superAdmin);
   for (const value of [true, [], {}, 0, ' ', '1.2']) {
     await assert.rejects(service.update(1, { expected_token: current.token, rows: [{ ...current.rows[0], so_luong: value }], reason: 'abc' }, superAdmin), { statusCode: 400 });
@@ -148,7 +187,7 @@ test('real SQL preserves evidence, price, inventory and reconciles concurrent ex
     const [[item]] = await fixture.query('SELECT quantity,returned_quantity FROM warehouse_export_items WHERE id=1');
     const [[proposal]] = await fixture.query('SELECT chot_so_luong_tru,tong_gia_tri_chot FROM station_proposals WHERE id=1');
     assert.equal(commitment.quantity, 4);
-    assert.equal(station.fulfillment_review_required, 1);
+    assert.equal(station.fulfillment_review_required, 0);
     assert.equal(pole.quantity, 8);
     assert.equal(item.quantity, 4);
     assert.equal(item.returned_quantity, 1);

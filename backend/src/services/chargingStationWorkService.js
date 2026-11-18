@@ -21,7 +21,7 @@ const earlyDeliveryRequested = `EXISTS(SELECT 1 FROM charging_station_activity_l
   WHERE delivery_log.charging_station_id=cs.id AND delivery_log.action='early_delivery_requested')`;
 const deliveryTask = `(NOT ${deliveryComplete}
   AND (NOT ${readiness.deliveryMissingSql('cs', 'p')} OR ${earlyDeliveryRequested}))`;
-const canReceiveDeliveryTask = (user, permissions) => permissions.back_office && user?.role !== 'SUPER_ADMIN';
+const canReceiveDeliveryTask = (user, permissions) => user?.role === 'SUPER_ADMIN' || permissions.back_office;
 const allOperating = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0
   AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
   AND ${everyOperating})

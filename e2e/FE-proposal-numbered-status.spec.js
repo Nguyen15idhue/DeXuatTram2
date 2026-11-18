@@ -3,6 +3,7 @@ test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 
 test('proposal page numbers status labels without changing API codes or other pages', async ({ page }) => {
   const errors = [];
+  const proposalQueries = [];
   page.on('pageerror', error => errors.push(error.message));
   const options = [
     { value: 'PENDING', label: 'Đang đề xuất', color: '#facc15' },
@@ -25,6 +26,7 @@ test('proposal page numbers status labels without changing API codes or other pa
     else if (path.endsWith('/forms/by-entity-purpose')) data = null;
     else if (path.endsWith('/admin/proposals/77')) data = record;
     else if (path.endsWith('/admin/proposals') || path.endsWith('/my-proposals')) {
+      if (path.endsWith('/admin/proposals')) proposalQueries.push(url.searchParams);
       data = [{ ...record, status: url.searchParams.has('signed_approval_only') ? 'APPROVED' : 'PENDING' }];
     }
     else if (path.endsWith('/admin/proposal-requests')) data = [{
@@ -40,6 +42,7 @@ test('proposal page numbers status labels without changing API codes or other pa
   await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
   await page.goto('/admin/proposals');
   await expect(page.locator('tbody').getByText('1. Mới đề xuất', { exact: true })).toBeVisible({ timeout: 15000 });
+  expect(proposalQueries.at(-1).get('prioritize_workflow')).toBe('1');
   const columnFilter = page.getByLabel('Lọc trạng thái quy trình');
   const labels = await columnFilter.locator('option').allTextContents();
   expect(labels.slice(1, 4)).toEqual(['1. Mới đề xuất', '2. Đang đánh giá quy hoạch và pháp lý', '3. GĐTTKD đánh giá']);
@@ -51,6 +54,7 @@ test('proposal page numbers status labels without changing API codes or other pa
   });
   await columnFilter.selectOption('GRADING');
   await request;
+  expect(proposalQueries.at(-1).get('prioritize_workflow')).toBe('1');
   await page.goto('/admin/proposals/view=77');
   await expect(page.locator('.popup-detail').getByText('1. Mới đề xuất', { exact: true })).toBeVisible();
   await page.goto('/admin/proposals/edit=77');
@@ -60,6 +64,9 @@ test('proposal page numbers status labels without changing API codes or other pa
   await expect(page.locator('tbody').getByText('1. Mới đề xuất', { exact: true })).toBeVisible();
   await page.goto('/admin/proposals?tab=completed');
   await expect(page.locator('tbody').getByText('14. Đã duyệt BCĐX', { exact: true })).toBeVisible();
+  const completedQuery = proposalQueries.findLast(query => query.get('signed_approval_only') === '1');
+  expect(completedQuery).toBeDefined();
+  expect(completedQuery.has('prioritize_workflow')).toBe(false);
   await page.goto('/my-proposals');
   await expect(page.locator('tbody').getByText('Đang đề xuất', { exact: true })).toBeVisible();
   await expect(page.locator('tbody').getByText('1. Mới đề xuất', { exact: true })).toHaveCount(0);

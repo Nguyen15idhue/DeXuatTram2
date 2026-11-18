@@ -296,7 +296,7 @@ const AdminProposalsPage = () => {
   const loadProposals = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: pageSize });
+      const params = new URLSearchParams({ page, limit: pageSize, prioritize_workflow: '1' });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;

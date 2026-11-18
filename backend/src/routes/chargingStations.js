@@ -13,6 +13,7 @@ router.use(requireAuth);
  *     summary: Danh sách ON trạm theo giai đoạn
  *     description: >
  *       stage = thong-tin-chung | khoi-tao-hop-dong (tab = need|completed|all) | xay-dung-ha-tang (tab = need|completed|all) | giao-tru | lap-tru | nghiem-thu | on-tram.
+ *       Riêng Thông tin chung, tab all đưa ON trạm CANCELLED xuống cuối trước phân trang; mỗi nhóm xếp ngày cập nhật và ID giảm dần, không dựa trạng thái đề xuất.
  *     security:
  *       - bearerAuth: []
  *     parameters:

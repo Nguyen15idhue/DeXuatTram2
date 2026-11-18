@@ -32,8 +32,53 @@ const createConnection = (query) => {
       return query(sql.replace(/\s+/g, ' ').trim(), params);
     }
   };
-
 };
+
+test('shipment failure checks version and receipt state without restocking or changing quantities', async () => {
+    let before = 'SHIPPING';
+    let received = 0;
+    let savedEvent;
+    const connection = createConnection(sql => {
+      if (sql.includes('FROM charging_stations WHERE id = ? FOR UPDATE')) return [[{ id: 5, status: 'DELIVERING' }]];
+      if (sql.startsWith('SELECT operation')) return [savedEvent ? [savedEvent] : []];
+      if (sql.includes('SELECT * FROM warehouse_exports') && sql.includes('FOR UPDATE')) return [[{ id: 7, transport_status: before }]];
+      if (sql.includes('SELECT * FROM warehouse_export_items')) return [[{
+        id: 20, commitment_id: 3, quantity: 4, received_quantity: received, returned_quantity: 0, return_pending_quantity: 0
+      }]];
+      if (sql.includes('FROM charging_station_deployments d')) return [[]];
+      if (sql.startsWith('UPDATE warehouse_exports SET transport_status')) return [{ affectedRows: 1 }];
+      if (sql.includes('SELECT * FROM warehouse_exports WHERE id = ?')) return [[{ id: 7, transport_status: 'FAILED' }]];
+      if (sql.includes('FROM warehouse_export_items wei')) return [[]];
+      if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }];
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+      '../utils/db': { getConnection: async () => connection },
+      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
+      './chargingStationService': { writeActivity: async () => {} },
+      './chargingStationDeploymentService': { refreshStationProgress: async () => {} }
+    });
+    const body = { request_id: 'failure-test', status: 'FAILED', expected_status: 'SHIPPING', reason: 'Giao thất bại' };
+    const actor = { id: 9, role: 'SUPER_ADMIN' };
+    try {
+      before = 'DELIVERED';
+      await assert.rejects(service.updateShipmentStatus(5, 7, body, actor), { statusCode: 409 });
+      before = 'SHIPPING';
+      received = 1;
+      await assert.rejects(service.updateShipmentStatus(5, 7, body, actor), { statusCode: 409 });
+      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE')), false);
+      received = 0;
+      const result = await service.updateShipmentStatus(5, 7, body, actor);
+      assert.equal(result.transport_status, 'FAILED');
+      assert.equal(connection.calls.filter(call => call.sql?.startsWith('UPDATE')).length, 1);
+      const event = connection.calls.find(call => call.sql?.includes('INSERT INTO charging_station_fulfillment_events'));
+      savedEvent = { operation: event.params[2], payload: event.params[4], result: event.params[5] };
+      const writes = connection.calls.filter(call => call.sql?.startsWith('UPDATE')).length;
+      await service.updateShipmentStatus(5, 7, body, actor);
+      assert.equal(connection.calls.filter(call => call.sql?.startsWith('UPDATE')).length, writes);
+      await assert.rejects(service.updateShipmentStatus(5, 7, { ...body, status: 'SHIPPING' }, actor), { statusCode: 400 });
+    } finally { restore(); }
+  });
 
   test('list summary isolates ambiguous legacy poles with an explicit review warning, preserving shipments', async () => {
     const message = 'Không xác định duy nhất được loại trụ ở dòng 1; cần đối soát thủ công';

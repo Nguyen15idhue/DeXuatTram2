@@ -25,6 +25,7 @@ router.get('/status', requireAuth, requireAdmin, controller.status);
  *   post:
  *     tags: [Admin - Proposals]
  *     summary: Xếp toàn bộ trạm ON hiện có vào hàng đợi đồng bộ Google Sheet
+ *     description: Đồng bộ cột A–T, dùng Mã BCĐX ở R làm khóa cập nhật/thêm. E giống S, F giống T; giữ nguyên U trở đi. Tab đã có dữ liệu phải có header R là Mã BCĐX, không tự chuyển bố cục cũ.
  *     security:
  *       - bearerAuth: []
  *     responses:

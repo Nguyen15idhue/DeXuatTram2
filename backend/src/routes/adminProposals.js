@@ -30,6 +30,12 @@ const adminProposalController = require('../controllers/adminProposalController'
  *           enum: ['0', '1']
  *         description: Nếu bằng 1, chỉ lấy APPROVED có file BCĐX Chủ tịch đã ký
  *       - in: query
+ *         name: prioritize_workflow
+ *         schema:
+ *           type: string
+ *           enum: ['0', '1']
+ *         description: Nếu bằng 1, đưa Hủy/Lưu trữ/Tạm dừng/Từ chối/Hợp đồng thất bại xuống cuối trước phân trang; trong mỗi nhóm xếp ngày tạo và ID giảm dần. Dùng cho tab Tất cả.
+ *       - in: query
  *         name: uu_tien
  *         schema:
  *           type: string

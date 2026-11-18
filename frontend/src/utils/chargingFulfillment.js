@@ -76,9 +76,26 @@ export const SHIPMENT_STATUS_LABELS = {
   RETURN_PENDING: 'Chờ hoàn hàng', RETURNED: 'Đã hoàn', FAILED: 'Giao thất bại'
 };
 export const shipmentNextStatuses = status => ({
-  PENDING: ['DELIVERED', 'RETURN_PENDING'], SHIPPING: ['DELIVERED', 'RETURN_PENDING'],
+  PENDING: ['DELIVERED', 'FAILED', 'RETURN_PENDING'], SHIPPING: ['DELIVERED', 'FAILED', 'RETURN_PENDING'],
   DELIVERED: ['RETURN_PENDING'], FAILED: ['RETURN_PENDING'], RETURN_PENDING: ['RETURNED'], RETURNED: []
 }[status] || []);
+
+export const deliverySummary = station => {
+  const fulfillment = station.fulfillment;
+  const totals = fulfillment?.totals;
+  const shipments = fulfillment?.shipments || [];
+  const complete = (station.status === 'OPERATING' && station.workflow_override?.completed)
+    || (!fulfillment?.needs_review && Number(totals?.committed) > 0
+      && Number(totals?.received) >= Number(totals?.committed));
+  if (shipments.some(row => row.transport_status === 'RETURN_PENDING')) return { label: 'Có chuyến chờ hoàn hàng', variant: 'warning' };
+  if (complete) return { label: 'Đã giao hàng thành công', variant: 'success', complete: true };
+  if (Number(totals?.received) > 0) return { label: 'Đã giao một phần', variant: 'info' };
+  if (shipments.some(row => ['PENDING', 'SHIPPING'].includes(row.transport_status))) return { label: 'Đang vận chuyển', variant: 'info' };
+  if (shipments.some(row => row.transport_status === 'FAILED')) return { label: 'Giao thất bại', variant: 'error' };
+  if (shipments.length && shipments.every(row => row.transport_status === 'RETURNED')) return { label: 'Đã hoàn', variant: 'ghost' };
+  if (Number(totals?.exported) > Number(totals?.returned)) return { label: 'Đang vận chuyển', variant: 'info' };
+  return { label: 'Chưa giao', variant: 'ghost' };
+};
 export const portionUnavailable = portion => Boolean(portion.returned_at)
   || ['RETURN_PENDING', 'RETURNED'].includes(portion.shipment_status);
 

@@ -16,6 +16,7 @@ const ChargingStationCommitmentDialog = ({ station, onClose, onSaved }) => {
     setError('');
     try {
       const response = await chargingStationService.getCommitments(station.id, token);
+      if (!response?.success) throw new Error(response?.message || 'Không tải được trụ chốt');
       setData(response.data);
       setRows(response.data.rows);
     } catch (cause) { setError(cause.message || 'Không tải được trụ chốt'); }
@@ -28,10 +29,11 @@ const ChargingStationCommitmentDialog = ({ station, onClose, onSaved }) => {
     setSaving(true);
     setError('');
     try {
-      await chargingStationService.updateCommitments(station.id, {
+      const response = await chargingStationService.updateCommitments(station.id, {
         rows: rows.map(({ source_key, mo_hinh, pole_id, so_luong }) => ({ source_key, mo_hinh, pole_id, so_luong })),
         reason, expected_token: data.token
       }, token);
+      if (!response?.success) throw new Error(response?.message || 'Không lưu được trụ chốt');
       onSaved();
     } catch (cause) { setError(cause.message || 'Không lưu được trụ chốt'); }
     finally { setSaving(false); }
@@ -42,7 +44,7 @@ const ChargingStationCommitmentDialog = ({ station, onClose, onSaved }) => {
       {error && <div role="alert" className="alert alert-error">{error}</div>}
       {loading ? <Loading message="Đang tải trụ chốt..." /> : data && <>
         {data.from_proposal && <p className="text-sm">Chưa có trụ chốt; các dòng dưới đây lấy từ quy mô đề xuất và chỉ được ghi khi lưu.</p>}
-        {data.needs_review && <p className="text-sm text-warning">Hồ sơ đang được đánh dấu cần đối soát giao trụ. Lưu trụ chốt không tự xóa cảnh báo này.</p>}
+        {data.needs_review && <p className="text-sm text-warning">Cập nhật trụ chốt hợp lệ để hoàn tất đối soát giao trụ.</p>}
         <p className="text-sm">Không thể xóa hoặc đổi loại/mô hình dòng đã có chứng từ; số lượng tối thiểu là đã xuất trừ phần đã hoàn.</p>
         <div className="space-y-3">
           {rows.map((row, index) => <div key={row.source_key || index} className="grid gap-2 rounded border border-base-300 p-3 md:grid-cols-4">

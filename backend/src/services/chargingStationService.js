@@ -550,9 +550,12 @@ const listChargingStations = async ({
     params
   );
   const total = Number(countRows[0] ? countRows[0].total : 0);
+  const orderBy = (!stage || stage === 'thong-tin-chung') && tab === 'all'
+    ? "CASE WHEN cs.status = 'CANCELLED' THEN 1 ELSE 0 END ASC, cs.updated_at DESC, cs.id DESC"
+    : 'cs.updated_at DESC, cs.id DESC';
 
   const [rows] = await pool.query(
-    `${CS_SELECT} ${whereClause} ORDER BY cs.updated_at DESC, cs.id DESC LIMIT ? OFFSET ?`,
+    `${CS_SELECT} ${whereClause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
   );
 

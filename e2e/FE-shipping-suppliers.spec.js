@@ -38,7 +38,7 @@ test('supplier rows share pole demand and exhausted actions are disabled', async
   });
   await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
   await page.goto('/admin/on-tram/giao-tru?tab=all');
-  await page.getByRole('button', { name: 'Cập nhật trạng thái', exact: true }).click();
+  await page.getByRole('button', { name: 'Chưa giao', exact: true }).click();
   await page.getByRole('button', { name: 'Xuất trụ theo số lượng', exact: true }).click();
   const child = page.locator('body > .modal').filter({
     has: page.getByRole('heading', { name: 'Tạo phiếu xuất kho', exact: true })
@@ -67,7 +67,7 @@ test('supplier rows share pole demand and exhausted actions are disabled', async
   await expect(page.getByText('Đã xuất đủ số lượng trụ chốt', { exact: true })).toBeVisible();
   mode = 'empty-stock';
   await page.reload();
-  await page.getByRole('button', { name: 'Cập nhật trạng thái', exact: true }).click();
+  await page.getByRole('button', { name: 'Chưa giao', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Xuất trụ theo số lượng', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Đề xuất giao sớm', exact: true })).toHaveCount(0);
   await expect(page.getByText('Không có tồn kho cho loại trụ còn thiếu', { exact: true })).toBeVisible();

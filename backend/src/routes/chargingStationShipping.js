@@ -91,13 +91,15 @@ router.post('/:id/shipments', controller.create);
  * /api/admin/charging-stations/{id}/shipments/{exportId}/status:
  *   put:
  *     tags: [Charging Stations]
- *     summary: Nhận hoặc hoàn toàn bộ số còn lại của một đơn vận chuyển
+ *     summary: Cập nhật trạng thái một phiếu giao trụ
  *     description: >
- *       Back Office hoặc SUPER_ADMIN. SHIPPING/PENDING chuyển DELIVERED hoặc RETURN_PENDING;
+ *       Back Office hoặc SUPER_ADMIN. SHIPPING/PENDING chuyển DELIVERED, FAILED hoặc RETURN_PENDING;
  *       DELIVERED/FAILED chuyển RETURN_PENDING; RETURN_PENDING chỉ chuyển RETURNED.
  *       Chặn hoàn khi bất kỳ phần trụ nào đã bắt đầu lắp/nghiệm thu/ON.
  *       Chờ hoàn khóa triển khai; xác nhận hoàn mới cộng kho, giữ lịch sử phần trụ đã trả.
- *       Ghi chú bắt buộc khi yêu cầu hoặc xác nhận hoàn. Retry cùng request_id không cộng kho lặp.
+ *       FAILED chỉ áp dụng khi chưa nhận trụ và chưa có yêu cầu hoàn; không tự cộng lại kho.
+ *       Không chuyển phiếu đã xuất về Chưa giao. Ghi chú bắt buộc khi giao thất bại/hoàn hàng;
+ *       SUPER_ADMIN luôn nhập lý do từ 3 ký tự. Retry cùng request_id không cộng kho lặp.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -111,7 +113,7 @@ router.post('/:id/shipments', controller.create);
  *             required: [request_id, status, expected_status]
  *             properties:
  *               request_id: { type: string, maxLength: 100 }
- *               status: { type: string, enum: [DELIVERED, RETURN_PENDING, RETURNED] }
+ *               status: { type: string, enum: [DELIVERED, FAILED, RETURN_PENDING, RETURNED] }
  *               expected_status: { type: string, enum: [PENDING, SHIPPING, DELIVERED, FAILED, RETURN_PENDING] }
  *               reason: { type: string, maxLength: 5000 }
  *     responses:

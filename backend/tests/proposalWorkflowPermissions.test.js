@@ -275,6 +275,23 @@ test('grading pending includes open regrading tasks for the grader department', 
   }
 });
 
+test('proposal list enables workflow ordering only for the explicit query flag', async t => {
+  const received = [];
+  t.mock.method(admin, 'getAllProposals', async (...args) => {
+    received.push(args.at(-1));
+    return { proposals: [], pagination: { total: 0 } };
+  });
+  for (const [value, expected] of [['1', true], ['0', false], [undefined, false], ['p.status DESC', false]]) {
+    let response;
+    await controller.getAll({ user: profiles[0], query: { prioritize_workflow: value } }, {
+      json(body) { response = body; },
+      status() { assert.fail('List should succeed'); }
+    });
+    assert.equal(response.success, true);
+    assert.equal(received.at(-1).prioritizeWorkflow, expected);
+  }
+});
+
 test('generic API denies unrelated owner writes and workflow-state shortcuts', async () => {
   const response = () => ({
     code: 200, body: null,

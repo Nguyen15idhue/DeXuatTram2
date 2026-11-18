@@ -564,10 +564,11 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
   exportId = idOf(exportId, 'Mã phiếu xuất');
   const requestId = normalizeRequestId(body.request_id);
   const status = body.status;
-  if (!['DELIVERED', 'RETURN_PENDING', 'RETURNED'].includes(status)) throw fail('Trạng thái chuyển đến không hợp lệ');
+  if (!['DELIVERED', 'FAILED', 'RETURN_PENDING', 'RETURNED'].includes(status)) throw fail('Trạng thái chuyển đến không hợp lệ');
   const reason = text(body.reason);
   if (reason.length > 5000) throw fail('Ghi chú tối đa 5000 ký tự');
-  if (['RETURN_PENDING', 'RETURNED'].includes(status) && !reason) throw fail('Bắt buộc nhập lý do hoàn hàng');
+  if (['FAILED', 'RETURN_PENDING', 'RETURNED'].includes(status) && !reason) throw fail('Bắt buộc nhập lý do giao thất bại hoặc hoàn hàng');
+  if (user?.role === 'SUPER_ADMIN' && reason.length < 3) throw fail('Lý do bắt buộc từ 3–5000 ký tự');
   if (!['PENDING', 'SHIPPING', 'DELIVERED', 'FAILED', 'RETURN_PENDING'].includes(body.expected_status)) {
     throw fail('Thiếu trạng thái hiện tại của đơn; hãy tải lại');
   }
@@ -587,7 +588,7 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
     const before = headers[0].transport_status;
     if (before !== body.expected_status) throw fail('Đơn vận chuyển đã thay đổi; hãy mở lại modal', 409);
     const allowed = {
-      PENDING: ['DELIVERED', 'RETURN_PENDING'], SHIPPING: ['DELIVERED', 'RETURN_PENDING'],
+      PENDING: ['DELIVERED', 'FAILED', 'RETURN_PENDING'], SHIPPING: ['DELIVERED', 'FAILED', 'RETURN_PENDING'],
       FAILED: ['RETURN_PENDING'], DELIVERED: ['RETURN_PENDING'], RETURN_PENDING: ['RETURNED']
     };
     if (!allowed[before]?.includes(status)) throw fail('Không được lùi hoặc bỏ qua bước trạng thái giao hàng', 409);
@@ -600,6 +601,10 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
       portion.installation_status !== 'NOT' || portion.stage !== 'INSTALLING'
       || portion.acceptance_status !== 'NOT' || portion.on_date || portion.acceptance_date)) {
       throw fail('Không thể hoàn đơn đã bắt đầu lắp, nghiệm thu hoặc ON trạm', 409);
+    }
+    if (status === 'FAILED' && (portions.length || items.some(item => Number(item.received_quantity) > 0
+      || Number(item.return_pending_quantity) > 0))) {
+      throw fail('Đơn đã nhận trụ hoặc đang chờ hoàn; không thể chuyển sang giao thất bại', 409);
     }
     if (status !== 'DELIVERED' && portions.length) {
       const [history] = await connection.query(`SELECT id FROM charging_station_activity_logs
@@ -634,7 +639,7 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
         if (received !== Number(original.received_quantity)) throw fail('Phần trụ đã nhận chưa được đối soát đầy đủ', 409);
         await connection.query('UPDATE warehouse_export_items SET return_pending_quantity=? WHERE id=?', [item.quantity, item.id]);
       }
-    } else {
+    } else if (status === 'RETURNED') {
       if (remaining.some(item => Number(item.return_pending_quantity) !== item.quantity)) {
         throw fail('Đơn chưa có yêu cầu hoàn toàn bộ số còn lại; cần đối soát', 409);
       }

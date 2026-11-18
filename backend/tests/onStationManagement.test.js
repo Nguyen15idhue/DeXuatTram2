@@ -218,7 +218,8 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
       'charging_station_images', 'charging_station_activity_logs', 'warehouse_exports', 'warehouse_export_items',
       'shipping_carriers', 'charging_station_commitments', 'charging_station_deployments',
       'charging_station_fulfillment_events', 'charging_poles', 'suppliers', 'supplier_charging_poles', 'charging_station_invoices',
-      'charging_station_acceptance_documents', 'charging_station_acceptance_images', 'notifications'
+      'charging_station_acceptance_documents', 'charging_station_acceptance_images', 'notifications',
+      'leads', 'proposal_requests'
     ]) await admin.query(`CREATE TABLE \`${database}\`.\`${table}\` LIKE \`${original.name}\`.\`${table}\``);
     fixture = mysql.createPool({
       host: process.env.DB_HOST, port: process.env.DB_PORT || 3306, user: process.env.DB_USER,
@@ -252,6 +253,62 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     await fixture.query("INSERT INTO warehouse_exports(id,exporter_user_id,export_date,charging_station_id,destination_type,transport_status) VALUES(1,1,NOW(),1,'STATION','DELIVERED')");
     await fixture.query('INSERT INTO warehouse_export_items(id,export_id,pole_id,supplier_id,commitment_id,quantity,received_quantity) VALUES(1,1,1,1,1,1,1)');
     await fixture.query("INSERT INTO charging_station_deployments(id,charging_station_id,export_item_id,quantity,stage,sub_status) VALUES(1,1,1,1,'INSTALLING','NOT_INSTALLED')");
+    await t.test('overview SQL orders workflow groups before pagination without changing other tabs or scopes', async t => {
+      const proposals = require('../src/services/adminProposalService');
+      t.mock.method(require('../src/services/dynamicUtils'), 'getFieldDefinitionsByEntity', async () => []);
+      const statuses = ['PENDING', 'GRADING', 'DESIGNING', 'APPROVED',
+        'CANCELLED', 'ARCHIVED', 'PAUSED', 'REJECTED', 'CONTRACT_FAILED'];
+      for (let index = 0; index < statuses.length; index++) {
+        const id = index + 11;
+        const created = index < 4 ? `2026-01-0${index === 2 ? 2 : index + 1}` : `2026-02-0${index - 3}`;
+        await fixture.query(`INSERT INTO station_proposals
+          (id,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,created_at)
+          VALUES(?,?,10,106,?,'0000000000',?,JSON_OBJECT(),?)`,
+        [id, index === 3 ? 3 : 1, `SORT-${id}`, statuses[index], `${created} 00:00:00`]);
+        const cancelled = [11, 19].includes(id);
+        const updated = { 11: 9, 12: 2, 13: 2, 14: 1, 15: 5, 16: 6, 17: 7, 18: 8, 19: 10 }[id];
+        await fixture.query(`INSERT INTO charging_stations
+          (id,proposal_id,ma_tram,status,sub_status,updated_at)
+          VALUES(?,?,?,?,?,?)`, [id, id, `SORT-${id}`,
+          cancelled ? 'CANCELLED' : id === 14 ? 'OPERATING' : 'ONBOARDING',
+          id === 14 ? 'ACTIVE' : null, `2026-03-${String(updated).padStart(2, '0')} 00:00:00`]);
+      }
+      const proposalList = (page, extra = {}, scope = {}) => proposals.getAllProposals(
+        '', 'SORT-', page, 3, scope, '', null, extra);
+      const proposalPages = [];
+      for (let page = 1; page <= 3; page++) {
+        const result = await proposalList(page, { prioritizeWorkflow: true });
+        assert.deepEqual(result.pagination, { page, limit: 3, total: 9, totalPages: 3 });
+        proposalPages.push(result.proposals.map(row => row.id));
+      }
+      assert.deepEqual(proposalPages, [[14, 13, 12], [11, 19, 18], [17, 16, 15]]);
+      assert.equal(new Set(proposalPages.flat()).size, 9);
+      assert.deepEqual((await proposalList(1)).proposals.map(row => row.id), [19, 18, 17]);
+      assert.deepEqual((await proposalList(1, { prioritizeWorkflow: true }, { role: 'CTV', userId: 1 }))
+        .proposals.map(row => row.id), [13, 12, 11]);
+      assert.deepEqual((await proposalList(1, { prioritizeWorkflow: true, statuses: ['CANCELLED', 'ARCHIVED'] }))
+        .proposals.map(row => row.id), [16, 15]);
+      const list = (page, options = {}) => station.listChargingStations({
+        stage: 'thong-tin-chung', tab: 'all', search: 'SORT-', page, limit: 3, user: superUser, ...options
+      });
+      const stationPages = [];
+      for (let page = 1; page <= 3; page++) {
+        const result = await list(page);
+        assert.deepEqual(result.pagination, { page, limit: 3, total: 9, totalPages: 3 });
+        stationPages.push(result.items.map(row => row.id));
+      }
+      assert.deepEqual(stationPages, [[18, 17, 16], [15, 13, 12], [14, 19, 11]]);
+      assert.equal(new Set(stationPages.flat()).size, 9);
+      assert.deepEqual((await list(1, { stage: '' })).items.map(row => row.id), [18, 17, 16]);
+      assert.deepEqual((await list(1, { tab: 'need' })).items.map(row => row.id), [18, 17, 16]);
+      assert.deepEqual((await list(1, { tab: 'completed' })).items.map(row => row.id), [14]);
+      assert.deepEqual((await list(1, { stage: 'giao-tru' })).items.map(row => row.id), [19, 11, 18]);
+      const own = await list(1, { user: { id: 1, role: 'CTV' } });
+      assert.deepEqual(own.items.map(row => row.id), [18, 17, 16]);
+      assert.equal(own.pagination.total, 8);
+      await fixture.query('DELETE FROM charging_stations WHERE id BETWEEN 11 AND 19');
+      await fixture.query('DELETE FROM station_proposals WHERE id BETWEEN 11 AND 19');
+    });
     const unchangedTables = ['supplier_charging_poles', 'charging_poles', 'charging_station_invoices',
       'charging_station_commitments', 'station_proposals'];
     const snapshot = async () => Promise.all(unchangedTables.map(async table =>
@@ -308,7 +365,7 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     await fixture.query("DELETE FROM charging_station_fulfillment_events WHERE request_id=?", [`direct-delivery:${directHeader.id}`]);
     await fixture.query("UPDATE charging_stations SET status='INSTALLING',fulfillment_review_required=1 WHERE id=1");
 
-    await t.test('early delivery enters only the Back Office queue; direct receipt opens installation and return preserves inventory', async () => {
+    await t.test('early delivery enters Back Office and SUPER_ADMIN queues; direct receipt opens installation and return preserves inventory', async () => {
       await fixture.query(`INSERT INTO station_proposals(id,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru)
         SELECT 2,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru FROM station_proposals WHERE id=1`);
       await fixture.query(`INSERT INTO charging_stations(id,proposal_id,ma_tram,status,workflow_override)
@@ -333,15 +390,17 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
       await assert.rejects(station.requestEarlyDelivery(2, early, assignee, assignedActor), { statusCode: 409 });
       await fixture.query("UPDATE charging_stations SET contract_status='DONE',infra_power_status='DONE',payment_status='DOING',deposit_status='RECEIVED' WHERE id=2");
       assert.equal(Number((await task()).delivery), 1, 'ready workflow counts even before parent stage synchronizes');
+      assert.equal(Number((await task(superUser)).delivery), 1);
       await fixture.query("UPDATE charging_stations SET status='DELIVERING',infra_power_status='NOT' WHERE id=2");
       assert.equal(Number((await task()).delivery), 0, 'parent status is not evidence of early delivery');
+      assert.equal(Number((await task(superUser)).delivery), 0);
       await fixture.query("UPDATE charging_stations SET status='ONBOARDING' WHERE id=2");
       await assert.rejects(station.requestEarlyDelivery(2, early, backOfficeUser, { ...ctx, actorId: 3, actorRole: 'SALES' }), { statusCode: 403 });
       await station.requestEarlyDelivery(2, early, assignee, assignedActor);
       await assert.rejects(station.requestEarlyDelivery(2, early, assignee, assignedActor), { statusCode: 409 });
       assert.equal(Number((await task()).delivery), 1, 'saved early request counts despite missing prerequisites and old override marker');
       assert.equal(Number((await task(assignee)).delivery), 0);
-      assert.equal(Number((await task(superUser)).delivery), 0);
+      assert.equal(Number((await task(superUser)).delivery), 1);
       await override.update(2, { delivery_completed: true, reason: 'Upgrade old delivery marker',
         expected_token: await override.getEditToken(2) }, ctx);
       assert.deepEqual(Object.fromEntries(Object.entries(await task()).map(([key, value]) => [key, Number(value)])),
