@@ -86,6 +86,24 @@ test('SUPER_ADMIN can perform each department step', async () => {
   });
 });
 
+test('delivery worklist and badge include SUPER_ADMIN and Back Office, not unrelated roles', async t => {
+    t.mock.method(access, 'permissions', async user => ({
+      back_office: user.role === 'SUPER_ADMIN' || user.id === 2, setup: true
+    }));
+    for (const user of [{ id: 1, role: 'SUPER_ADMIN' }, { id: 2, role: 'SALES' }, { id: 3, role: 'ADMIN' }]) {
+      const filter = await work.getFilter('giao-tru', 'need', user);
+      const { expressions } = await work.actionable(user);
+      if (user.id === 3) {
+        assert.equal(filter.sql, '0');
+        assert.equal(expressions.delivery, '0');
+      } else {
+        assert.equal(filter.sql, `cs.status<>'CANCELLED' AND (${expressions.delivery})`);
+        assert.match(expressions.delivery, /early_delivery_requested/);
+        assert.match(expressions.delivery, /received_quantity/);
+      }
+    }
+});
+
 test('receipt, installation, acceptance and operation filter separate progress', () => {
   assert.match(work.stageFilters['giao-tru'].completed, /received_quantity/);
   assert.match(work.stageFilters['lap-tru'].need, /installation_status='DONE'/);

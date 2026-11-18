@@ -308,7 +308,7 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     await fixture.query("DELETE FROM charging_station_fulfillment_events WHERE request_id=?", [`direct-delivery:${directHeader.id}`]);
     await fixture.query("UPDATE charging_stations SET status='INSTALLING',fulfillment_review_required=1 WHERE id=1");
 
-    await t.test('early delivery enters only the Back Office queue; direct receipt opens installation and return preserves inventory', async () => {
+    await t.test('early delivery enters Back Office and SUPER_ADMIN queues; direct receipt opens installation and return preserves inventory', async () => {
       await fixture.query(`INSERT INTO station_proposals(id,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru)
         SELECT 2,user_id,latitude,longitude,owner_name,owner_phone,status,custom_data,chot_so_luong_tru FROM station_proposals WHERE id=1`);
       await fixture.query(`INSERT INTO charging_stations(id,proposal_id,ma_tram,status,workflow_override)
@@ -333,15 +333,17 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
       await assert.rejects(station.requestEarlyDelivery(2, early, assignee, assignedActor), { statusCode: 409 });
       await fixture.query("UPDATE charging_stations SET contract_status='DONE',infra_power_status='DONE',payment_status='DOING',deposit_status='RECEIVED' WHERE id=2");
       assert.equal(Number((await task()).delivery), 1, 'ready workflow counts even before parent stage synchronizes');
+      assert.equal(Number((await task(superUser)).delivery), 1);
       await fixture.query("UPDATE charging_stations SET status='DELIVERING',infra_power_status='NOT' WHERE id=2");
       assert.equal(Number((await task()).delivery), 0, 'parent status is not evidence of early delivery');
+      assert.equal(Number((await task(superUser)).delivery), 0);
       await fixture.query("UPDATE charging_stations SET status='ONBOARDING' WHERE id=2");
       await assert.rejects(station.requestEarlyDelivery(2, early, backOfficeUser, { ...ctx, actorId: 3, actorRole: 'SALES' }), { statusCode: 403 });
       await station.requestEarlyDelivery(2, early, assignee, assignedActor);
       await assert.rejects(station.requestEarlyDelivery(2, early, assignee, assignedActor), { statusCode: 409 });
       assert.equal(Number((await task()).delivery), 1, 'saved early request counts despite missing prerequisites and old override marker');
       assert.equal(Number((await task(assignee)).delivery), 0);
-      assert.equal(Number((await task(superUser)).delivery), 0);
+      assert.equal(Number((await task(superUser)).delivery), 1);
       await override.update(2, { delivery_completed: true, reason: 'Upgrade old delivery marker',
         expected_token: await override.getEditToken(2) }, ctx);
       assert.deepEqual(Object.fromEntries(Object.entries(await task()).map(([key, value]) => [key, Number(value)])),

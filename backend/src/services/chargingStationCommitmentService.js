@@ -178,12 +178,20 @@ exports.update = async (id, body, user, ctx = {}) => {
     }
     const total = money(totalCents);
     await db.query('UPDATE station_proposals SET chot_so_luong_tru=?, tong_gia_tri_chot=?, updated_at=NOW() WHERE id=?', [JSON.stringify(next), total, state.station.proposal_id]);
+    const reviewCleared = Boolean(Number(state.station.fulfillment_review_required));
+    if (reviewCleared) {
+      await db.query('UPDATE charging_stations SET fulfillment_review_required=0 WHERE id=?', [id]);
+    }
     await db.query(`INSERT INTO charging_station_activity_logs
       (charging_station_id,action,changed_fields,reject_reason,actor_id,actor_role,source,ip)
       VALUES (?, 'commitments_updated', ?, ?, ?, ?, 'admin_override', ?)`,
-    [id, JSON.stringify({ chot_so_luong_tru: { old: state.snapshot, new: next }, tong_gia_tri_chot: { old: state.station.tong_gia_tri_chot, new: total } }), reason, user.id, user.role, ctx.ip || null]);
+    [id, JSON.stringify({
+      chot_so_luong_tru: { old: state.snapshot, new: next },
+      tong_gia_tri_chot: { old: state.station.tong_gia_tri_chot, new: total },
+      ...(reviewCleared ? { fulfillment_review_required: { old: 1, new: 0 } } : {})
+    }), reason, user.id, user.role, ctx.ip || null]);
     await db.commit();
-    return { rows: next, total };
+    return { rows: next, total, needs_review: false };
   } catch (error) {
     await db.rollback();
     if (error.code === 'ER_LOCK_DEADLOCK' || error.code === 'ER_LOCK_WAIT_TIMEOUT') throw fail('Dữ liệu đang thay đổi; vui lòng tải lại', 409);

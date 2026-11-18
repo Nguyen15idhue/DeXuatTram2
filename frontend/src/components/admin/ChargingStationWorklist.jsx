@@ -8,8 +8,9 @@ import ChargingStationTable from "./ChargingStationTable";
 import ChargingStationFulfillment from "./ChargingStationFulfillment";
 import ChargingStationGroupedProgress from "./ChargingStationGroupedProgress";
 import ChargingStationOnModal from "./ChargingStationOnModal";
+import ChargingStationShipmentHistory from "./ChargingStationShipmentHistory";
 import { formatProposalScale } from "../../utils/proposalGrading";
-import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRATION_LABELS } from "../../utils/chargingFulfillment";
+import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRATION_LABELS, deliverySummary } from "../../utils/chargingFulfillment";
 import {
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
@@ -172,6 +173,8 @@ const ChargingStationWorklist = ({ stage }) => {
   const [deliveryReason, setDeliveryReason] = useState("");
   const [deliveryError, setDeliveryError] = useState("");
   const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [deliveryLoaded, setDeliveryLoaded] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState("shipments");
   const savingDelivery = useRef(false);
   const load = useCallback(
     async (targetPage = 1) => {
@@ -225,6 +228,22 @@ const ChargingStationWorklist = ({ stage }) => {
       );
     };
   }, [token]);
+  const openDelivery = async row => {
+    setDeliveryStation(row);
+    setDeliveryReason("");
+    setDeliveryError("");
+    setDeliveryLoaded(false);
+    setDeliveryBusy(true);
+    try {
+      const response = await chargingStationService.getDetail(row.id, token);
+      if (!response.success) throw new Error(response.message || "Không tải được dữ liệu Giao trụ");
+      setDeliveryStation(response.data);
+      setDeliveryMode(response.data.fulfillment?.shipments?.length ? "shipments" : "direct");
+      setDeliveryLoaded(true);
+    } catch (failure) {
+      setDeliveryError(failure.message);
+    } finally { setDeliveryBusy(false); }
+  };
   const completeDelivery = async (event) => {
     event.preventDefault();
     if (savingDelivery.current) return;
@@ -324,7 +343,8 @@ const ChargingStationWorklist = ({ stage }) => {
               </span>
             ),
           },
-          ...(!["nghiem-thu", "on-tram"].includes(stage) ? [{
+          ...(!["nghiem-thu", "on-tram"].includes(stage) ? [
+          ...(stage !== "giao-tru" ? [{
             key: "status",
             label: "Trạng thái quy trình",
             render: (value, row) => (
@@ -339,7 +359,7 @@ const ChargingStationWorklist = ({ stage }) => {
                 )}
               </div>
             ),
-          },
+          }] : []),
           {
             key: "fulfillment",
             label: "Trụ đã ON / chốt",
@@ -400,42 +420,35 @@ const ChargingStationWorklist = ({ stage }) => {
             label: "Trạng thái giao trụ",
             render: (_, row) => {
               const manual = row.workflow_override?.delivery_completed;
-              const totals = row.fulfillment?.totals;
-              const complete = (row.status === "OPERATING" && row.workflow_override?.completed)
-                || (!row.fulfillment?.needs_review && Number(totals?.committed) > 0
-                  && Number(totals?.received) >= Number(totals?.committed));
-              const shipping = Number(totals?.exported) > Number(totals?.returned);
+              const summary = deliverySummary(row);
               return <div>
-                <Badge variant={complete ? "success" : shipping ? "info" : "ghost"}>
-                  {complete ? "Đã giao hàng thành công" : shipping ? "Đang giao" : "Chưa giao"}
-                </Badge>
+                <button type="button" aria-haspopup="dialog" className={`badge cursor-pointer gap-1 badge-${summary.variant}`}
+                  onClick={() => setSelected(row)}>
+                  {summary.label} <span aria-hidden>▾</span>
+                </button>
                 {!!Number(row.early_delivery_requested) && <Badge variant="info" className="ml-1">Đi trụ sớm</Badge>}
                 {manual && <span className="block text-xs text-info">
-                  {complete ? "Xác nhận giao trực tiếp" : "Cần hoàn tất giao nhận"}
+                  {summary.complete ? "Xác nhận giao trực tiếp" : "Cần hoàn tất giao nhận"}
                 </span>}
               </div>;
             },
           }] : []),
         ]}
         actions={
-          ["lap-tru", "on-tram"].includes(stage)
+          ["lap-tru", "on-tram"].includes(stage) || (stage === "giao-tru" && user?.role !== "SUPER_ADMIN")
             ? undefined
             : (row) => (
                 <div className="flex items-center gap-1">
-                  <Button
+                  {stage !== "giao-tru" && <Button
                     size="xs"
                     variant="outline"
                     onClick={() => setSelected(row)}
                   >
                     Cập nhật trạng thái
-                  </Button>
+                  </Button>}
                   {stage === "giao-tru" && user?.role === "SUPER_ADMIN"
                     && row.status !== "CANCELLED" && !row.workflow_override?.completed && (
-                      <Button size="xs" variant="outline" onClick={() => {
-                        setDeliveryStation(row);
-                        setDeliveryReason("");
-                        setDeliveryError("");
-                      }}>
+                      <Button size="xs" variant="outline" onClick={() => openDelivery(row)}>
                         Đổi trạng thái
                       </Button>
                     )}
@@ -454,7 +467,23 @@ const ChargingStationWorklist = ({ stage }) => {
       />
       <Dialog isOpen={!!deliveryStation} title="Đổi trạng thái Giao trụ" portal
         onClose={() => !deliveryBusy && setDeliveryStation(null)}>
-        <form className="space-y-4" onSubmit={completeDelivery}>
+        <div className="space-y-4">
+          {deliveryError && <div role="alert" className="alert alert-error">{deliveryError}</div>}
+          {!deliveryLoaded && deliveryBusy && <p role="status">Đang tải phiếu giao…</p>}
+          {!deliveryLoaded && !deliveryBusy && deliveryStation && <Button onClick={() => openDelivery(deliveryStation)}>Tải lại</Button>}
+          {deliveryLoaded && deliveryStation && <>
+          <label className="block text-sm">Thao tác
+            <select aria-label="Thao tác Giao trụ" className="select select-bordered mt-1 w-full" value={deliveryMode}
+              disabled={deliveryBusy} onChange={event => { setDeliveryMode(event.target.value); setDeliveryError(""); }}>
+              <option value="shipments">Đổi trạng thái từng phiếu giao</option>
+              <option value="direct">Xác nhận nhận đủ trụ trực tiếp — không trừ tồn kho</option>
+            </select>
+          </label>
+          {deliveryMode === "shipments" ? <ChargingStationShipmentHistory
+            station={deliveryStation} shipments={deliveryStation.fulfillment?.shipments}
+            canEdit={deliveryStation.status !== "CANCELLED"} inlineEditor onBusyChange={setDeliveryBusy}
+            onChanged={async () => { await load(page); setDeliveryStation(null); }}
+          /> : <form className="space-y-4" onSubmit={completeDelivery}>
           <p>Trạm: <strong>{deliveryStation?.ma_tram || `#${deliveryStation?.id}`}</strong></p>
           <p>Trạng thái mới: <strong>Đã giao hàng thành công</strong></p>
           <div className="alert alert-info text-sm">
@@ -467,7 +496,6 @@ const ChargingStationWorklist = ({ stage }) => {
               required minLength={3} maxLength={5000} disabled={deliveryBusy}
               value={deliveryReason} onChange={(event) => setDeliveryReason(event.target.value)} />
           </label>
-          {deliveryError && <div role="alert" className="alert alert-error">{deliveryError}</div>}
           {deliveryStation && !deliveryStation.edit_token && <div role="alert" className="alert alert-error">
             Thiếu phiên bản dữ liệu; hãy tải lại trang trước khi lưu.
           </div>}
@@ -475,7 +503,9 @@ const ChargingStationWorklist = ({ stage }) => {
             <Button type="button" variant="ghost" disabled={deliveryBusy} onClick={() => setDeliveryStation(null)}>Hủy</Button>
             <Button type="submit" loading={deliveryBusy} disabled={deliveryBusy || !deliveryStation?.edit_token}>Xác nhận</Button>
           </div>
-        </form>
+        </form>}
+          </>}
+        </div>
       </Dialog>
       {stage === "lap-tru" && selected ? (
         <ChargingStationInstallationModal
