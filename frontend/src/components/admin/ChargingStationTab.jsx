@@ -8,6 +8,8 @@ import { AlertTriangle, MoreVertical } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationCareModal from './ChargingStationCareModal';
+import ChargingStationCommitmentDialog from './ChargingStationCommitmentDialog';
+import ChargingStationEarlyDeliveryDialog from './ChargingStationEarlyDeliveryDialog';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import { formatChotTruRows } from '../../utils/proposalSignature';
 import { notifyBellRefresh } from '../layout/NotificationBell';
@@ -56,6 +58,8 @@ const ChargingStationTab = ({ stage }) => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [careStation, setCareStation] = useState(null);
+  const [commitmentStation, setCommitmentStation] = useState(null);
+  const [earlyStation, setEarlyStation] = useState(null);
   const [menu, setMenu] = useState(null);
   const [changeStation, setChangeStation] = useState(null);
   const [mutationBusy, setMutationBusy] = useState(false);
@@ -337,7 +341,7 @@ const ChargingStationTab = ({ stage }) => {
     { key: 'on_date', label: 'Ngày ON', render: (value) => <span className="whitespace-nowrap">{formatCsDate(value)}</span> }
   ], [location.pathname, location.search]);
 
-  const renderActions = row => (isSuperAdmin || (user?.role !== 'ADMIN'
+  const renderActions = row => (isSuperAdmin || (stage === 'thong-tin-chung' && row.can_request_early_delivery) || (user?.role !== 'ADMIN'
     && (row.can_cancel_on_station || row.can_restore_on_station))) ? (
     <button type="button" className="btn btn-ghost btn-xs btn-square" aria-label={`Thao tác khác ${row.ma_tram || row.id}`}
       aria-haspopup="menu" onClick={event => {
@@ -361,7 +365,12 @@ const ChargingStationTab = ({ stage }) => {
               setChangeStation({ row: menu.row, to_status: '', reason: '', cms_station_code: menu.row.cms_station_code || '',
                 on_date: menu.row.on_date || getLocalDateInput() }); setMenu(null);
             }}>Đổi trạng thái</button>
+            {stage === 'thong-tin-chung' && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start"
+              onClick={() => { setCommitmentStation(menu.row); setMenu(null); }}>Cập nhật trụ chốt</button>}
           </>}
+          {stage === 'thong-tin-chung' && menu.row.can_request_early_delivery &&
+            <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start"
+              onClick={() => { setEarlyStation(menu.row); setMenu(null); }}>Đề xuất đi trụ sớm</button>}
           {user?.role !== 'ADMIN' && menu.row.can_cancel_on_station && <button role="menuitem"
             className="btn btn-ghost btn-sm w-full justify-start text-error" onClick={() => {
               setStatusDialog({ open: true, action: 'cancel', row: menu.row }); setMenu(null);
@@ -378,6 +387,14 @@ const ChargingStationTab = ({ stage }) => {
             onClick={() => { setDeleteTarget(menu.row); setMenu(null); }}>Xóa ON trạm</button>}
         </div>
       </>, document.body)}
+      {commitmentStation && <ChargingStationCommitmentDialog station={commitmentStation}
+        onClose={() => setCommitmentStation(null)} onSaved={() => {
+          setCommitmentStation(null); setToast({ message: 'Đã cập nhật trụ chốt', type: 'success' }); load(page);
+        }} />}
+      {earlyStation && <ChargingStationEarlyDeliveryDialog station={earlyStation}
+        onClose={() => setEarlyStation(null)} onSaved={() => {
+          setEarlyStation(null); setToast({ message: 'Đã đề xuất đi trụ sớm', type: 'success' }); load(page);
+        }} />}
       <Dialog isOpen={!!changeStation} title="Đổi trạng thái ON trạm" size="md"
         onClose={() => { if (!mutationBusy) setChangeStation(null); }}>
         {changeStation && <div className="space-y-3">

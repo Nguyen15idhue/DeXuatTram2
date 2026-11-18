@@ -227,7 +227,7 @@ test('return requests can reserve undelivered quantities but never return receiv
     if (sql.includes('FROM charging_stations WHERE id = ? FOR UPDATE')) {
       return [[{ id: 5, status: 'DELIVERING' }], []];
     }
-    if (sql.includes('FROM charging_station_fulfillment_events')) return [[], []];
+    if (sql.startsWith('SELECT operation')) return [[], []];
     if (sql.includes('FROM warehouse_export_items wei') && sql.includes('FOR UPDATE')) {
       return [[{
         id: 20,
@@ -287,16 +287,16 @@ test('return requests can reserve undelivered quantities but never return receiv
   }
 });
 
-for (const historical of [0, 1]) {
-  test(`partial return ${historical ? 'excludes historical' : 'restores real'} shipment from stock`, async () => {
+for (const [historical, stockExempt] of [[0, 0], [1, 0], [0, 1]]) {
+  test(`partial return ${stockExempt ? 'excludes direct' : historical ? 'excludes historical' : 'restores real'} shipment from stock`, async () => {
     const connection = createConnection(sql => {
       if (sql.includes('FROM charging_stations WHERE id = ? FOR UPDATE')) return [[{ id: 5, status: 'DELIVERING' }]];
-      if (sql.includes('FROM charging_station_fulfillment_events')) return [[]];
+      if (sql.startsWith('SELECT operation')) return [[]];
       if (sql.includes('FROM warehouse_export_items wei') && sql.includes('FOR UPDATE')) return [[{
         id: 20, export_id: 7, charging_station_id: 5, destination_type: 'STATION',
         transport_status: 'FAILED', commitment_id: 3, quantity: 4, received_quantity: 0,
         returned_quantity: 0, return_pending_quantity: 2, supplier_id: 2, pole_id: 4,
-        historical_import: historical
+        historical_import: historical, stock_exempt: stockExempt
       }]];
       if (sql.includes('SELECT supplier_id, charging_pole_id FROM supplier_charging_poles')) return [[{ supplier_id: 2, charging_pole_id: 4 }]];
       if (sql.startsWith('UPDATE ')) return [{ affectedRows: 1 }];
@@ -314,16 +314,17 @@ for (const historical of [0, 1]) {
     try {
       await service.confirmReturn(5, 7, { request_id: 'partial-return', items: [{ item_id: 20, quantity: 2 }] },
         { id: 9, role: 'SUPER_ADMIN' });
-      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE supplier_charging_poles SET quantity')), !historical);
+      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE supplier_charging_poles SET quantity')), !historical && !stockExempt);
       assert.ok(connection.calls.some(call => call.sql?.startsWith('UPDATE warehouse_export_items')));
       assert.ok(connection.calls.includes('commit'));
     } finally { restore(); }
   });
 
-  test(`whole return ${historical ? 'excludes historical' : 'restores real'} shipment from stock`, async () => {
+  test(`whole return ${stockExempt ? 'excludes direct' : historical ? 'excludes historical' : 'restores real'} shipment from stock`, async () => {
     const connection = createConnection(sql => {
       if (sql.includes('FROM charging_stations WHERE id = ? FOR UPDATE')) return [[{ id: 5, status: 'DELIVERING' }]];
-      if (sql.includes('FROM charging_station_fulfillment_events')) return [[]];
+      if (sql.startsWith('SELECT operation')) return [[]];
+      if (sql.startsWith('SELECT EXISTS(')) return [[{ stock_exempt: stockExempt }]];
       if (sql.includes('SELECT * FROM warehouse_exports') && sql.includes('FOR UPDATE')) return [[{ id: 7, transport_status: 'RETURN_PENDING', historical_import: historical }]];
       if (sql.includes('SELECT * FROM warehouse_export_items')) return [[{
         id: 20, export_id: 7, commitment_id: 3, quantity: 4, received_quantity: 0,
@@ -347,7 +348,7 @@ for (const historical of [0, 1]) {
       await service.updateShipmentStatus(5, 7, {
         request_id: 'whole-return', status: 'RETURNED', expected_status: 'RETURN_PENDING', reason: 'Trả hàng'
       }, { id: 9, role: 'SUPER_ADMIN' });
-      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE supplier_charging_poles SET quantity')), !historical);
+      assert.equal(connection.calls.some(call => call.sql?.startsWith('UPDATE supplier_charging_poles SET quantity')), !historical && !stockExempt);
       assert.ok(connection.calls.some(call => call.sql?.startsWith('UPDATE warehouse_export_items')));
       assert.ok(connection.calls.includes('commit'));
     } finally { restore(); }

@@ -163,6 +163,10 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     p.ma_de_xuat_gen AS ma_de_xuat,
     p.status AS proposal_status,
     p.user_id AS proposal_user_id,
+    JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS proposal_assignee_id,
+    JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS proposal_manager_id,
+    ${stationWork.earlyDeliveryRequested} AS early_delivery_requested,
+    ${stationWork.deliveryComplete} AS delivery_complete,
     p.chot_so_luong_tru,
     p.tong_gia_tri_chot AS contract_amount,
     DATE_FORMAT(p.ngay_du_kien_on, '%Y-%m-%d') AS ngay_du_kien_on,
@@ -555,7 +559,7 @@ const listChargingStations = async ({
   const userScope = await require('./proposalReportService').resolveScope(user);
   const permissions = await stationAccess.permissions(user);
   const ownerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user);
-  const canRequestEarly = permissions.request_early;
+  const earlyOwnerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user, { includeAssigned: true });
   const canManageOnStationStatus = user?.role === 'SUPER_ADMIN'
     || (user?.role === 'SALES' && userScope.roleKey === 'GDTTKD');
 
@@ -591,10 +595,12 @@ const listChargingStations = async ({
         can_extend_deadline: deadlineActive
           && Number(record.deadline_extension_count || 0) < readiness.MAX_DEADLINE_EXTENSIONS
           && user?.role !== 'ADMIN' && ownerMatcher(record.proposal_user_id),
-        can_request_early_delivery: canRequestEarly
-          && record.status === STATUS.ONBOARDING
+        can_request_early_delivery: record.status === STATUS.ONBOARDING
+          && record.contract_status === 'DONE'
           && !record.delivery_ready
-          && ownerMatcher(record.proposal_user_id),
+          && !Number(record.early_delivery_requested)
+          && !Number(record.delivery_complete)
+          && earlyOwnerMatcher(record.proposal_user_id, record.proposal_assignee_id, record.proposal_manager_id),
         can_cancel_on_station: canManageOnStationStatus
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
@@ -676,7 +682,7 @@ const getChargingStationActivity = async (id, user, { step, page = 1, limit = 20
     'khoi-tao-hop-dong': ['contract_status_changed', 'contract_note_updated', 'contract_completed'],
     'xay-dung-ha-tang': ['infrastructure_status_changed'],
     'giao-tru': ['shipment_created', 'shipment_status_changed', 'shipment_received', 'shipment_return_requested',
-      'shipment_return_confirmed', 'shipment_failed', 'early_delivery_requested'],
+      'shipment_return_confirmed', 'shipment_failed', 'early_delivery_requested', 'delivery_completed_manually'],
     'lap-tru': ['installation_updated', 'installation_started', 'installation_completed',
       'portion_start_installation', 'portion_complete_installation'],
     'nghiem-thu': ['acceptance_passed', 'acceptance_failed', 'acceptance_updated', 'acceptance_file_uploaded',
@@ -1605,13 +1611,13 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
   const cleanReason = toText(reason).trim();
   const deliveryDate = normalizeDate(desiredDate);
   if (!cleanReason) throw err('Vui lòng nhập lý do đề xuất giao trụ sớm', 400);
-  if (acceptMissing !== true) throw err('Phải xác nhận cảnh báo các điều kiện chưa hoàn thành', 400);
-  if (!(await stationAccess.permissions(user)).request_early) throw err('Không có quyền đề xuất giao trụ sớm', 403);
-  const scope = await require('./proposalReportService').resolveScope(user);
-  if (scope.isBackOffice && user?.role !== 'SUPER_ADMIN') {
-    throw err('Thao tác đề xuất giao trụ sớm dành cho người đề xuất và người quản lý phía trên', 403);
+  if (cleanReason.length > 5000) throw err('Lý do không được vượt quá 5000 ký tự', 400);
+  if (!deliveryDate || deliveryDate !== desiredDate || new Date(deliveryDate).toISOString().slice(0, 10) !== deliveryDate) {
+    throw err('Ngày giao mong muốn không hợp lệ', 400);
   }
+  if (acceptMissing !== true) throw err('Phải xác nhận cảnh báo các điều kiện chưa hoàn thành', 400);
   await assertCanViewChargingStation(stationId, user);
+  const ownerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user, { includeAssigned: true });
 
   const connection = await pool.getConnection();
   let transactionStarted = false;
@@ -1620,6 +1626,9 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
     transactionStarted = true;
     const [rows] = await connection.query(
       `SELECT cs.*, p.chot_so_luong_tru, p.user_id AS proposal_user_id,
+              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS proposal_assignee_id,
+              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS proposal_manager_id,
+              ${stationWork.earlyDeliveryRequested} AS early_delivery_requested,
               JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu
          FROM charging_stations cs
          JOIN station_proposals p ON p.id = cs.proposal_id
@@ -1629,21 +1638,23 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
-    if (!await require('./proposalAccessService').canActAsProposalOwner(user, { user_id: current.proposal_user_id })) {
-      throw err('Thao tác đề xuất giao trụ sớm dành cho người đề xuất và người quản lý phía trên', 403);
+    if (!ownerMatcher(current.proposal_user_id, current.proposal_assignee_id, current.proposal_manager_id)) {
+      throw err('Chỉ người đề xuất, người phụ trách hoặc quản lý cấp trên hợp lệ được đề xuất giao trụ sớm', 403);
     }
-    if (current.status !== STATUS.ONBOARDING) {
-      throw err('Chỉ có thể đề xuất giao trụ sớm khi trạm đang hoàn thiện thủ tục', 400);
+    if (current.status !== STATUS.ONBOARDING || current.contract_status !== 'DONE' || Number(current.early_delivery_requested)) {
+      throw err('Chỉ đề xuất giao trụ sớm khi đã ký hợp đồng và trạm chưa vào hàng chờ giao', 409);
     }
+    const deliveryReadiness = readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu);
+    if (deliveryReadiness.ready) throw err('Trạm đã đủ điều kiện giao theo luồng thường', 409);
 
     const shipping = require('./chargingStationShippingService');
     await shipping.ensureCommitments(connection, stationId);
     const summary = await shipping.getSummary(stationId, connection);
-    if (!summary.shipping_options.length) {
-      throw err('Không còn số trụ phải giao hoặc không có tồn kho phù hợp', 409);
+    if (!summary.items.some(item => item.received_quantity < item.committed_quantity)) {
+      throw err('Không còn số trụ phải giao', 409);
     }
 
-    const { missingLabels: missingItems } = readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu);
+    const { missingLabels: missingItems } = deliveryReadiness;
 
     const nextStatus = STATUS.DELIVERING;
     const nextSubStatus = INITIAL_SUB_STATUS[nextStatus];
@@ -1886,7 +1897,7 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
       current.status === STATUS.OPERATING
       && current.sub_status === 'ACTIVE'
       && current.proposal_status === 'ACTIVE'
-      && current.workflow_override
+      && parseJson(current.workflow_override).completed === true
     ) {
       await connection.commit();
       transactionStarted = false;
@@ -1899,6 +1910,7 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
     const normalizedOnDate = require('./chargingStationOverrideService').dateOf(onDate);
     if (!normalizedOnDate) throw err('Ngày ON trạm là bắt buộc', 400);
     const override = JSON.stringify({
+      ...parseJson(current.workflow_override),
       completed: true, actor_id: user.id, at: new Date().toISOString(), reason: cleanReason,
       previous: { status: current.status, sub_status: current.sub_status,
         contract_status: current.contract_status, infra_power_status: current.infra_power_status,
@@ -2155,9 +2167,11 @@ const changeStatus = async (id, body = {}, ctx = {}) => {
       nextSub = INITIAL_SUB_STATUS[toStatus];
     }
 
+    const workflowOverride = parseJson(current.workflow_override).delivery_completed === true
+      ? { delivery_completed: true } : null;
     await connection.query(
-      'UPDATE charging_stations SET status = ?, sub_status = ?, workflow_override = NULL WHERE id = ?',
-      [toStatus, nextSub, current.id]
+      'UPDATE charging_stations SET status = ?, sub_status = ?, workflow_override = ? WHERE id = ?',
+      [toStatus, nextSub, workflowOverride ? JSON.stringify(workflowOverride) : null, current.id]
     );
 
     await writeActivity(connection, {
@@ -2165,7 +2179,7 @@ const changeStatus = async (id, body = {}, ctx = {}) => {
       action: backward ? 'status_rolled_back' : 'status_changed',
       fromStatus: current.status,
       toStatus,
-      changedFields: diffFields(current, { status: toStatus, sub_status: nextSub, workflow_override: null }),
+      changedFields: diffFields(current, { status: toStatus, sub_status: nextSub, workflow_override: workflowOverride }),
       reason: cleanReason || null,
       actorId: ctx.actorId,
       actorRole: ctx.actorRole,

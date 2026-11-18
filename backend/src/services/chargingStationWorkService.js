@@ -17,6 +17,11 @@ const everyOperating = `NOT EXISTS(SELECT 1 FROM charging_station_commitments c
 const overridden = "(cs.status='OPERATING' AND COALESCE(JSON_EXTRACT(cs.workflow_override,'$.completed')=true,0))";
 const deliveryComplete = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0 AND ${everyReceived})
   OR (${noCommitments} AND cs.fulfillment_review_required=0 AND cs.status IN ('INSTALLING','ACCEPTANCE','CONFIGURING','OPERATING')))`;
+const earlyDeliveryRequested = `EXISTS(SELECT 1 FROM charging_station_activity_logs delivery_log
+  WHERE delivery_log.charging_station_id=cs.id AND delivery_log.action='early_delivery_requested')`;
+const deliveryTask = `(NOT ${deliveryComplete}
+  AND (NOT ${readiness.deliveryMissingSql('cs', 'p')} OR ${earlyDeliveryRequested}))`;
+const canReceiveDeliveryTask = (user, permissions) => permissions.back_office && user?.role !== 'SUPER_ADMIN';
 const allOperating = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0
   AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
   AND ${everyOperating})
@@ -65,7 +70,7 @@ const stageFilters = {
     completed: "(cs.infra_power_status='DONE' AND cs.infra_site_status='DONE')", all: '1=1'
   },
   'giao-tru': {
-    need: `NOT ${deliveryComplete}`,
+    need: deliveryTask,
     completed: deliveryComplete, all: '1=1'
   },
   'lap-tru': {
@@ -94,21 +99,16 @@ const stageFilters = {
 const actionable = async (user) => {
   const permissions = await access.permissions(user);
   const infrastructureScope = await access.buildInfrastructureTaskScope(user, permissions);
-  const owner = permissions.request_early
-    ? await require('./proposalAccessService').buildOwnerScopeSql(user)
-    : { sql: '1 = 0', params: [] };
   const expressions = {
     contract: permissions.back_office ? stageFilters['khoi-tao-hop-dong'].need : '0',
     infrastructure: `(${stageFilters['xay-dung-ha-tang'].need} AND (${infrastructureScope.sql}))`,
-    delivery: `(${permissions.back_office ? "(cs.status<>'ONBOARDING' AND NOT " + deliveryComplete + ')' : '0'}
-      OR (${permissions.request_early ? '1' : '0'} AND cs.status='ONBOARDING'
-        AND (${owner.sql}) AND ${readiness.deliveryMissingSql('cs', 'p')}))`,
+    delivery: canReceiveDeliveryTask(user, permissions) ? deliveryTask : '0',
     installation: permissions.setup ? stageFilters['lap-tru'].need : '0',
     acceptance: permissions.setup ? stageFilters['nghiem-thu'].need : '0',
     on_station: permissions.setup ? stageFilters['on-tram'].need : '0',
     finance: permissions.finance ? financialOpen : '0'
   };
-  return { expressions, params: [...infrastructureScope.params, ...owner.params], permissions };
+  return { expressions, params: infrastructureScope.params, permissions };
 };
 
 const getFilter = async (stage, tab, user) => {
@@ -120,16 +120,15 @@ const getFilter = async (stage, tab, user) => {
   }
   const definition = stageFilters[stage];
   if (!definition) throw Object.assign(new Error('Bước ON trạm không hợp lệ'), { statusCode: 400 });
-  let sql = definition[tab];
+  const sql = definition[tab];
   if (stage === 'xay-dung-ha-tang' && tab === 'need') {
     const scope = await access.buildInfrastructureTaskScope(user);
     return { sql: `cs.status<>'CANCELLED' AND (${sql}) AND (${scope.sql})`, params: scope.params };
   }
-  if (stage === 'giao-tru' && tab !== 'completed') {
-    const permission = await access.permissions(user);
-    if (permission.back_office && user.role !== 'SUPER_ADMIN') sql = `(${sql}) AND cs.status<>'ONBOARDING'`;
+  if (stage === 'giao-tru' && tab === 'need' && !canReceiveDeliveryTask(user, await access.permissions(user))) {
+    return { sql: '0', params: [] };
   }
   return { sql: tab === 'all' ? sql : `cs.status<>'CANCELLED' AND (${sql})`, params: [] };
 };
 
-module.exports = { getFilter, actionable, stageFilters, allOperating, complete };
+module.exports = { getFilter, actionable, stageFilters, allOperating, complete, earlyDeliveryRequested, deliveryComplete };

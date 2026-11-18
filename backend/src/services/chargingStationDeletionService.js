@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const pool = require('../utils/db');
 const proposalLifecycle = require('./proposalLifecycle');
-const { stockAffectingItems } = require('./historicalOnImportInventory');
+const { stockAffectingItems, stockExemptSql } = require('./historicalOnImportInventory');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const toId = (value, label) => {
@@ -76,7 +76,7 @@ const makePreviewToken = (snapshot) => crypto.createHash('sha256')
     exports: snapshot.exports.map((row) => [Number(row.id), row.destination_type, Number(row.historical_import)]),
     items: snapshot.items.map((row) => [
       Number(row.id), Number(row.export_id), row.supplier_id === null ? null : Number(row.supplier_id),
-      Number(row.pole_id), Number(row.quantity), Number(row.returned_quantity || 0)
+      Number(row.pole_id), Number(row.quantity), Number(row.returned_quantity || 0), Number(row.stock_exempt || 0)
     ]),
     invoices: snapshot.invoices.map((row) => [Number(row.id), row.invoice_type, String(row.amount)]),
     imports: snapshot.imports.map((row) => Number(row.id)),
@@ -113,7 +113,8 @@ const loadSnapshot = async (connection, stationId, lock = false) => {
   if (exports.length) {
     const exportIds = exports.map((row) => Number(row.id));
     [items] = await connection.query(
-      `SELECT wei.id, wei.export_id, wei.supplier_id, wei.pole_id, wei.quantity, wei.returned_quantity, we.historical_import
+      `SELECT wei.id, wei.export_id, wei.supplier_id, wei.pole_id, wei.quantity, wei.returned_quantity, we.historical_import,
+              ${stockExemptSql('we')} AS stock_exempt
          FROM warehouse_export_items wei
          JOIN warehouse_exports we ON we.id = wei.export_id
         WHERE wei.export_id IN (${exportIds.map(() => '?').join(',')})

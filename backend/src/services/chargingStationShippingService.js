@@ -1,6 +1,6 @@
 const pool = require('../utils/db');
 const { isDeepStrictEqual } = require('node:util');
-const { stockAffectingItems } = require('./historicalOnImportInventory');
+const { stockAffectingItems, stockExemptSql } = require('./historicalOnImportInventory');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const idOf = (value, label = 'Mã bản ghi') => {
@@ -242,7 +242,7 @@ const logActivity = async (connection, station, action, actor, ctx, extra = {}, 
     reason,
     actorId: actor?.id || ctx.actorId,
     actorRole: actor?.role || ctx.actorRole,
-    source: 'user',
+    source: ctx.source || 'user',
     ip: ctx.ip
   });
 };
@@ -421,10 +421,96 @@ const createExportWithinTransaction = async (connection, stationId, body = {}, u
   return writeStationExport(connection, stationId, body, actor, actorContext(actor, ctx));
 };
 
+const receiveItem = async (connection, stationId, itemId, quantity) => {
+  await connection.query('UPDATE warehouse_export_items SET received_quantity=received_quantity+? WHERE id=?', [quantity, itemId]);
+  await connection.query(`INSERT INTO charging_station_deployments(charging_station_id,export_item_id,quantity,stage,sub_status)
+    VALUES(?,?,?,'INSTALLING','NOT_INSTALLED')`, [stationId, itemId, quantity]);
+};
+
+const completeDeliveryWithoutStock = async (connection, station, ctx, reason) => {
+  require('./chargingStationOverrideService').assertSuper(ctx);
+  if (station.status === 'CANCELLED' || parseJson(station.workflow_override)?.completed) {
+    throw fail('ON trạm đã hủy hoặc đã hoàn tất bằng ghi đè', 409);
+  }
+  const commitments = await ensureCommitments(connection, station.id);
+  const [headers] = await connection.query(`SELECT * FROM warehouse_exports
+    WHERE charging_station_id=? AND destination_type='STATION' ORDER BY id FOR UPDATE`, [station.id]);
+  const [items] = await connection.query(`SELECT i.* FROM warehouse_export_items i
+    JOIN warehouse_exports e ON e.id=i.export_id
+    WHERE e.charging_station_id=? AND e.destination_type='STATION' ORDER BY i.id FOR UPDATE`, [station.id]);
+  const [portions] = await connection.query(`SELECT export_item_id,quantity FROM charging_station_deployments
+    WHERE charging_station_id=? AND returned_at IS NULL ORDER BY id FOR UPDATE`, [station.id]);
+  const byCommitment = new Map(commitments.map(row => [Number(row.id), row]));
+  const byHeader = new Map(headers.map(row => [Number(row.id), row]));
+  const exported = new Map();
+  const received = [];
+  for (const item of items) {
+    const commitment = byCommitment.get(Number(item.commitment_id));
+    const header = byHeader.get(Number(item.export_id));
+    const quantity = Number(item.quantity), returned = Number(item.returned_quantity);
+    const alreadyReceived = Number(item.received_quantity), pendingReturn = Number(item.return_pending_quantity);
+    const deployed = portions.filter(row => Number(row.export_item_id) === Number(item.id))
+      .reduce((sum, row) => sum + Number(row.quantity), 0);
+    if (!commitment || Number(item.pole_id) !== Number(commitment.pole_id)
+      || ![quantity, returned, alreadyReceived, pendingReturn].every(Number.isSafeInteger)
+      || quantity <= 0 || returned < 0 || alreadyReceived < 0 || returned + alreadyReceived > quantity
+      || pendingReturn < 0 || deployed !== alreadyReceived) {
+      throw fail('Số lượng giao/nhận hoặc phần trụ cũ không khớp; cần đối soát trước khi giao trực tiếp', 409);
+    }
+    const net = quantity - returned;
+    if (pendingReturn || (net > 0 && !['PENDING', 'SHIPPING', 'DELIVERED'].includes(header?.transport_status))) {
+      throw fail('Có đơn đang hoàn hàng hoặc giao thất bại; hãy xử lý đơn trước khi giao trực tiếp', 409);
+    }
+    const total = (exported.get(Number(commitment.id)) || 0) + net;
+    if (total > Number(commitment.quantity)) throw fail('Số trụ đã xuất vượt số lượng chốt; cần đối soát', 409);
+    exported.set(Number(commitment.id), total);
+    const remaining = net - alreadyReceived;
+    if (remaining > 0) {
+      if (header.transport_status === 'DELIVERED') throw fail('Đơn đã giao nhưng số nhận chưa khớp; cần đối soát', 409);
+      received.push({ export_id: Number(item.export_id), item_id: Number(item.id), quantity: remaining });
+    }
+  }
+  const actor = { id: ctx.actorId, role: ctx.actorRole };
+  const source = { ...ctx, source: 'admin_override' };
+  for (const item of received) {
+    await receiveItem(connection, station.id, item.item_id, item.quantity);
+    await logActivity(connection, station, 'shipment_received', actor, source, item, reason);
+  }
+  for (const exportId of new Set(received.map(row => row.export_id))) {
+    await connection.query("UPDATE warehouse_exports SET transport_status='DELIVERED' WHERE id=?", [exportId]);
+  }
+  const missing = commitments.map(row => ({
+    ...row, quantity: Number(row.quantity) - (exported.get(Number(row.id)) || 0)
+  })).filter(row => row.quantity > 0);
+  let exportId = null;
+  if (missing.length) {
+    const [header] = await connection.query(`INSERT INTO warehouse_exports
+      (exporter_user_id,export_date,reason,charging_station_id,destination_type,transport_status)
+      VALUES(?,NOW(),?,?,'STATION','DELIVERED')`, [actor.id, reason, station.id]);
+    exportId = Number(header.insertId);
+    for (const item of missing) {
+      const [row] = await connection.query(`INSERT INTO warehouse_export_items
+        (export_id,commitment_id,pole_id,supplier_id,quantity) VALUES(?,?,?,?,?)`,
+      [exportId, item.id, item.pole_id, item.supplier_id, item.quantity]);
+      await receiveItem(connection, station.id, row.insertId, item.quantity);
+      received.push({ export_id: exportId, item_id: Number(row.insertId), quantity: item.quantity });
+    }
+    await saveEvent(connection, station.id, `direct-delivery:${exportId}`, 'SHIPPING_DIRECT_RECEIVE', actor,
+      { export_id: exportId, stock_exempt: true }, { id: exportId });
+    await logActivity(connection, station, 'shipment_created', actor, source,
+      { export_id: exportId, stock_exempt: true, items: received.filter(row => row.export_id === exportId) }, reason);
+  }
+  const deployment = require('./chargingStationDeploymentService');
+  const updated = await deployment.refreshStationProgress(connection, station.id, source);
+  if (received.length) await deployment.notifySetupOperations(connection, station, source, 'Đã giao đủ trụ — cần lắp đặt');
+  return { station: updated, export_id: exportId, received };
+};
+
 const lockShipmentItems = async (connection, stationId, exportId, items) => {
   const ids = items.map((item) => item.item_id);
   const [rows] = await connection.query(
-    `SELECT wei.*, we.transport_status, we.charging_station_id, we.destination_type, we.historical_import
+    `SELECT wei.*, we.transport_status, we.charging_station_id, we.destination_type, we.historical_import,
+            ${stockExemptSql('we')} AS stock_exempt
        FROM warehouse_export_items wei
        JOIN warehouse_exports we ON we.id = wei.export_id
       WHERE wei.id IN (${ids.map(() => '?').join(',')})
@@ -538,9 +624,7 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
         const quantity = Number(item.quantity) - Number(item.received_quantity) - Number(item.returned_quantity);
         if (quantity < 0) throw fail('Số lượng nhận/hoàn không hợp lệ', 409);
         if (!quantity) continue;
-        await connection.query('UPDATE warehouse_export_items SET received_quantity=received_quantity+? WHERE id=?', [quantity, item.id]);
-        await connection.query(`INSERT INTO charging_station_deployments(charging_station_id,export_item_id,quantity,stage,sub_status)
-          VALUES(?,?,?,'INSTALLING','NOT_INSTALLED')`, [stationId, item.id, quantity]);
+        await receiveItem(connection, stationId, item.id, quantity);
       }
     } else if (status === 'RETURN_PENDING') {
       for (const item of remaining) {
@@ -554,8 +638,10 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
       if (remaining.some(item => Number(item.return_pending_quantity) !== item.quantity)) {
         throw fail('Đơn chưa có yêu cầu hoàn toàn bộ số còn lại; cần đối soát', 409);
       }
+      const [[exemption]] = await connection.query(`SELECT ${stockExemptSql('we')} AS stock_exempt
+        FROM warehouse_exports we WHERE we.id=?`, [exportId]);
       await restockShipmentItems(connection, remaining.map(item => ({
-        ...item, historical_import: headers[0].historical_import
+        ...item, historical_import: headers[0].historical_import, stock_exempt: exemption.stock_exempt
       })));
       for (const item of remaining) {
         await connection.query(`UPDATE warehouse_export_items SET returned_quantity=returned_quantity+?,
@@ -618,16 +704,7 @@ const receive = async (stationId, exportId, body = {}, user, ctx = {}) => {
 
     for (const item of items) {
       const row = itemMap.get(item.item_id);
-      await connection.query(
-        'UPDATE warehouse_export_items SET received_quantity = received_quantity + ? WHERE id = ?',
-        [item.quantity, item.item_id]
-      );
-      await connection.query(
-        `INSERT INTO charging_station_deployments
-          (charging_station_id, export_item_id, quantity, stage, sub_status)
-         VALUES (?, ?, ?, 'INSTALLING', 'NOT_INSTALLED')`,
-        [stationId, item.item_id, item.quantity]
-      );
+      await receiveItem(connection, stationId, item.item_id, item.quantity);
       await logActivity(connection, stations[0], 'shipment_received', actor, ctx, {
         export_id: exportId,
         item_id: item.item_id,
@@ -1022,6 +1099,7 @@ module.exports = {
   getSummary,
   createExport,
   createExportWithinTransaction,
+  completeDeliveryWithoutStock,
   updateShipmentStatus,
   receive,
   requestReturn,

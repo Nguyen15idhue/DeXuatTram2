@@ -18,7 +18,6 @@ import {
   canOperateStation,
   deploymentActions,
   DEPLOYMENT_ACTION_LABELS,
-  missingOnPrerequisites,
   requestKeyForIntent,
   ACCEPTANCE_LABELS,
   portionUnavailable,
@@ -98,10 +97,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
     canOperateStation(user, record, "setup") &&
     (!record.workflow_override?.completed || user?.role === "SUPER_ADMIN") &&
     record.status !== "CANCELLED";
-  const canRequest =
-    canOperateStation(user, record, "request_early") ||
-    user?.role === "SUPER_ADMIN";
-  const missing = missingOnPrerequisites(record);
   const showShipping = !stage || stage === "giao-tru";
   const showPortions = !stage || stage !== "giao-tru";
   const shippingOptions = fulfillment.shipping_options || [];
@@ -120,7 +115,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
             : "";
   const begin = (action, target) => {
     if (loading || loadError) return;
-    if (["export", "early"].includes(action) && shippingDisabled) return;
+    if (action === "export" && shippingDisabled) return;
     if (action === "acceptance-passed") {
       setAcceptancePortion(target.id);
       return;
@@ -141,8 +136,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       total_amount: "",
       transport_status: "SHIPPING",
       reason: "",
-      desired_date: "",
-      acknowledged: false,
     });
     const rows =
       action === "export"
@@ -179,7 +172,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       });
       const { request_id } = request.current;
       if (
-        ["fail", "request-return", "acceptance-failed", "acceptance-reset", "early"].includes(
+        ["fail", "request-return", "acceptance-failed", "acceptance-reset"].includes(
           action,
         ) &&
         !form.reason.trim()
@@ -236,20 +229,6 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           },
           token,
         );
-      } else if (action === "early") {
-        if (!form.desired_date || !form.acknowledged)
-          throw new Error("Chọn ngày mong muốn và xác nhận cảnh báo giao sớm");
-        response = await chargingStationService.requestEarlyDelivery(
-          record.id,
-          {
-            desired_date: form.desired_date,
-            desired_delivery_date: form.desired_date,
-            reason: form.reason,
-            accept_missing: true,
-            request_id,
-          },
-          token,
-        );
       } else {
         response = await chargingStationService.deploymentAction(
           record.id,
@@ -278,9 +257,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const title =
     intent?.action === "export"
       ? "Tạo phiếu xuất kho"
-      : intent?.action === "early"
-        ? "Đề xuất giao trụ sớm"
-        : DEPLOYMENT_ACTION_LABELS[intent?.action];
+      : DEPLOYMENT_ACTION_LABELS[intent?.action];
   return (
     <div className="space-y-4 text-sm">
       {error && (
@@ -298,6 +275,12 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         <div className="alert alert-info">
           Hoàn tất quy trình bằng ghi đè của SUPER_ADMIN. Số liệu giao/nhận và
           tồn kho bên dưới là số liệu thực tế, không được tự hoàn tất.
+        </div>
+      )}
+      {showShipping && record.workflow_override?.delivery_completed && (
+        <div className="alert alert-info">
+          SUPER_ADMIN xác nhận giao trực tiếp bằng phiếu xuất nội bộ, không thay đổi tồn kho.
+          Tiến độ Giao trụ và Lắp trụ được tính theo số lượng giao/nhận thực tế bên dưới.
         </div>
       )}
       {fulfillment.needs_review && (
@@ -338,18 +321,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
                 Xuất trụ theo số lượng
               </Button>
             )}
-            {canRequest && (
-              <Button
-                size="sm"
-                disabled={shippingDisabled}
-                title={shippingDisabledReason}
-                variant="outline-warning"
-                onClick={() => begin("early")}
-              >
-                Đề xuất giao sớm
-              </Button>
-            )}
-            {!canShip && !canRequest && (
+            {!canShip && (
               <span className="text-base-content/50">Chỉ xem</span>
             )}
           </div>
@@ -587,42 +559,11 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
                 />
               </>
             )}
-            {intent.action === "early" && (
-              <Input
-                label="Ngày giao mong muốn"
-                type="date"
-                required
-                value={form.desired_date}
-                onChange={(event) =>
-                  setField("desired_date", event.target.value)
-                }
-              />
-            )}
             <Input
               label="Lý do / ghi chú"
               value={form.reason}
               onChange={(event) => setField("reason", event.target.value)}
             />
-            {intent.action === "early" && (
-              <div className="rounded-lg border border-warning p-3">
-                <p className="mb-2 text-warning">
-                  Chưa hoàn thành: {missing.join(", ") || "Điều kiện giao trụ"}.
-                  Giao sớm / ON thiếu điều kiện có rủi ro; các công việc còn
-                  thiếu vẫn phải thực hiện.
-                </p>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={form.acknowledged}
-                    onChange={(event) =>
-                      setField("acknowledged", event.target.checked)
-                    }
-                  />{" "}
-                  Tôi xác nhận chấp nhận và chịu trách nhiệm
-                </label>
-              </div>
-            )}
             {error && (
               <div role="alert" className="text-error">
                 {error}

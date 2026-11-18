@@ -10,6 +10,8 @@ const AdminChargingStationsPage = ({ stage = 'thong-tin-chung' }) => {
   const config = getStageConfig(stage);
   const showSheetSync = ['thong-tin-chung', 'on-tram'].includes(config.key);
 
+  if (config.key === 'nghiem-thu') return <ChargingStationWorklist stage={config.key} />;
+
   return (
     <div>
       <PageHeader
@@ -23,7 +25,7 @@ const AdminChargingStationsPage = ({ stage = 'thong-tin-chung' }) => {
           ? <ChargingStationInfrastructureTabs />
           : config.key === 'giao-tru'
             ? <ChargingStationWorklist stage={config.key} />
-            : ['lap-tru', 'nghiem-thu', 'on-tram'].includes(config.key)
+            : ['lap-tru', 'on-tram'].includes(config.key)
               ? <ChargingStationWorklist stage={config.key} />
               : <ChargingStationTab stage={config.key} />}
     </div>
