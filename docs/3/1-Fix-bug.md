@@ -77,31 +77,43 @@ root, khi hệ thống local đã chạy. Test tạo dữ liệu tạm, đi qua 
 cấu hình, ký, xuất ZIP và nộp đủ bản cuối tới `APPROVED`; dọn cả ON trạm được
 tự tạo và chặn queue fixture gửi sang Google Sheets.
 
-## Đồng bộ Sheet trạm ON: nguồn dữ liệu và khóa EMS
+## Đồng bộ Sheet trạm ON: bố cục A–T và khóa Mã BCĐX ở R
 
 - Chỉ đồng bộ đề xuất ACTIVE, giữ nguyên quyền Admin/Super Admin.
-- B: `charging_stations.cms_station_code`, dùng làm khóa đối soát. Trùng trên
-  Sheet/DB hoặc thiếu mã thì báo lỗi, không tự ghi đè.
-- E: tên tài khoản `station_proposals.custom_data.nguoi_phu_trach.id`.
-- F: role NPP → NPP; nếu không, mô hình TDT → TMT; còn lại phòng kinh doanh
-  miền Bắc/Trung/Nam của người phụ trách → MB/MT/MN.
+- Thứ tự cột: A STT; B Mã Trạm; C Tên trạm sạc; D Pháp nhân; E Nhân sự phụ trách;
+  F Nguồn phụ trách; G Link Google Map; H Vĩ độ; I Kinh độ; J Địa chỉ chi tiết;
+  K Tỉnh cũ; L Tỉnh mới; M Quy mô trụ ban đầu; N Quy mô trụ chốt triển khai;
+  O Số lượng trụ; P Ngày ON trạm; Q Mã chủ đầu tư; R Mã BCĐX;
+  S GĐKV phát triển trạm; T Phòng ban.
+- B là `charging_stations.cms_station_code`, chỉ là dữ liệu hiển thị, không làm khóa.
+- R là khóa duy nhất: mã có trên Sheet thì cập nhật, chưa có thì thêm dòng.
+  Không ghép theo B hoặc S. Thiếu mã BCĐX hoặc mã trùng trên Sheet/DB/trong lô
+  thì báo lỗi trước khi ghi; trùng mã CMS không ngăn đồng bộ.
+- E = S: người tạo có role SALES và có tên thì dùng người tạo; nếu không,
+  dùng tài khoản `station_proposals.custom_data.nguoi_phu_trach.id`, kể cả tài khoản
+  phụ trách không phải SALES. Không có thì để trống, không suy ra từ cây cấp trên.
+- F = T, giữ thứ tự ưu tiên: mô hình TDT → TMT; người tạo NPP → NPP;
+  phòng Chính sách và Phát triển dự án của người tạo → PDA; phòng kinh doanh
+  miền Bắc/Trung/Nam của người tạo → MB/MT/MN. Không xác định được thì để trống.
 - M: bảng trụ đề xuất hiện tại theo mô hình, không phải snapshot lúc tạo.
 - N: bảng `chot_so_luong_tru` của BCĐX, ví dụ `LK_2 DC 120kW + NQ_1 AC 22kW`.
 - O: tổng số lượng trụ chốt, xuất kiểu số.
-- Ghi/cập nhật/xóa nội dung chỉ trong A–Q. Không chèn/xóa nguyên hàng, không
-  đọc/ghi cột R trở đi. Đọc Sheet thất bại phải báo lỗi, không coi như Sheet trống.
-- Thiếu người phụ trách, nguồn phòng ban hoặc bảng trụ chốt, số lượng không hợp lệ
-  được báo trong trạng thái FAILED và hiển thị cạnh nút đồng bộ.
+- Ghi/cập nhật/xóa nội dung chỉ trong A–T; giữ STT dòng cũ, cấp STT tiếp theo cho
+  dòng mới. Không chèn/xóa nguyên hàng, không đọc/ghi từ U trở đi.
+- E/F/S/T được ghi lại cả khi kết quả rỗng để xóa thông tin cũ. Các ô thiếu dữ liệu
+  khác vẫn giữ giá trị hiện có khi cập nhật, bao gồm Q chưa có nguồn tự điền.
+- Thiếu dữ liệu tùy chọn không chặn đồng bộ. Bảng trụ chốt không hợp lệ dùng
+  bảng trụ ban đầu; các dòng trụ lỗi có cảnh báo trong log.
+- Đọc/ghi Google thất bại phải báo lỗi, không coi như Sheet trống hoặc đánh dấu DONE.
 
-Trước lần chạy đầu trên Sheet cũ, quản trị viên cần đối soát và thay mã ON nội bộ
-ở B bằng mã EMS tương ứng; hệ thống không tự suy đoán hai mã là cùng một trạm.
+Sheet hiện có phải đặt Mã BCĐX ở R trước khi chạy bản mới; header R không khớp
+sẽ bị chặn, không tự chuyển mã từ S. Tab trống được tạo header A–T.
 Sau đó dùng nút **Đồng bộ Sheet trạm ON** để cập nhật toàn bộ dữ liệu ACTIVE.
-Mã EMS là khóa: nếu thay đổi mã sau khi đồng bộ, phải đối soát mã B trên Sheet
-trước khi chạy lại để không giữ dòng thuộc mã cũ.
 
-Kiểm thử backend: `node --test tests/onStationSheetSync.test.js` trong `backend`.
-Kiểm thử giao diện: `node test-on-station-sheet.cjs` trong `frontend`; test mock
-API đồng bộ nên không gửi thông tin khách hàng lên Google Sheet thật.
+Kiểm thử backend: `node --test backend\tests\onStationSheetSync.test.js` từ root.
+Thêm `ON_SHEET_SYNC_INTEGRATION=1` và chạy
+`node --test backend\tests\onStationSheetSync.integration.test.js` để kiểm tra
+MySQL bằng fixture trong transaction tự rollback; Google Sheets được mock.
 
 ## E-sign: `mySignature is not defined`
 

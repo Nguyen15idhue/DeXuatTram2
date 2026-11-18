@@ -13,14 +13,27 @@ test('snapshot deletion and concurrent queue versions survive reconciliation', {
   try {
     await connection.beginTransaction();
     pool.query = connection.query.bind(connection);
+    const [creator] = await connection.query(
+      `INSERT INTO users (full_name,email,password,role)
+       VALUES ('Creator fixture',?,'not-a-login','CTV')`, [`${code}-creator@example.invalid`]
+    );
+    const [assignee] = await connection.query(
+      `INSERT INTO users (full_name,email,password,role)
+       VALUES ('Sales fixture',?,'not-a-login','SALES')`, [`${code}-sales@example.invalid`]
+    );
     const [insert] = await connection.query(
-      `INSERT INTO station_proposals (latitude,longitude,address,owner_name,owner_phone,status,custom_data)
-       VALUES (21,105,'Temporary sheet test','Sheet test','0900000000','ACTIVE',?)`,
-      [JSON.stringify({ ma_de_xuat: code })]
+      `INSERT INTO station_proposals (user_id,latitude,longitude,address,owner_name,owner_phone,status,custom_data)
+       VALUES (?,21,105,'Temporary sheet test','Sheet test','0900000000','ACTIVE',?)`,
+      [creator.insertId, JSON.stringify({ ma_de_xuat: code, nguoi_phu_trach: { id: assignee.insertId } })]
     );
     id = insert.insertId;
     const proposals = await service.loadProposals([id]);
     assert.equal(proposals.length, 1);
+    assert.equal(proposals[0].creator_name, 'Creator fixture');
+    assert.equal(proposals[0].assignee_name, 'Sales fixture');
+    assert.equal(service.buildRow(proposals[0], 1)[4], 'Sales fixture');
+    await connection.query("UPDATE users SET role='SALES' WHERE id=?", [creator.insertId]);
+    assert.equal(service.buildRow((await service.loadProposals([id]))[0], 1)[4], 'Creator fixture');
     const keys = await service.loadProposalKeys([id]);
     assert.equal(keys.get(id).code, code);
     await connection.query(
@@ -30,7 +43,9 @@ test('snapshot deletion and concurrent queue versions survive reconciliation', {
     const sheet = { spreadsheets: { values: {
       get: async () => ({ data: { values: [service.HEADER_ROW, service.buildRow(proposals[0], 1)] } }),
       batchUpdate: async request => {
+        assert.equal(request.requestBody.data[1].range, "'ON'!A2:T2");
         assert.equal(request.requestBody.data[1].values[0][1], null);
+        assert.equal(request.requestBody.data[1].values[0][17], code);
       }
     } } };
     const proposalMap = new Map([[id, proposals[0]]]);

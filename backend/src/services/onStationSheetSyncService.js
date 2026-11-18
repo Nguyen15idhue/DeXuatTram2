@@ -1,17 +1,13 @@
 // backend/src/services/onStationSheetSyncService.js
 // Đồng bộ Google Sheet riêng cho trạm đã ON (proposal status = ACTIVE).
-// Cột A–Q và S (giữ nguyên R): STT, Mã Trạm, Tên trạm sạc, Pháp nhân, Nhân sự phụ trách, Nguồn phụ trách,
-//          Link Google Map, Vĩ độ, Kinh độ, Địa chỉ chi tiết, Tỉnh cũ, Tỉnh mới,
-//          Quy mô trụ ban đầu, Quy mô trụ chốt triển khai, Số lượng trụ,
-//          Ngày ON trạm, Mã chủ đầu tư, Mã BCĐX
 const pool = require('../utils/db');
 const { google } = require('googleapis');
 
 const LOCK_NAME = 'on_station_sheet_sync';
 const BATCH_SIZE = 50;
 const MAX_ATTEMPTS = 8;
-const LAST_COLUMN = 'S';
-const KEY_COLUMN_INDEX = 18;
+const LAST_COLUMN = 'T';
+const KEY_COLUMN_INDEX = 17;
 
 // Ánh xạ tỉnh mới (34 đơn vị sau sáp nhập) -> danh sách tỉnh cũ
 const PROVINCE_MERGE_MAP = {
@@ -54,7 +50,8 @@ const PROVINCE_MERGE_MAP = {
 const HEADER_ROW = [
   'STT', 'Mã Trạm', 'Tên trạm sạc', 'Pháp nhân', 'Nhân sự phụ trách', 'Nguồn phụ trách',
   'Link Google Map', 'Vĩ độ', 'Kinh độ', 'Địa chỉ chi tiết', 'Tỉnh cũ', 'Tỉnh mới',
-  'Quy mô trụ ban đầu', 'Quy mô trụ chốt triển khai', 'Số lượng trụ', 'Ngày ON trạm', 'Mã chủ đầu tư', null, 'Mã BCĐX'
+  'Quy mô trụ ban đầu', 'Quy mô trụ chốt triển khai', 'Số lượng trụ', 'Ngày ON trạm', 'Mã chủ đầu tư',
+  'Mã BCĐX', 'GĐKV phát triển trạm', 'Phòng ban'
 ];
 
 const getConfig = () => {
@@ -257,6 +254,9 @@ const buildRow = (proposal, serial) => {
   const province = scalarValue(proposal.province || custom.province);
   const address = scalarValue(proposal.address || custom.address);
   const oldProvince = resolveOldProvince(province, address);
+  const person = (proposal.creator_role === 'SALES' ? scalarValue(proposal.creator_name) : '')
+    || scalarValue(proposal.assignee_name);
+  const source = resolveSource(proposal, model);
   const mapUrl = proposal.latitude !== null && proposal.latitude !== undefined
     && proposal.longitude !== null && proposal.longitude !== undefined
     ? `https://www.google.com/maps?q=${encodeURIComponent(`${proposal.latitude},${proposal.longitude}`)}`
@@ -266,8 +266,8 @@ const buildRow = (proposal, serial) => {
     scalarValue(proposal.cms_station_code),
     scalarValue(proposal.station_name),
     legalName,
-    scalarValue(proposal.assignee_name),
-    resolveSource(proposal, model),
+    person,
+    source,
     mapUrl,
     scalarValue(proposal.latitude),
     scalarValue(proposal.longitude),
@@ -279,8 +279,9 @@ const buildRow = (proposal, serial) => {
     countPoles(deployed),
     formatDate(proposal.on_date),
     '',
-    null,
-    scalarValue(proposal.ma_de_xuat_gen || custom.ma_de_xuat)
+    scalarValue(proposal.ma_de_xuat_gen || custom.ma_de_xuat),
+    person,
+    source
   ];
 };
 
@@ -293,7 +294,7 @@ const loadProposals = async (proposalIds) => {
             st.name AS station_name,
             assignee.full_name AS assignee_name, assignee.role AS assignee_role,
             assignee.custom_data AS assignee_custom_data,
-            creator.role AS creator_role, creator.custom_data AS creator_custom_data,
+            creator.full_name AS creator_name, creator.role AS creator_role, creator.custom_data AS creator_custom_data,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS vung_mien,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
@@ -322,9 +323,7 @@ const loadProposalKeys = async (proposalIds) => {
             COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code) AS proposal_code,
             COALESCE(NULLIF(cs.cms_station_code, ''), q.sheet_cms_code) AS cms_station_code,
             (SELECT COUNT(*) FROM station_proposals other_proposal
-              WHERE other_proposal.ma_de_xuat_gen=COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code)) AS code_count,
-            (SELECT COUNT(*) FROM charging_stations other
-              WHERE TRIM(other.cms_station_code)=TRIM(COALESCE(NULLIF(cs.cms_station_code, ''), q.sheet_cms_code))) AS cms_count
+              WHERE other_proposal.ma_de_xuat_gen=COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code)) AS code_count
        FROM on_station_sheet_sync_queue q
        LEFT JOIN station_proposals p ON p.id=q.proposal_id
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
@@ -339,8 +338,7 @@ const loadProposalKeys = async (proposalIds) => {
     );
   }
   return new Map(rows.map((row) => [Number(row.id), {
-    code: scalarValue(row.proposal_code), cms: scalarValue(row.cms_station_code),
-    ambiguousCms: Number(row.cms_count || 0) > 1
+    code: scalarValue(row.proposal_code), cms: scalarValue(row.cms_station_code)
   }]));
 };
 
@@ -352,25 +350,23 @@ const readSheetRows = async (sheets, config) => {
     valueRenderOption: 'UNFORMATTED_VALUE'
   });
   const rows = response.data.values || [];
+  if (rows.length && scalarValue(rows[0]?.[KEY_COLUMN_INDEX]) !== HEADER_ROW[KEY_COLUMN_INDEX]) {
+    throw new Error('Header cột R phải là "Mã BCĐX"; hãy kiểm tra bố cục Sheet trước khi đồng bộ');
+  }
   const rowById = new Map();
-  const legacyByCms = new Map();
   let maxSerial = 0;
   rows.forEach((row, index) => {
-    if (!row || !row.length) return;
+    if (index === 0 || !row || !row.length) return;
     const serial = Number(row[0]);
-    if (index === 0 && !Number.isFinite(serial)) return;
     if (serial > maxSerial) maxSerial = serial;
     const key = String(row[KEY_COLUMN_INDEX] || '').trim();
     const entry = { row: index + 1, serial: Number.isFinite(serial) ? serial : null };
     if (key) {
       if (rowById.has(key)) throw new Error(`Mã BCĐX trùng trên Sheet: ${key}`);
       rowById.set(key, entry);
-    } else {
-      const cms = scalarValue(row[1]);
-      if (cms) legacyByCms.set(cms, [...(legacyByCms.get(cms) || []), entry]);
     }
   });
-  return { rowById, legacyByCms, maxSerial, nextRow: Math.max(rows.length + 1, 2) };
+  return { rowById, maxSerial, nextRow: Math.max(rows.length + 1, 2) };
 };
 
 const resolveKey = (keyById, proposalId, proposal) => {
@@ -385,17 +381,12 @@ const resolveKey = (keyById, proposalId, proposal) => {
 const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   const tab = quoteTab(config.tabName);
   const sheetIndex = await readSheetRows(sheets, config);
-  const { rowById, legacyByCms, maxSerial } = sheetIndex;
+  const { rowById, maxSerial } = sheetIndex;
   const updates = [];
   const clears = [];
   let nextSerial = maxSerial + 1;
   let nextRow = sheetIndex.nextRow;
   const seenKeys = new Set();
-  const usedRows = new Set();
-  const cmsOwners = new Map();
-  for (const value of keyById.values()) {
-    if (value.cms) cmsOwners.set(value.cms, (cmsOwners.get(value.cms) || 0) + 1);
-  }
   updates.push({ range: `${tab}!A1:${LAST_COLUMN}1`, values: [HEADER_ROW] });
 
   for (const job of jobs) {
@@ -404,18 +395,7 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
     const key = resolveKey(keyById, proposalId, proposal);
     if (seenKeys.has(key)) throw new Error(`Mã BCĐX trùng trong lượt đồng bộ: ${key}`);
     seenKeys.add(key);
-    let existing = rowById.get(key);
-    if (!existing) {
-      const cms = keyById.get(proposalId)?.cms || scalarValue(proposal?.cms_station_code);
-      const candidates = legacyByCms.get(cms) || [];
-      if (candidates.length > 1 || (candidates.length
-        && (cmsOwners.get(cms) > 1 || keyById.get(proposalId)?.ambiguousCms))) {
-        throw new Error(`Không thể ghép duy nhất dòng Sheet cũ cho đề xuất ${proposalId}`);
-      }
-      existing = candidates[0];
-    }
-    if (existing && usedRows.has(existing.row)) throw new Error('Hai đề xuất cùng khớp một dòng Sheet cũ');
-    if (existing) usedRows.add(existing.row);
+    const existing = rowById.get(key);
     if (job.operation === 'DELETE' || !proposal) {
       if (existing) clears.push({ row: existing.row });
       continue;
@@ -425,6 +405,7 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
     row[KEY_COLUMN_INDEX] = key;
     if (existing) {
       row.forEach((value, index) => {
+        if ([4, 5, 18, 19].includes(index)) return;
         // Sheets ignores null input cells, preserving existing values and formulas.
         if (value === '' || value === null || value === undefined) row[index] = null;
       });
@@ -443,9 +424,9 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   }
   if (clears.length) {
     for (const { row } of clears) {
-      for (const range of [`${tab}!A${row}:Q${row}`, `${tab}!S${row}:S${row}`]) {
-        await sheets.spreadsheets.values.clear({ spreadsheetId: config.spreadsheetId, range });
-      }
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: config.spreadsheetId, range: `${tab}!A${row}:${LAST_COLUMN}${row}`
+      });
     }
   }
 
