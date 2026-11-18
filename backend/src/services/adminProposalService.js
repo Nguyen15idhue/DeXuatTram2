@@ -117,6 +117,10 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     params
   );
   const total = countResult[0].total;
+  const orderBy = extra.prioritizeWorkflow
+    ? `CASE WHEN p.status IN ('CANCELLED', 'ARCHIVED', 'PAUSED', 'REJECTED', 'CONTRACT_FAILED') THEN 1 ELSE 0 END ASC,
+       p.created_at DESC, p.id DESC`
+    : 'p.created_at DESC';
 
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
@@ -144,7 +148,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     LEFT JOIN users manager ON manager.id = u.parent_id
     LEFT JOIN leads l ON l.journey_id = p.journey_id
     ${whereClause}
-    ORDER BY p.created_at DESC
+    ORDER BY ${orderBy}
     LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );

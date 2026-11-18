@@ -93,6 +93,7 @@ exports.getAll = async (req, res) => {
     const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters, {
       province, region, department, ownerUserId: owner_user_id, managerUserId: manager_user_id, model, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link,
       statuses: statusList,
+      prioritizeWorkflow: req.query.prioritize_workflow === '1',
       signedApprovalOnly: signed_approval_only === '1'
     });
     const proposals = await Promise.all(result.proposals.map(async (proposal) => ({
