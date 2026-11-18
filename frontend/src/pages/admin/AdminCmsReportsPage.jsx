@@ -123,7 +123,7 @@ const AdminCmsReportsPage = () => {
             <caption className="text-left p-2">Các ngày đã ghi thành công lên Google Sheet</caption>
             <thead><tr>{data.headers.map(header => <th key={header} className="whitespace-nowrap">{header}</th>)}</tr></thead>
             <tbody>{run.rows.map(row => <tr key={row[0]}>{row.map((cell, index) => <td key={index} className="whitespace-nowrap">
-              {[1, 17].includes(index) ? formatTime(cell) : typeof cell === 'number' ? cell.toLocaleString('vi-VN', { maximumFractionDigits: 4 }) : cell}
+              {[1, 22].includes(index) ? formatTime(cell) : typeof cell === 'number' ? cell.toLocaleString('vi-VN', { maximumFractionDigits: 4 }) : cell}
             </td>)}</tr>)}</tbody>
           </table>
         </div>}

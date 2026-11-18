@@ -38,7 +38,7 @@ exports.update = async (req, res) => {
 
 exports.assignPole = async (req, res) => {
   try {
-    await supplierService.assignPole(req.params.id, req.body.pole_id, req.body.quantity);
+    await supplierService.assignPole(req.params.id, req.body.pole_id, req.body.quantity, req.user, req.body.expected_quantity);
     res.json({ success: true, message: 'Đã gán loại trụ cho nhà cung cấp' });
   } catch (error) { sendError(res, error); }
 };

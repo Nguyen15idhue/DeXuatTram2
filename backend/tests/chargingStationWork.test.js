@@ -111,3 +111,51 @@ test('overview completion depends on all poles operating, not financial or contr
 test('unknown stages fail explicitly rather than returning a broader list', async () => {
   await assert.rejects(() => work.getFilter('unexpected', 'all'), { statusCode: 400 });
 });
+
+test('MySQL infrastructure worklist and badge require signed contracts and preserve scope and other tabs', {
+  skip: process.env.RUN_INFRASTRUCTURE_INTEGRATION_TESTS !== '1'
+}, async t => {
+  t.mock.method(access, 'permissions', async user => ({ setup: user.id === 20, request_early: false }));
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
+    department: user.id === 20 ? 'Phòng Setup và Vận hành' : 'Phòng khác'
+  }));
+  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql', async user => ({
+    sql: 'p.user_id=?', params: [user.id === 19 ? 17 : user.id]
+  }));
+  const fixtures = [
+    [1, 'ONBOARDING', 'NOT', 'NOT', 'NOT', 17],
+    [2, 'ONBOARDING', 'DOING', 'NOT', 'NOT', 17],
+    [3, 'ONBOARDING', 'DONE', 'NOT', 'NOT', 17],
+    [4, 'DELIVERING', 'DONE', 'DONE', 'NOT', 17],
+    [5, 'DELIVERING', 'DONE', 'NOT', 'DONE', 17],
+    [6, 'OPERATING', 'DONE', 'DONE', 'DONE', 17],
+    [7, 'CANCELLED', 'DONE', 'NOT', 'NOT', 17],
+    [8, 'ONBOARDING', 'DONE', null, null, 17],
+    [9, 'ONBOARDING', 'DONE', 'DOING', 'DOING', 99],
+    [10, 'ONBOARDING', 'CANCELLED', 'NOT', 'NOT', 17],
+    [11, 'ONBOARDING', null, 'NOT', 'NOT', 17],
+    [12, 'ONBOARDING', 'NOT', 'DONE', 'DONE', 17]
+  ];
+  const from = `FROM (${fixtures.map(() =>
+    'SELECT ? AS id, ? AS status, ? AS contract_status, ? AS infra_power_status, ? AS infra_site_status'
+  ).join(' UNION ALL ')}) cs
+    JOIN (${fixtures.map(() => 'SELECT ? AS id, ? AS user_id').join(' UNION ALL ')}) p ON p.id=cs.id`;
+  const values = [...fixtures.flatMap(row => row.slice(0, 5)), ...fixtures.flatMap(row => [row[0], row[5]])];
+  for (const [id, expected] of [[17, [3, 4, 5, 8]], [18, []], [19, [3, 4, 5, 8]], [20, [3, 4, 5, 8, 9]]]) {
+    const user = { id, role: 'SALES' };
+    const filter = await work.getFilter('xay-dung-ha-tang', 'need', user);
+    const tasks = await work.actionable(user);
+    const [rows] = await pool.query(`SELECT cs.id ${from} WHERE ${filter.sql} ORDER BY cs.id`, [...values, ...filter.params]);
+    assert.deepEqual(rows.map(row => row.id), expected, `worklist for user ${id}`);
+    const [[count]] = await pool.query(
+      `SELECT COUNT(CASE WHEN cs.status<>'CANCELLED' AND (${tasks.expressions.infrastructure}) THEN cs.id END) AS total ${from}`,
+      [...tasks.params, ...values]
+    );
+    assert.equal(count.total, expected.length, `badge for user ${id}`);
+  }
+  for (const [tab, expected] of [['all', fixtures.map(row => row[0])], ['completed', [6, 12]]]) {
+    const filter = await work.getFilter('xay-dung-ha-tang', tab, { id: 17, role: 'SALES' });
+    const [rows] = await pool.query(`SELECT cs.id ${from} WHERE ${filter.sql} ORDER BY cs.id`, [...values, ...filter.params]);
+    assert.deepEqual(rows.map(row => row.id), expected);
+  }
+});

@@ -238,6 +238,42 @@ router.post('/exports', warehouseController.createExport);
  */
 router.get('/stock', warehouseController.getStock);
 
+/**
+ * @swagger
+ * /api/admin/warehouse/stock/{supplierId}/{poleId}:
+ *   patch:
+ *     tags: [Warehouse]
+ *     summary: Điều chỉnh tồn kho theo nhà cung cấp (ADMIN hoặc SUPER_ADMIN)
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: supplierId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *       - in: path
+ *         name: poleId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [quantity, expected_quantity]
+ *             properties:
+ *               quantity: { type: integer, minimum: 0, maximum: 2147483647 }
+ *               expected_quantity: { type: integer, minimum: 0, maximum: 2147483647 }
+ *     responses:
+ *       200: { description: Đã cập nhật tồn và đồng bộ tổng tồn loại trụ }
+ *       400: { description: Số lượng không hợp lệ }
+ *       401: { description: Chưa đăng nhập }
+ *       403: { description: Không có quyền điều chỉnh tồn }
+ *       404: { description: Không tìm thấy cặp nhà cung cấp và loại trụ }
+ *       409: { description: Số tồn đã thay đổi, cần tải lại dữ liệu }
+ */
+router.patch('/stock/:supplierId/:poleId', warehouseController.adjustStock);
+
 router.get('/export/:resource', warehouseController.exportExcel);
 
 module.exports = router;

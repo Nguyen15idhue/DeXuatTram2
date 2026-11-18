@@ -91,10 +91,11 @@ for (const department of ['Người đề xuất', 'Quản lý nhánh', 'Phòng 
   test(`${department} sees pending infrastructure tasks and badge until both items are DONE`, async ({ page }) => {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    const station = { id: 501, ma_tram: 'ON-TASK-501', proposal_id: 77, status: 'DELIVERING',
+    const station = { id: 501, ma_tram: 'ON-TASK-501', proposal_id: 77, status: 'DELIVERING', contract_status: 'DONE',
       infra_power_status: 'NOT', infra_site_status: 'NOT',
       permissions: { infrastructure: true, infrastructure_task: true } };
-    const pending = () => station.infra_power_status !== 'DONE' || station.infra_site_status !== 'DONE';
+    const pending = () => station.contract_status === 'DONE'
+      && (station.infra_power_status !== 'DONE' || station.infra_site_status !== 'DONE');
     await page.addInitScript(() => localStorage.setItem('token', 'infra-task-test'));
     await page.route('**/api/**', async route => {
       const url = new URL(route.request().url());
@@ -113,6 +114,7 @@ for (const department of ['Người đề xuất', 'Quản lý nhánh', 'Phòng 
         expect(body.status).toBe('DONE');
         station[`infra_${type}_status`] = body.status;
       }
+
       await route.fulfill({ json: { success: true, data,
         pagination: { page: 1, total: pending() ? 1 : 0, totalPages: 1 } } });
     });
@@ -135,3 +137,56 @@ for (const department of ['Người đề xuất', 'Quản lý nhánh', 'Phòng 
     expect(errors).toEqual([]);
   });
 }
+
+test('unsigned contracts have no infrastructure task while all/completed tabs and editing remain available', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const station = {
+    id: 501, ma_tram: 'ON-CONTRACT-GATE', proposal_id: 77, status: 'ONBOARDING',
+    contract_status: 'NOT', infra_power_status: 'NOT', infra_site_status: 'NOT',
+    permissions: { infrastructure: true, infrastructure_task: true }
+  };
+  const completed = () => station.infra_power_status === 'DONE' && station.infra_site_status === 'DONE';
+  const pending = () => station.contract_status === 'DONE' && !completed();
+  await page.addInitScript(() => localStorage.setItem('token', 'infra-contract-task-test'));
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    let data = [];
+    if (url.pathname.endsWith('/auth/me')) data = {
+      user: { id: 1, role: 'SALES', custom_data: { department: 'Phòng Setup và Vận hành' } }
+    };
+    else if (url.pathname.endsWith('/charging-stations/task-counts')) {
+      data = { total: pending() ? 1 : 0, counts: { infrastructure: pending() ? 1 : 0 } };
+    } else if (url.pathname.endsWith('/charging-stations')) {
+      const tab = url.searchParams.get('tab');
+      data = (tab === 'all' || (tab === 'need' ? pending() : completed())) ? [station] : [];
+    }
+    await route.fulfill({ json: { success: true, data,
+      pagination: { page: 1, total: Array.isArray(data) ? data.length : 0, totalPages: 1 } } });
+  });
+  const need = page.getByRole('tab', { name: /Trạm sạc cần thực hiện/ });
+  const record = page.getByRole('link', { name: 'ON-CONTRACT-GATE', exact: true });
+  for (const status of ['NOT', 'DOING', 'DONE', 'NOT', 'DONE']) {
+    station.contract_status = status;
+    await page.goto('/admin/on-tram/xay-dung-ha-tang');
+    await expect(need).toHaveAttribute('aria-selected', 'true');
+    if (pending()) {
+      await expect(need.locator('.badge')).toHaveText('1');
+      await expect(record).toBeVisible();
+    } else {
+      await expect(need.locator('.badge')).toHaveCount(0);
+      await expect(record).toHaveCount(0);
+    }
+    await page.getByRole('tab', { name: 'Tất cả trạm sạc', exact: true }).click();
+    await expect(record).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Hạ tầng điện:/ })).toBeVisible();
+  }
+  station.contract_status = 'NOT';
+  station.infra_power_status = 'DONE';
+  station.infra_site_status = 'DONE';
+  await page.reload();
+  await expect(need.locator('.badge')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Trạm sạc đã hoàn thành', exact: true }).click();
+  await expect(record).toBeVisible();
+  expect(errors).toEqual([]);
+});

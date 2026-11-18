@@ -17,11 +17,11 @@ const build = async (resource, query = {}) => {
       FROM charging_poles cp
       LEFT JOIN supplier_charging_poles scp ON scp.charging_pole_id = cp.id
       LEFT JOIN suppliers s ON s.id = scp.supplier_id
-      GROUP BY cp.id ORDER BY cp.name`);
+      GROUP BY cp.id ORDER BY cp.power_kw, cp.charging_type, cp.name, cp.id`);
     rows = data.map((r, i) => [i + 1, r.name, r.charging_type, Number(r.power_kw), r.suppliers || '', r.note || '']);
   } else if (resource === 'stock') {
     headers = ['STT', 'Loại sạc', 'Công suất (kW)', 'Tổng tồn kho'];
-    const [data] = await pool.query(`SELECT cp.charging_type, cp.power_kw, SUM(scp.quantity) AS total_quantity FROM supplier_charging_poles scp JOIN charging_poles cp ON cp.id = scp.charging_pole_id GROUP BY cp.charging_type, cp.power_kw ORDER BY cp.charging_type, cp.power_kw`);
+    const [data] = await pool.query(`SELECT cp.charging_type, cp.power_kw, SUM(scp.quantity) AS total_quantity FROM supplier_charging_poles scp JOIN charging_poles cp ON cp.id = scp.charging_pole_id GROUP BY cp.charging_type, cp.power_kw ORDER BY cp.power_kw, cp.charging_type`);
     rows = data.map((r, i) => [i + 1, r.charging_type, Number(r.power_kw), Number(r.total_quantity || 0)]);
   } else if (resource === 'stock-detail') {
     headers = ['STT', 'Nhà cung cấp', 'Tên loại trụ', 'Loại sạc', 'Công suất (kW)', 'Số lượng tồn'];
@@ -29,7 +29,7 @@ const build = async (resource, query = {}) => {
     const params = [];
     if (query.type) { where.push('cp.charging_type = ?'); params.push(String(query.type)); }
     if (query.power) { where.push('cp.power_kw = ?'); params.push(Number(query.power)); }
-    const [data] = await pool.query(`SELECT s.name AS supplier_name, cp.name, cp.charging_type, cp.power_kw, scp.quantity FROM supplier_charging_poles scp JOIN suppliers s ON s.id=scp.supplier_id JOIN charging_poles cp ON cp.id=scp.charging_pole_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY cp.charging_type, cp.power_kw, s.name`, params);
+    const [data] = await pool.query(`SELECT s.name AS supplier_name, cp.name, cp.charging_type, cp.power_kw, scp.quantity FROM supplier_charging_poles scp JOIN suppliers s ON s.id=scp.supplier_id JOIN charging_poles cp ON cp.id=scp.charging_pole_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY cp.power_kw, cp.charging_type, cp.name, s.name, cp.id, scp.id`, params);
     rows = data.map((r, i) => [i + 1, r.supplier_name, r.name, r.charging_type, Number(r.power_kw), Number(r.quantity || 0)]);
   } else if (resource === 'imports') {
     headers = ['STT', 'Mã phiếu', 'Ngày nhập', 'Người nhập', 'Trạm liên quan', 'Nhà cung cấp', 'Loại trụ', 'Loại sạc', 'Công suất (kW)', 'Số lượng', 'Ghi chú'];

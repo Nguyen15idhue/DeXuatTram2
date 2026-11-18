@@ -86,7 +86,7 @@ const createClient = () => {
       }
     },
     getPoints: () => list('/admin/cp', 'chargePoints', 'pointId', { isTestChargePoint: 0 },
-      row => ({ id: String(row.pointId), createdAt: row.createdAt, connected: row.connected })),
+      row => ({ id: String(row.pointId), createdAt: row.createdAt, connected: row.connected, power: row.power })),
     getCustomers: () => list('/admin/driver', 'drivers', 'userId', {},
       row => ({ createdAt: row.createdAt })),
     getTransactions: date => list('/admin/ct', 'chargeTransactions', 'transactionId', {

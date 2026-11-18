@@ -10,18 +10,23 @@ const HEADERS = [
   "Thời điểm lấy",
   "Số trụ cũ",
   "Số trụ mới",
+  "Tổng trụ sạc",
   "Trụ hoạt động",
   "Trụ không hoạt động",
   "Phiên sạc trụ cũ",
   "Phiên sạc trụ mới",
+  "Tổng phiên sạc",
   "Phiên/trụ/ngày - cũ",
   "Phiên/trụ/ngày - mới",
+  "Tổng phiên/trụ/ngày",
   "Giờ sạc trụ cũ",
   "Giờ sạc trụ mới",
   "Giờ/trụ/ngày - cũ",
   "Giờ/trụ/ngày - mới",
+  "Tổng giờ/trụ/ngày",
   "Doanh thu trụ cũ",
   "Doanh thu trụ mới",
+  "Tổng doanh thu",
   "Khách đăng ký lũy kế",
   "Cập nhật lúc",
   "Cảnh báo dữ liệu",
@@ -85,6 +90,7 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
     new: { points: 0, sessions: 0, milliseconds: 0, revenue: 0 },
   };
   const pointGroups = new Map();
+  const excludedPointIds = new Set();
   let active = 0;
   let inactive = 0;
   let excludedMissingEnd = 0;
@@ -94,6 +100,11 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
       new Date(timestamp(point.createdAt, "ngày tạo trụ")),
     );
     if (created > date) continue;
+    // Loại trừ trụ 3kW (xe máy điện) khỏi mọi thống kê.
+    if (Number(point.power) === 3000) {
+      excludedPointIds.add(String(point.id));
+      continue;
+    }
     if (![0, 1].includes(point.connected))
       throw error("CMS trả trạng thái kết nối trụ không hợp lệ", 502);
     const group = created >= cutoff ? "new" : "old";
@@ -107,17 +118,21 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
     if (transaction.status !== "FINISHED") continue;
     const start = timestamp(transaction.startTime, "thời gian bắt đầu phiên");
     if (dayKey(new Date(start)) !== date) continue;
+    if (!(transaction.totalCost > 0)) continue;
+    const group = pointGroups.get(transaction.pointId);
+    if (!group) {
+      // Bỏ qua phiên của trụ 3kW (đã loại khỏi thống kê).
+      if (excludedPointIds.has(String(transaction.pointId))) continue;
+      throw error(
+        "Phiên FINISHED có trụ không nằm trong danh mục CMS của ngày báo cáo",
+        502,
+      );
+    }
     if (transaction.endTime == null || transaction.endTime === "") {
       excludedMissingEnd++;
       continue;
     }
     const end = timestamp(transaction.endTime, "thời gian kết thúc phiên");
-    const group = pointGroups.get(transaction.pointId);
-    if (!group)
-      throw error(
-        "Phiên FINISHED có trụ không nằm trong danh mục CMS của ngày báo cáo",
-        502,
-      );
     if (
       end < start ||
       typeof transaction.totalCost !== "number" ||
@@ -140,23 +155,32 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
   );
   const { old, new: recent } = groups;
   const average = (value, count) => (count ? round(value / count) : "N/A");
+  const totalPoints = old.points + recent.points;
+  const totalSessions = old.sessions + recent.sessions;
+  const totalMs = old.milliseconds + recent.milliseconds;
+  const totalRevenue = round(old.revenue + recent.revenue);
   return [
     date,
     fetchedAt,
     old.points,
     recent.points,
+    totalPoints,
     active,
     inactive,
     old.sessions,
     recent.sessions,
+    totalSessions,
     average(old.sessions, old.points),
     average(recent.sessions, recent.points),
+    average(totalSessions, totalPoints),
     round(old.milliseconds / 3600000),
     round(recent.milliseconds / 3600000),
     average(old.milliseconds / 3600000, old.points),
     average(recent.milliseconds / 3600000, recent.points),
+    average(totalMs / 3600000, totalPoints),
     round(old.revenue),
     round(recent.revenue),
+    totalRevenue,
     customerCount,
     new Date().toISOString(),
     excludedMissingEnd
@@ -247,7 +271,7 @@ const createSheetWriter = async (config) => {
   const existing = await sheetCall(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A:S`,
+      range: `${tab}!A:X`,
       valueRenderOption: "UNFORMATTED_VALUE",
     }),
   );
@@ -255,7 +279,10 @@ const createSheetWriter = async (config) => {
   if (
     rows.length &&
     (rows[0].length !== HEADERS.length ||
-      !HEADERS.every((value, i) => rows[0][i] === value))
+      !HEADERS.every((value, i) => {
+        if (i === 0) return rows[0][i] === value || rows[0][i] === "Ngày báo cáo";
+        return rows[0][i] === value;
+      }))
   ) {
     throw error(
       "Header Google Sheet không khớp báo cáo CMS; hãy dùng tab riêng, không ghi đè tab dữ liệu khác.",
@@ -273,11 +300,18 @@ const createSheetWriter = async (config) => {
       );
     rowByDate.set(date, index + 1);
   }
-  if (!rows.length) {
+  const isOldHeader =
+    rows.length > 0 &&
+    rows[0].length === 19 &&
+    (rows[0][0] === "Ngày lấy" || rows[0][0] === "Ngày báo cáo") &&
+    rows[0][1] === "Thời điểm lấy" &&
+    rows[0][18] === "Cảnh báo dữ liệu";
+
+  if (!rows.length || isOldHeader) {
     await sheetCall(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
-        range: `${tab}!A1:S1`,
+        range: `${tab}!A1:X1`,
         valueInputOption: "RAW",
         requestBody: { values: [HEADERS] },
       }),
@@ -317,7 +351,7 @@ const createSheetWriter = async (config) => {
       await sheetCall(() =>
         sheets.spreadsheets.values.update({
           spreadsheetId: config.spreadsheetId,
-          range: `${tab}!A${rowNumber}:S${rowNumber}`,
+          range: `${tab}!A${rowNumber}:X${rowNumber}`,
           valueInputOption: "RAW",
           requestBody: { values: [row] },
         }),
