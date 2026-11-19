@@ -5,6 +5,7 @@ import { cmsReportService } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 
 const STATUS_LABELS = { RUNNING: 'Đang chạy', SUCCESS: 'Thành công', PARTIAL: 'Một phần bị lỗi', FAILED: 'Thất bại' };
+const TARGET_LABELS = { summary: 'Tổng hợp', raw: 'Raw' };
 const formatTime = value => value ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
 
 const AdminCmsReportsPage = () => {
@@ -101,6 +102,14 @@ const AdminCmsReportsPage = () => {
             <p>Trụ mới: ngày tạo cách ngày báo cáo không quá 1 tháng lịch. Phiên FINISHED, gồm phiên 0 đồng; thời lượng và doanh thu tính theo ngày bắt đầu.</p>
             <p>Phiên FINISHED thiếu thời gian kết thúc bị loại khỏi tất cả chỉ số phiên sạc; số phiên bị loại được ghi tại cột Cảnh báo dữ liệu.</p>
             <p>Online/offline là trạng thái lúc lấy dữ liệu, không phải lịch sử. Ngày đã có trên Sheet sẽ được cập nhật, không thêm dòng trùng.</p>
+            {data?.raw && <p>
+              Tab <strong>{data.raw.tabName}</strong>: {data.raw.enabled
+                ? 'đồng bộ từng phiên không phải phiên test theo mã phiên; chạy lại sẽ cập nhật dòng cũ.'
+                : 'chưa bật đồng bộ raw.'}
+            </p>}
+            {data?.raw?.enabled && <p>
+              Không xuất mã khách hàng và biển số. Các cột chưa xác minh nguồn CMS: {data.raw.unmapped.join(', ')}.
+            </p>}
             <p>Tiến độ và kết quả dưới đây chỉ giữ trong bộ nhớ của một backend. Khởi động lại sẽ mất tiến độ; có thể chạy lại ngày cần lấy.</p>
           </div>
         </div>
@@ -115,10 +124,26 @@ const AdminCmsReportsPage = () => {
         <p className="text-sm text-base-content/60">Bắt đầu: {formatTime(run.startedAt)} · Kết thúc: {formatTime(run.finishedAt)}</p>
         {run.status === 'RUNNING' && <progress className="progress progress-primary w-full" value={run.processed} max={run.totalDays} />}
         {run.errors?.length > 0 && <div role="alert" className="alert alert-error block">
-          {run.errors.map((item, index) => <p key={`${item.date || 'run'}-${index}`}>{item.date ? `${item.date}: ` : ''}{item.message}</p>)}
+          {run.errors.map((item, index) => <p key={`${item.date || 'run'}-${index}`}>
+            {data?.raw?.enabled && item.target ? `[${TARGET_LABELS[item.target]}] ` : ''}
+            {item.date ? `${item.date}: ` : ''}{item.message}
+          </p>)}
           <p>{run.errors.some(item => item.date)
-            ? 'Ngày bị lỗi chưa được xác nhận đồng bộ. Chọn lại ngày/khoảng ngày để chạy lại.'
-            : 'Lượt này chưa ghi báo cáo. Hãy xử lý lỗi trên trước khi chạy lại.'}</p>
+            ? data?.raw?.enabled
+              ? 'Phần bị lỗi chưa được xác nhận đồng bộ. Chọn lại ngày/khoảng ngày để chạy lại.'
+              : 'Ngày bị lỗi chưa được xác nhận đồng bộ. Chọn lại ngày/khoảng ngày để chạy lại.'
+            : run.status === 'PARTIAL'
+              ? 'Phần còn lại đã được ghi. Hãy xử lý lỗi trên trước khi chạy lại.'
+              : 'Lượt này chưa ghi báo cáo. Hãy xử lý lỗi trên trước khi chạy lại.'}</p>
+        </div>}
+        {run.rawResults?.length > 0 && <div className="overflow-x-auto rounded-box border border-base-200">
+          <table className="table table-sm">
+            <caption className="text-left p-2">Đã đồng bộ {data.raw.tabName}</caption>
+            <thead><tr><th>Ngày sạc</th><th>Số phiên đã đồng bộ</th></tr></thead>
+            <tbody>{run.rawResults.map(({ date, count }) => <tr key={date}>
+              <td>{date}</td><td>{count.toLocaleString('vi-VN')}</td>
+            </tr>)}</tbody>
+          </table>
         </div>}
         {run.rows?.length > 0 && <div className="overflow-x-auto rounded-box border border-base-200">
           <table className="table table-sm">

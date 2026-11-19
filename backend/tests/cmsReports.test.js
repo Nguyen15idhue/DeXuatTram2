@@ -260,7 +260,7 @@ const fakeSheets = (t, existing, options = {}) => {
   const reads = [];
   const properties = {
     sheetId: 7,
-    title: "CMS's report",
+    title: options.title || "CMS's report",
     gridProperties: { rowCount: options.rowCount || 1000, columnCount: options.columnCount || 26 },
   };
   t.mock.method(
@@ -278,6 +278,7 @@ const fakeSheets = (t, existing, options = {}) => {
         return { data: { replies: [{ addSheet: { properties } }] } };
       },
       values: {
+        batchUpdate: async (request) => { writes.push(request); return {}; },
         get: async (request) => {
           reads.push(request);
           return { data: { values: existing } };
@@ -415,11 +416,139 @@ for (const { label, rows, message } of [
   });
 }
 
+test("raw rows use Vietnam start date, retain charging and zero-cost sessions, and omit unverified and personal values", () => {
+  const rows = reports.buildRawRows("2026-11-16", [
+    { id: "fixture-1", startTime: "2026-11-16T16:30:00Z", endTime: "2026-11-16T18:30:00Z", status: "FINISHED", totalCost: 0 },
+    { id: "fixture-2", startTime: "2026-11-15T17:00:00Z", status: "CHARGING", plate: "not-exported", customer: "not-exported", totalCost: 99 },
+    { id: "fixture-next", startTime: "2026-11-16T17:00:00Z", status: "CHARGING" },
+  ]);
+  assert.deepEqual(rows, [
+    ["fixture-1", "2026-11-16", "11/2026", "16/11/2026 23:30", "17/11/2026 01:30", 2, "", "", "", "", "", "", "", "", "Đã kết thúc"],
+    ["fixture-2", "2026-11-16", "11/2026", "16/11/2026 00:00", "", "", "", "", "", "", "", "", "", "", "Đang sạc"],
+  ]);
+});
+
+test("raw writer upserts by ID and preserves existing unverified columns", async (t) => {
+  const { config, writes, reads, requests } = fakeSheets(t, [reports.RAW_HEADERS, ["fixture-old"]], {
+    title: "Phien_sac_raw", rowCount: 2,
+  });
+  const writer = await reports.createRawSheetWriter(config);
+  const transactions = ["fixture-old", "fixture-new"].map(id => ({
+    id, startTime: "2026-11-16T11:00:00Z", status: "CHARGING",
+  }));
+  const rows = reports.buildRawRows("2026-11-16", transactions);
+  await writer.write(rows);
+  await writer.write(rows);
+  assert.equal(reads[0].range, "'Phien_sac_raw'!A:O");
+  assert.equal(requests[0].requestBody.requests[0].updateSheetProperties.properties.gridProperties.rowCount, 3);
+  assert.deepEqual(writes.map(item => item.requestBody.data.map(entry => entry.range)), [
+    ["'Phien_sac_raw'!A2:F2", "'Phien_sac_raw'!O2", "'Phien_sac_raw'!A3:O3"],
+    ["'Phien_sac_raw'!A2:F2", "'Phien_sac_raw'!O2", "'Phien_sac_raw'!A3:F3", "'Phien_sac_raw'!O3"],
+  ]);
+  assert.deepEqual(writes[0].requestBody.data[2].values, [rows[1]]);
+});
+
+test("raw writer rejects duplicate and incompatible tabs without writing", async (t) => {
+  const existing = [reports.RAW_HEADERS, ["fixture-dup"], ["fixture-dup"]];
+  const { config, writes } = fakeSheets(t, existing, { title: "Phien_sac_raw" });
+  await assert.rejects(reports.createRawSheetWriter(config), /trùng tại ô A2 và A3/);
+  existing[0] = ["Header khác"];
+  await assert.rejects(reports.createRawSheetWriter(config), /Header Phien_sac_raw/);
+  assert.equal(writes.length, 0);
+});
+
+test("raw sync writes paginated CMS session API records into the configured spreadsheet", async (t) => {
+  setEnv(t, {
+    CMS_API_KEY: "fixture-key", CMS_GOOGLE_SHEETS_SPREADSHEET_ID: "fixture-sheet",
+    GOOGLE_APPLICATION_CREDENTIALS: "fixture.json", CMS_RAW_SHEET_ENABLED: "true",
+  });
+  t.mock.method(fs, "existsSync", () => true);
+  const { writes } = fakeSheets(t, [], { title: "Phien_sac_raw", missing: true });
+  t.mock.method(reports, "createSheetWriter", async () => ({ write: async () => {} }));
+  const pages = [];
+  t.mock.method(global, "fetch", async (url) => {
+    const body = { result: "success", total: 0, page: 0, limit: 100 };
+    if (url.pathname.endsWith("/profile"))
+      return Response.json({ ...body, profile: { expirationDate: "2099-01-01T00:00:00Z" } });
+    if (url.pathname.endsWith("/admin/cp")) return Response.json({ ...body, chargePoints: [] });
+    if (url.pathname.endsWith("/admin/driver")) return Response.json({ ...body, drivers: [] });
+    assert.equal(url.pathname, "/api/v1/admin/ct");
+    const page = Number(url.searchParams.get("page"));
+    if (!url.searchParams.has("dateFilter")) {
+      assert.equal(url.searchParams.get("limit"), "100");
+      assert.equal(url.searchParams.get("from"), url.searchParams.get("to"));
+      return Response.json({ ...body, chargeTransactions: [] });
+    }
+    pages.push(page);
+    assert.equal(url.searchParams.get("dateFilter"), "30_NGAY_GAN_NHAT");
+    assert.equal(url.searchParams.get("limit"), "10");
+    assert.equal(url.searchParams.get("isTestTransaction"), "0");
+    assert.equal(url.searchParams.get("exclusionZeroCost"), "false");
+    assert.equal(url.searchParams.get("from"), "2026-11-16");
+    assert.equal(url.searchParams.get("to"), "2026-11-17");
+    return Response.json({ ...body, page, total: 3, limit: 1, chargeTransactions: [{
+      transactionId: 1234 + page, startTime: `2026-11-${16 + page}T00:00:00Z`,
+      status: "CHARGING", totalCost: 0, driver: { licensePlate: "private-fixture" },
+    }] });
+  });
+  const run = reports.startRun({ from: "2026-11-16", to: "2026-11-17" });
+  for (let i = 0; i < 50 && run.status === "RUNNING"; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.status, "SUCCESS");
+  assert.deepEqual(pages, [0, 1, 2]);
+  assert.deepEqual(run.rawResults, [{ date: "2026-11-16", count: 1 }, { date: "2026-11-17", count: 1 }]);
+  assert.equal(writes[0].range, "'Phien_sac_raw'!A1:O1");
+  assert.deepEqual(writes[0].requestBody.values, [reports.RAW_HEADERS]);
+  assert.equal(writes[1].spreadsheetId, "fixture-sheet");
+  assert.deepEqual(writes.slice(1).flatMap(write => write.requestBody.data.map(({ range, values }) => [range, values[0][0], values[0][14]])), [
+    ["'Phien_sac_raw'!A2:O2", "1234", "Đang sạc"],
+    ["'Phien_sac_raw'!A3:O3", "1235", "Đang sạc"],
+  ]);
+  assert.doesNotMatch(JSON.stringify(writes), /private-fixture/);
+});
+
+test("raw init and per-day errors do not prevent summary writes, and status contains counts only", async (t) => {
+  setEnv(t, {
+    CMS_API_KEY: "fixture-key", CMS_GOOGLE_SHEETS_SPREADSHEET_ID: "fixture-sheet",
+    GOOGLE_APPLICATION_CREDENTIALS: "fixture.json", CMS_RAW_SHEET_ENABLED: "true",
+  });
+  t.mock.method(fs, "existsSync", () => true);
+  const input = fixture();
+  const tx = { ...input.transactions[0], id: "fixture-private-row" };
+  t.mock.method(cmsApi, "createClient", () => ({
+    renewKey: async () => {}, getPoints: async () => input.points,
+    getCustomers: async () => input.customers, getTransactions: async () => [tx],
+    getRawTransactions: async () => [tx],
+  }));
+  t.mock.method(reports, "createSheetWriter", async () => ({ write: async () => {} }));
+  let initError = true;
+  t.mock.method(reports, "createRawSheetWriter", async () => {
+    if (initError) throw new Error("Header lỗi");
+    return { write: async () => {} };
+  });
+  const runDay = async () => {
+    const run = reports.startRun({ from: "2026-11-16", to: "2026-11-16" });
+    for (let i = 0; i < 50 && run.status === "RUNNING"; i++)
+      await new Promise(resolve => setImmediate(resolve));
+    return run;
+  };
+  const partial = await runDay();
+  assert.equal(partial.status, "PARTIAL");
+  assert.equal(partial.rows.length, 1);
+  assert.equal(partial.errors[0].target, "raw");
+  initError = false;
+  const retry = await runDay();
+  assert.equal(retry.status, "SUCCESS");
+  assert.deepEqual(retry.rawResults, [{ date: "2026-11-16", count: 1 }]);
+  assert.doesNotMatch(JSON.stringify(reports.getStatus()), /fixture-private-row|fixture-key/);
+});
+
 test("background run rejects concurrency, surfaces per-day errors and allows explicit rerun without DB", async (t) => {
   setEnv(t, {
     CMS_API_KEY: "fixture-key",
     CMS_GOOGLE_SHEETS_SPREADSHEET_ID: "fixture-sheet",
     CMS_GOOGLE_SHEETS_TAB_NAME: "fixture",
+    CMS_RAW_SHEET_ENABLED: "false",
     GOOGLE_APPLICATION_CREDENTIALS: "fixture.json",
   });
   t.mock.method(fs, "existsSync", () => true);

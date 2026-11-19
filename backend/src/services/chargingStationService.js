@@ -140,7 +140,7 @@ const CHARGING_STATION_STAGE_TAB_FILTERS = {
   }
 };
 
-const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
+const selectChargingStations = (extraColumns = '', extraJoins = '') => `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     cs.cms_station_code,
     DATE_FORMAT(cs.on_date, '%Y-%m-%d') AS on_date,
     cs.acceptance_file_id, cs.acceptance_user_id,
@@ -180,11 +180,12 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
     acc.original_name AS acceptance_file_name,
     contract.original_name AS contract_file_name,
-    contract.mime_type AS contract_file_mime_type
+    contract.mime_type AS contract_file_mime_type${extraColumns}
   FROM charging_stations cs
   JOIN station_proposals p ON p.id = cs.proposal_id
   LEFT JOIN files acc ON acc.id = cs.acceptance_file_id
-  LEFT JOIN files contract ON contract.id = cs.contract_file_id`;
+  LEFT JOIN files contract ON contract.id = cs.contract_file_id${extraJoins}`;
+const CS_SELECT = selectChargingStations();
 
 const parseJson = (value) => {
   if (!value) return {};
@@ -516,18 +517,7 @@ const advanceProposalToDeploying = async (proposalId, ctx = {}, executor = null)
   } finally { if (!executor) connection.release(); }
 };
 
-const listChargingStations = async ({
-  stage = '',
-  tab = 'need',
-  search = '',
-  page = 1,
-  limit = 20,
-  user = null
-} = {}) => {
-  const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
-  const offset = (safePage - 1) * safeLimit;
-
+const buildStationListQuery = async ({ stage, tab, search, user }) => {
   const where = [];
   const params = [];
   const scope = await buildProposalScope(user);
@@ -543,17 +533,26 @@ const listChargingStations = async ({
   }
 
   const whereClause = `WHERE ${where.join(' AND ')}`;
+  const orderBy = (!stage || stage === 'thong-tin-chung') && tab === 'all'
+    ? "CASE WHEN cs.status = 'CANCELLED' THEN 1 ELSE 0 END ASC, cs.updated_at DESC, cs.id DESC"
+    : 'cs.updated_at DESC, cs.id DESC';
+  return { whereClause, params, orderBy };
+};
+
+const listChargingStations = async ({
+  stage = '', tab = 'need', search = '', page = 1, limit = 20, user = null
+} = {}) => {
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
+  const offset = (safePage - 1) * safeLimit;
+  const { whereClause, params, orderBy } = await buildStationListQuery({ stage, tab, search, user });
   const [countRows] = await pool.query(
     `SELECT COUNT(*) AS total FROM charging_stations cs
      JOIN station_proposals p ON p.id = cs.proposal_id
      ${whereClause}`,
     params
   );
-  const total = Number(countRows[0] ? countRows[0].total : 0);
-  const orderBy = (!stage || stage === 'thong-tin-chung') && tab === 'all'
-    ? "CASE WHEN cs.status = 'CANCELLED' THEN 1 ELSE 0 END ASC, cs.updated_at DESC, cs.id DESC"
-    : 'cs.updated_at DESC, cs.id DESC';
-
+  const total = Number(countRows[0]?.total || 0);
   const [rows] = await pool.query(
     `${CS_SELECT} ${whereClause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
@@ -2341,6 +2340,45 @@ exports.INSTALLATION_TABS = Object.keys(CHARGING_STATION_STAGE_TAB_FILTERS['lap-
 exports.STATUS_LABELS = STATUS_LABELS;
 exports.SUB_STATUS_LABELS = SUB_STATUS_LABELS;
 exports.listChargingStations = listChargingStations;
+exports.listChargingStationsForExport = async ({ stage, tab, search, user }) => {
+  if (!user) throw err('Chưa xác thực', 401);
+  const { whereClause, params, orderBy } = await buildStationListQuery({ stage, tab, search, user });
+  const portionExists = (condition) => `EXISTS(
+    SELECT 1 FROM charging_station_deployments d
+    WHERE d.charging_station_id=cs.id AND d.returned_at IS NULL AND ${condition}
+  )`;
+  const shipmentExists = (condition) => `EXISTS(
+    SELECT 1 FROM warehouse_exports we
+    WHERE we.charging_station_id=cs.id AND we.destination_type='STATION' AND ${condition}
+  )`;
+  const select = selectChargingStations(`,
+    p.custom_data AS proposal_data, p.latitude, p.longitude,
+    UNIX_TIMESTAMP(p.created_at) AS proposal_created_epoch,
+    creator.full_name AS proposer_name, assignee.full_name AS assignee_name, director.full_name AS director_name,
+    ${stationWork.stageFilters['lap-tru'].completed} AS installation_complete,
+    ${stationWork.stageFilters['nghiem-thu'].completed} AS acceptance_complete,
+    ${stationWork.allOperating} AS on_complete,
+    ${portionExists("d.installation_status <> 'NOT'")} AS installation_started,
+    ${portionExists("d.acceptance_status = 'PASSED'")} AS acceptance_partial,
+    ${portionExists("d.acceptance_status = 'FAILED'")} AS acceptance_failed,
+    ${portionExists('d.on_quantity > 0')} AS on_partial,
+    ${shipmentExists("we.transport_status = 'RETURN_PENDING'")} AS shipment_return_pending,
+    ${shipmentExists("we.transport_status IN ('PENDING','SHIPPING')")} AS shipment_in_transit,
+    ${shipmentExists("we.transport_status = 'FAILED'")} AS shipment_failed,
+    ${shipmentExists("we.transport_status = 'RETURNED'")} AND NOT ${shipmentExists("we.transport_status <> 'RETURNED' OR we.transport_status IS NULL")} AS shipment_returned,
+    EXISTS(SELECT 1 FROM charging_station_commitments c
+           JOIN warehouse_export_items i ON i.commitment_id=c.id
+           WHERE c.charging_station_id=cs.id AND i.received_quantity>0) AS delivery_partial,
+    EXISTS(SELECT 1 FROM charging_station_commitments c
+           JOIN warehouse_export_items i ON i.commitment_id=c.id
+           WHERE c.charging_station_id=cs.id AND i.quantity>i.returned_quantity) AS delivery_exported`,
+  `
+  LEFT JOIN users creator ON creator.id = p.user_id
+  LEFT JOIN users assignee ON assignee.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
+  LEFT JOIN users director ON director.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_giao_phu_trach.id')) AS UNSIGNED)`);
+  const [rows] = await pool.query(`${select} ${whereClause} ORDER BY ${orderBy}`, params);
+  return rows.map(withReadiness);
+};
 exports.getChargingStationTaskCounts = getChargingStationTaskCounts;
 exports.getChargingStationDetail = getChargingStationDetail;
 exports.getChargingStationActivity = getChargingStationActivity;

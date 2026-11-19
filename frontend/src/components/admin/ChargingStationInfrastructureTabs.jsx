@@ -8,6 +8,7 @@ import { canOperateStation } from '../../utils/chargingFulfillment';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import ChargingStationStepHistory from './ChargingStationStepHistory';
 import ChargingStationTable from './ChargingStationTable';
+import ChargingStationExportButton from './ChargingStationExportButton';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
@@ -229,6 +230,8 @@ const ChargingStationInfrastructureTabs = () => {
         <span className="whitespace-nowrap text-sm text-base-content/60">
           Tổng: <strong className="text-base-content">{pagination.total}</strong> bản ghi
         </span>
+        <ChargingStationExportButton stage="xay-dung-ha-tang" tab={tab} search={debouncedSearch}
+          disabled={debouncedSearch !== search} token={token} />
       </FilterBar>
 
       <ChargingStationTable

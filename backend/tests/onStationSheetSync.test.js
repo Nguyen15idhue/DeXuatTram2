@@ -243,7 +243,7 @@ test('load query joins both creator name and assigned account for personnel sele
   try { await service.loadProposals([1]); } finally { pool.query = originalQuery; }
 });
 
-test('missing assignee does not fail or block either proposal in the batch', async () => {
+test('worker exports a claimed job without an assignee but skips a job cancelled before claiming', async () => {
   const { google } = require('googleapis');
   const original = {
     query: pool.query, connection: pool.getConnection,
@@ -267,13 +267,15 @@ test('missing assignee does not fail or block either proposal in the batch', asy
         return [[{ id: 1, proposal_code: 'DX1', cms_station_code: 'EMS001' }, { id: 2, proposal_code: 'DX2', cms_station_code: 'EMS002' }]];
       }
       if (sql.includes('UPDATE')) updates.push({ sql, params });
+      if (sql.includes("SET status = 'PROCESSING'")) return [{ affectedRows: params[1] === 2 ? 1 : 0 }];
       return [[]];
     };
     pool.getConnection = async () => ({ query: pool.query, release: () => {} });
-    assert.deepEqual(await service.processBatch(), { processed: 2, failed: 0 });
-    assert.equal(sheet.calls[0].requestBody.data[1].values[0][1], 'EMS001');
+    assert.deepEqual(await service.processBatch(), { processed: 1, failed: 0 });
+    assert.equal(sheet.calls[0].requestBody.data.length, 2);
+    assert.equal(sheet.calls[0].requestBody.data[1].values[0][1], 'EMS002');
     assert.equal(updates.some(update => update.sql.includes("status = 'FAILED'")), false);
-    assert.ok(updates.some(update => update.sql.includes("'DONE', 'PENDING'") && update.params[3] === 1));
+    assert.deepEqual(updates.filter(update => update.sql.includes("'DONE', 'PENDING'")).map(update => update.params[3]), [2]);
   } finally {
     pool.query = original.query;
     pool.getConnection = original.connection;
@@ -284,6 +286,16 @@ test('missing assignee does not fail or block either proposal in the batch', asy
       else process.env[key] = oldEnv[index];
     });
   }
+});
+
+test('cancellation targets pending and failed jobs only and leaves their error history intact', async (t) => {
+  t.mock.method(pool, 'query', async (sql) => {
+    assert.match(sql, /SET status = 'CANCELLED', next_attempt_at = NULL/);
+    assert.match(sql, /WHERE status IN \('PENDING','FAILED'\)/);
+    assert.doesNotMatch(sql, /last_error\s*=|attempt_count\s*=/);
+    return [{ affectedRows: 65 }];
+  });
+  assert.deepEqual(await service.cancelQueuedJobs(), { cancelled: 65 });
 });
 
 test('R locates rows without CMS, clears stale E/F/S/T and preserves other missing cells', async (t) => {

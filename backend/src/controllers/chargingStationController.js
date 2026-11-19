@@ -34,6 +34,21 @@ exports.taskCounts = async (req, res) => {
   }
 };
 
+exports.exportExcel = async (req, res) => {
+  try {
+    const { stage, tab, search } = req.query;
+    const { workbook, filename } = await require('../services/chargingStationExportService')
+      .buildExport({ stage, tab, search, user: req.user });
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.set('Cache-Control', 'no-store');
+    res.attachment(filename).send(Buffer.from(buffer));
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Charging station export error:', error);
+    res.status(500).json({ success: false, message: 'Không thể xuất Excel ON trạm' });
+  }
+};
+
 exports.detail = async (req, res) => {
   try {
     const data = await chargingStationService.getChargingStationDetail(req.params.id, req.user);

@@ -33,3 +33,19 @@ exports.dailySync = async (req, res) => {
     sendError(res, error);
   }
 };
+
+exports.cancel = async (req, res) => {
+  try {
+    const data = await onStationSheetSyncService.cancelQueuedJobs();
+    res.json({
+      success: true,
+      data,
+      message: data.cancelled
+        ? `Đã hủy ${data.cancelled} mục đồng bộ`
+        : 'Không còn mục đồng bộ đang chờ hoặc thất bại để hủy'
+    });
+  } catch (error) {
+    console.error('[OnStationSheetSync] Cancel failed:', error);
+    res.status(500).json({ success: false, message: 'Không thể hủy các mục đồng bộ đang chờ' });
+  }
+};

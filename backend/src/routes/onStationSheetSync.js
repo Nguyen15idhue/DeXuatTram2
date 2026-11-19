@@ -38,4 +38,23 @@ router.get('/status', requireAuth, requireAdmin, controller.status);
  */
 router.post('/daily', requireAuth, requireAdmin, controller.dailySync);
 
+/**
+ * @swagger
+ * /api/admin/on-station-sheet-sync/cancel:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Hủy các mục đồng bộ ON trạm đang chờ hoặc thất bại
+ *     description: Không ảnh hưởng mục đang xử lý, đề xuất hoặc dữ liệu Google Sheet. Không cần cấu hình Google Sheet.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Trả số mục đã hủy trong data.cancelled
+ *       401:
+ *         description: Chưa đăng nhập
+ *       403:
+ *         description: Chỉ ADMIN và SUPER_ADMIN
+ */
+router.post('/cancel', requireAuth, requireAdmin, controller.cancel);
+
 module.exports = router;

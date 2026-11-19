@@ -459,7 +459,7 @@ const processBatch = async (limit = BATCH_SIZE) => {
           SET status = 'PENDING', attempt_count = 0, next_attempt_at = NOW(), updated_at = NOW()
         WHERE status = 'PROCESSING' AND updated_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)`
     );
-    const [jobs] = await connection.query(
+    const [candidates] = await connection.query(
       `SELECT proposal_id, operation, requested_version, attempt_count, manual_run_id
          FROM on_station_sheet_sync_queue
         WHERE status IN ('PENDING','FAILED') AND attempt_count < ?
@@ -468,17 +468,18 @@ const processBatch = async (limit = BATCH_SIZE) => {
         LIMIT ?`,
       [MAX_ATTEMPTS, limit]
     );
-    if (!jobs.length) return { processed: 0 };
-    selectedJobs = jobs;
-    for (const job of jobs) {
+    for (const job of candidates) {
       job.attempt_number = Number(job.attempt_count || 0) + 1;
-      await pool.query(
+      const [claimed] = await connection.query(
         `UPDATE on_station_sheet_sync_queue
             SET status = 'PROCESSING', attempt_count = ?, updated_at = NOW()
           WHERE proposal_id = ? AND requested_version = ? AND status IN ('PENDING','FAILED')`,
         [job.attempt_number, job.proposal_id, job.requested_version]
       );
+      if (claimed.affectedRows === 1) selectedJobs.push(job);
     }
+    const jobs = selectedJobs;
+    if (!jobs.length) return { processed: 0 };
     const upsertIds = jobs.filter((j) => j.operation === 'UPSERT').map((j) => Number(j.proposal_id));
     const deleteIds = jobs.filter((j) => j.operation === 'DELETE').map((j) => Number(j.proposal_id));
     const proposalRows = await loadProposals(upsertIds);
@@ -526,7 +527,7 @@ const processBatch = async (limit = BATCH_SIZE) => {
                 attempt_count = IF(requested_version = ?, ?, 0),
                 next_attempt_at = IF(requested_version = ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), NOW()),
                 last_error = ?, updated_at = NOW()
-          WHERE proposal_id = ?`,
+        WHERE proposal_id = ? AND status = 'PROCESSING'`,
         [job.requested_version, job.requested_version, job.attempt_number || 1, job.requested_version,
           String(error.message || 'sync failed').slice(0, 500), job.proposal_id]
       ).catch(queueError => console.error('[OnStationSheetSync] Failed to record batch error:', queueError));
@@ -583,6 +584,15 @@ const enqueueActiveProposal = async (proposalId) => {
   await pool.query(enqueueSql, [proposalId]);
 };
 
+const cancelQueuedJobs = async () => {
+  const [result] = await pool.query(
+    `UPDATE on_station_sheet_sync_queue
+        SET status = 'CANCELLED', next_attempt_at = NULL, updated_at = NOW()
+      WHERE status IN ('PENDING','FAILED')`
+  );
+  return { cancelled: result.affectedRows };
+};
+
 const getStatus = async () => {
   const config = getConfig();
   const [queueRows] = await pool.query(
@@ -608,6 +618,7 @@ const getStatus = async () => {
       processing: queue.PROCESSING || 0,
       done: queue.DONE || 0,
       failed: queue.FAILED || 0,
+      cancelled: queue.CANCELLED || 0,
       total: Object.values(queue).reduce((sum, n) => sum + n, 0)
     },
     lastSyncedAt: lastRows[0]?.last_synced_at || null
@@ -619,6 +630,7 @@ exports.processBatch = processBatch;
 exports.startDailySync = startDailySync;
 exports.enqueueActiveProposal = enqueueActiveProposal;
 exports.getStatus = getStatus;
+exports.cancelQueuedJobs = cancelQueuedJobs;
 exports.HEADER_ROW = HEADER_ROW;
 exports.buildRow = buildRow;
 exports.loadProposals = loadProposals;

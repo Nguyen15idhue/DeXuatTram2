@@ -5,6 +5,7 @@ import { chargingStationService } from "../../services/api";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { Badge, Button, Dialog, FilterBar, Input, PageHeader, Pagination } from "../ui";
 import ChargingStationTable from "./ChargingStationTable";
+import ChargingStationExportButton from "./ChargingStationExportButton";
 import ChargingStationFulfillment from "./ChargingStationFulfillment";
 import ChargingStationGroupedProgress from "./ChargingStationGroupedProgress";
 import ChargingStationOnModal from "./ChargingStationOnModal";
@@ -313,6 +314,8 @@ const ChargingStationWorklist = ({ stage }) => {
           onChange={(event) => setSearch(event.target.value)}
           className="!mb-0 flex-1"
         />
+        {stage !== "on-tram" && <ChargingStationExportButton stage={stage} tab={tab} search={query}
+          disabled={query !== search} token={token} />}
       </FilterBar>
       <ChargingStationTable
         loading={loading}

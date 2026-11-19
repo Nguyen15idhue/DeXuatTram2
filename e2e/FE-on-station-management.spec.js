@@ -13,6 +13,57 @@ const portion = { id: 11, export_id: 8, export_item_id: 9, quantity: 1, pole_nam
 const input = (root, label) => root.locator('.form-control').filter({ hasText: label }).locator('input');
 const select = (root, label) => root.locator('.form-control').filter({ hasText: label }).locator('select');
 
+for (const stage of ['khoi-tao-hop-dong', 'xay-dung-ha-tang', 'giao-tru', 'lap-tru', 'nghiem-thu']) {
+  test(`exports ON Excel with active filters on ${stage}`, async ({ page }) => {
+    await setup(page, 'CTV');
+    let queries;
+    await page.route(/\/api\/admin\/charging-stations\/export\?/, async route => {
+      queries = Object.fromEntries(new URL(route.request().url()).searchParams);
+      expect(route.request().headers().authorization).toBe('Bearer ui-on-management');
+      await route.fulfill({
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers: { 'content-disposition': 'attachment; filename="on-fixture.xlsx"' },
+        body: 'mock download'
+      });
+    });
+    await page.goto(`/admin/on-tram/${stage}?tab=completed`);
+    await page.getByPlaceholder(/Tìm mã trạm/).fill('Hà Nội');
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Xuất Excel', exact: true }).click();
+    expect((await download).suggestedFilename()).toBe('on-fixture.xlsx');
+    expect(queries).toEqual({ stage, tab: 'completed', search: 'Hà Nội' });
+  });
+}
+
+test('admin can cancel queued ON Sheet jobs with confirmation even when Sheet is disabled', async ({ page }) => {
+  await setup(page, 'ADMIN');
+  let requests = 0;
+  const queue = { pending: 0, processing: 0, failed: 65, cancelled: 0, done: 5 };
+  await page.route('**/api/admin/on-station-sheet-sync/**', async route => {
+    if (route.request().url().endsWith('/cancel')) {
+      expect(route.request().method()).toBe('POST');
+      requests++;
+      queue.failed = 0;
+      queue.cancelled = 65;
+      return route.fulfill({ json: { success: true, data: { cancelled: 65 }, message: 'Đã hủy 65 mục đồng bộ' } });
+    }
+    return route.fulfill({ json: { success: true, data: { configured: false, queue } } });
+  });
+  await page.goto('/admin/on-tram/thong-tin-chung');
+  await expect(page.getByRole('button', { name: 'Đồng bộ Sheet trạm ON', exact: true })).toBeDisabled();
+  const cancel = page.getByRole('button', { name: 'Hủy đồng bộ đang chờ', exact: true });
+  await cancel.click();
+  await expect(page.getByText('Hiện có 65 mục đang chờ hoặc thất bại.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Quay lại', exact: true }).click();
+  expect(requests).toBe(0);
+  await cancel.click();
+  await page.getByRole('button', { name: 'Xác nhận hủy đồng bộ', exact: true }).click();
+  await expect(page.getByText('Đã hủy đồng bộ: 65', { exact: true })).toBeVisible();
+  await expect(page.getByText('Có 65 mục đồng bộ chưa thành công.', { exact: true })).toHaveCount(0);
+  await expect(cancel).toHaveCount(0);
+  expect(requests).toBe(1);
+});
+
 async function setup(page, role = 'SUPER_ADMIN') {
   const errors = [];
   const mutations = [];
