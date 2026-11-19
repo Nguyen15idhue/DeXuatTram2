@@ -497,6 +497,9 @@ export const onStationSheetSyncService = {
   },
   syncDaily(token) {
     return api.postWithAuth('/admin/on-station-sheet-sync/daily', {}, token);
+  },
+  cancelQueued(token) {
+    return api.postWithAuth('/admin/on-station-sheet-sync/cancel', {}, token);
   }
 };
 
@@ -752,6 +755,17 @@ export const shippingCarrierService = {
 };
 
 export const chargingStationService = {
+  async exportExcel({ stage, tab, search }, token) {
+    const params = new URLSearchParams({ stage, tab, search });
+    const response = await api.downloadWithAuth(`/admin/charging-stations/export?${params}`, token);
+    if (!response.headers.get('content-type')?.includes('spreadsheetml')) {
+      throw new Error('Máy chủ trả về nội dung không phải file Excel');
+    }
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const name = parseDispositionFilename(response.headers.get('content-disposition')) || `on-tram_${stage}_${tab}.xlsx`;
+    triggerDownload(objectUrl, name);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+  },
   getActivity(id, step, page, token) {
     return api.getWithAuth(`/admin/charging-stations/${id}/activity?${new URLSearchParams({ step, page, limit: 20 })}`, token);
   },

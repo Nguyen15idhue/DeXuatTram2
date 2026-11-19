@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import useDataListMap from "../../hooks/useDataListMap";
 import useDefaultViewId from "../../hooks/useDefaultViewId";
+import useFieldOptions from "../../hooks/useFieldOptions";
 import { collectTableDatalistIds } from "../../utils/tableColumnSource";
 import {
   parseGoogleMapsLink,
@@ -117,6 +118,11 @@ const LeadDetailPopup = ({
   const [record, setRecord] = useState(null);
   const [requestedMode, setMode] = useState(modeProp);
   const mode = canEditLead(user, record) ? requestedMode : "view";
+  const [draftFields, setDraftFields] = useState({});
+  const { getSelectOptions } = useFieldOptions("leads", ["customer_classification"]);
+  const classification = (mode === "edit" ? draftFields.customer_classification : undefined)
+    ?? record?.customer_classification;
+  const classificationOptions = getSelectOptions("customer_classification");
   const [viewFields, setViewFields] = useState([]);
   const [allFields, setAllFields] = useState([]);
   const [formConfig, setFormConfig] = useState(null);
@@ -147,6 +153,10 @@ const LeadDetailPopup = ({
   useEffect(() => {
     setMode(modeProp);
   }, [modeProp]);
+
+  useEffect(() => {
+    if (mode !== "edit") setDraftFields({});
+  }, [mode]);
 
   useEffect(() => {
     if (!token) return;
@@ -318,6 +328,21 @@ const LeadDetailPopup = ({
     return map;
   }, [formConfig, layout]);
 
+  const handleDraftChange = ({ customer_classification, sales_outcome }) => {
+    if (customer_classification === undefined && sales_outcome === undefined) return;
+    setDraftFields((previous) => ({
+      ...previous,
+      ...(customer_classification !== undefined && { customer_classification }),
+      ...(sales_outcome !== undefined && { sales_outcome }),
+    }));
+  };
+
+  const mayCreateProposal = (lead) => !isLeadPortal(user) && canConsultLead(user, lead);
+  const canCreateProposalFrom = (lead) =>
+    !!lead && lead.consultation_status === "SUCCESS" && lead.sales_outcome === "SUCCESS" && mayCreateProposal(lead);
+  const saveAndCreate = !loading && !error && !!record && mayCreateProposal(record)
+    && (draftFields.sales_outcome ?? record.sales_outcome) === "SUCCESS";
+
   const handleSave = async (formData) => {
     if (!canEditLead(user, record))
       throw new Error("Không có quyền cập nhật khách hàng");
@@ -341,6 +366,7 @@ const LeadDetailPopup = ({
         )
           delete payload[k];
       });
+      const shouldOpenProposal = saveAndCreate && payload.sales_outcome === "SUCCESS";
       const res = await leadService.update(recordId, payload, token);
       if (res.success) {
         setRecord(res.data);
@@ -348,6 +374,13 @@ const LeadDetailPopup = ({
         if (onSaved) onSaved();
         setMode("view");
         if (onSwitchMode) onSwitchMode("view");
+        if (shouldOpenProposal) {
+          if (canCreateProposalFrom(res.data)) {
+            openCreateProposal();
+          } else {
+            setToast({ message: "Đã lưu khách hàng nhưng chưa đủ điều kiện tạo đề xuất", type: "error" });
+          }
+        }
       } else {
         throw new Error(res.message || "Cập nhật thất bại");
       }
@@ -359,7 +392,7 @@ const LeadDetailPopup = ({
     }
   };
 
-  const prefillProposal = record
+  const prefillProposal = useMemo(() => record
     ? {
         owner_name: record.full_name || "",
         owner_phone: record.phone || "",
@@ -371,13 +404,10 @@ const LeadDetailPopup = ({
         latitude: mapCoords.latitude || "",
         longitude: mapCoords.longitude || "",
       }
-    : {};
+    : {}, [record, mapCoords]);
 
   const handleCreateProposal = async (formData) => {
-    if (
-      !canConsultLead(user, record) ||
-      record?.consultation_status !== "SUCCESS"
-    )
+    if (!canCreateProposalFrom(record))
       throw new Error("Chưa đủ điều kiện tạo đề xuất");
     setCreatingProposal(true);
     const idem =
@@ -483,6 +513,7 @@ const LeadDetailPopup = ({
         entityId={record.id}
         dataListOptions={dataListOptions}
         expandTable
+        showFullText
       />
     );
   };
@@ -506,6 +537,7 @@ const LeadDetailPopup = ({
                 key={ci}
                 style={{
                   flex: isFullRow ? "1 1 100%" : 1,
+                  minWidth: 0,
                   maxWidth: isFullRow ? "100%" : undefined,
                 }}
               >
@@ -538,8 +570,7 @@ const LeadDetailPopup = ({
       );
     });
 
-  const canCreateProposal =
-    !isLeadPortal(user) && record?.consultation_status === "SUCCESS" && canConsultLead(user, record);
+  const canCreateProposal = canCreateProposalFrom(record);
   const crmExtraNoteText = record
     ? buildCrmExtraNote(
         record.custom_data && typeof record.custom_data === "object"
@@ -564,7 +595,7 @@ const LeadDetailPopup = ({
   return (
     <div
       className="modal-overlay"
-      onClick={mode === "edit" ? undefined : onClose}
+      onClick={mode === "edit" || saving ? undefined : onClose}
     >
       <Toast
         message={toast.message}
@@ -576,9 +607,22 @@ const LeadDetailPopup = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="popup-header">
-          <h2>
-            Lead #{record ? record.id : ""} {mode === "edit" && "(chỉnh sửa)"}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2>
+              Lead #{record ? record.id : ""} {mode === "edit" && "(chỉnh sửa)"}
+            </h2>
+            {!loading && record && (
+              <span className="badge badge-ghost" aria-label="Phân loại khách hàng">
+                {classification ? (
+                  <FieldRenderer
+                    field={{ type: "select", options: classificationOptions }}
+                    value={classification}
+                    entity="leads"
+                  />
+                ) : "Chưa phân loại"}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -613,6 +657,7 @@ const LeadDetailPopup = ({
               type="button"
               className="btn btn-ghost btn-sm btn-circle"
               onClick={onClose}
+              disabled={saving}
               aria-label="Đóng"
             >
               <X size={18} />
@@ -696,6 +741,7 @@ const LeadDetailPopup = ({
                 purpose="view"
                 initialData={record}
                 onSubmit={handleSave}
+                onValuesChange={handleDraftChange}
                 hideActions
                 htmlId="lead-edit-form"
                 readOnlyKeys={readOnlyKeys}
@@ -761,9 +807,9 @@ const LeadDetailPopup = ({
                 type="submit"
                 form="lead-edit-form"
                 className="btn btn-primary btn-sm gap-1"
-                disabled={saving}
+                disabled={saving || loading || !!error}
               >
-                <Save size={14} /> {saving ? "Đang lưu..." : "Lưu"}
+                <Save size={14} /> {saving ? "Đang lưu..." : saveAndCreate ? "Lưu và tạo đề xuất" : "Lưu"}
               </button>
             </>
           )}
@@ -771,6 +817,7 @@ const LeadDetailPopup = ({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={onClose}
+            disabled={saving}
           >
             Đóng
           </button>

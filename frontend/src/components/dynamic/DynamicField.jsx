@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 import UserField from './UserField';
+import LeadPrioritySelect from './LeadPrioritySelect';
 import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { formatDate, formatDateTime, toDateInputValue, toDateTimeLocalValue } from '../../utils/formatDateTime';
 import { resolveColumnDatalist, getColumnSource } from '../../utils/tableColumnSource';
@@ -428,6 +429,18 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       }
       case 'select': {
         const opts = cellOptions || resolveCellOptions(refField);
+        if (entityType === 'leads' && field.key === 'tvbh_history' && col?.key === 'GDKV_phan_loai_KH') {
+          return (
+            <LeadPrioritySelect
+              options={opts}
+              value={cellVal}
+              onChange={onChangeCell}
+              disabled={disabledCell}
+              className={cellClass}
+              style={cellStyle}
+            />
+          );
+        }
         return (
           <select
             className={cellClass}

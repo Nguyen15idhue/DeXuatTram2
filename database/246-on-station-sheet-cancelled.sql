@@ -1,0 +1,3 @@
+ALTER TABLE on_station_sheet_sync_queue
+  MODIFY COLUMN status ENUM('PENDING','PROCESSING','DONE','FAILED','CANCELLED')
+    COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING';

@@ -14,7 +14,7 @@ router.use(requireAuth, requireAdmin);
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Lịch chạy, link Sheet, cột báo cáo và lượt chạy gần nhất; không trả key
+ *         description: Lịch chạy, link Sheet, cấu hình tab raw và tiến độ theo tab; không trả key hoặc dữ liệu từng phiên
  *       403:
  *         description: Không có quyền quản trị
  */
@@ -28,7 +28,7 @@ router.get('/status', (req, res) => {
  * /api/admin/cms-reports/run:
  *   post:
  *     tags: [Admin - CMS Reports]
- *     summary: Tính trực tiếp từ CMS và upsert Sheet theo ngày, không lưu database
+ *     summary: Đồng bộ tổng hợp theo ngày và tab raw theo mã phiên nếu đã bật, không lưu database
  *     security:
  *       - bearerAuth: []
  *     requestBody:

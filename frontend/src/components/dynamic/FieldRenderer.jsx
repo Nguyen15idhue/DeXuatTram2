@@ -32,6 +32,7 @@ const FileViewer = lazy(() => import('./FileViewer'));
 
 const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T|\s)\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const FULL_TEXT_STYLE = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 
 const formatTableCellValue = (col, v) => {
   if (v === null || v === undefined || v === '') return '-';
@@ -85,7 +86,7 @@ const normalizeFileEntries = (value) => {
   return [];
 };
 
-const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, expandTable = false }) => {
+const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, expandTable = false, showFullText = false }) => {
   const numberedStatuses = useNumberedProposalStatuses();
   const [showFilePopup, setShowFilePopup] = useState(false);
   const [showAvatarPopup, setShowAvatarPopup] = useState(false);
@@ -306,6 +307,7 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
       return <span>{value}</span>;
 
     case 'textarea':
+      if (showFullText) return <span style={FULL_TEXT_STYLE}>{String(value)}</span>;
       return <span title={value}>{String(value).substring(0, 100)}{String(value).length > 100 ? '...' : ''}</span>;
 
     case 'formula': {
@@ -342,6 +344,15 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
         }
         return formatTableCellValue(col, row[col.key]);
       };
+      const renderCell = (col, row) => {
+        if (showFullText && !col.formula && ['ghi_chu', 'note'].includes(col.key) && typeof row[col.key] === 'string' && row[col.key] !== '') {
+          return <span style={FULL_TEXT_STYLE}>{row[col.key]}</span>;
+        }
+        const v = computeCell(col, row);
+        return typeof v === 'number'
+          ? formatNumber(v, { format: col.display_format || 'plain', decimalPlaces: col.decimal_places, unit: col.unit })
+          : v;
+      };
       const tableEl = (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -361,13 +372,7 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
                 <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#999' }}>{idx + 1}</td>
                 {columns.map(col => (
                   <td key={col.key} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', background: col.formula ? '#f0fdf4' : undefined }}>
-                    {(() => {
-                      const v = computeCell(col, row);
-                      if (typeof v === 'number') {
-                        return formatNumber(v, { format: col.display_format || 'plain', decimalPlaces: col.decimal_places, unit: col.unit });
-                      }
-                      return v;
-                    })()}
+                    {renderCell(col, row)}
                   </td>
                 ))}
               </tr>

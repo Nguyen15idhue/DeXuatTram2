@@ -47,12 +47,12 @@ const createClient = () => {
     }
   };
 
-  const list = async (endpoint, arrayKey, idKey, params, project) => {
+  const list = async (endpoint, arrayKey, idKey, params, project, limit = 100) => {
     const items = [];
     const seen = new Set();
     let expectedTotal;
     for (let page = 0; ; page++) {
-      const body = await get(endpoint, { ...params, limit: 100, page });
+      const body = await get(endpoint, { ...params, limit, page });
       const rows = body[arrayKey];
       if (!Array.isArray(rows) || !Number.isSafeInteger(body.total) || body.total < 0
         || body.page !== page || !Number.isSafeInteger(body.limit) || body.limit <= 0) {
@@ -75,6 +75,14 @@ const createClient = () => {
     }
   };
 
+  const listTransactions = (params, limit) => list('/admin/ct', 'chargeTransactions', 'transactionId', {
+    ...params, isTestTransaction: 0, exclusionZeroCost: false
+  }, row => ({
+    id: String(row.transactionId),
+    pointId: row.chargeConnector?.pointId == null ? null : String(row.chargeConnector.pointId),
+    status: row.status, startTime: row.startTime, endTime: row.endTime, totalCost: row.totalCost
+  }), limit);
+
   return {
     async renewKey() {
       const body = await get('/admin/user/profile');
@@ -89,13 +97,8 @@ const createClient = () => {
       row => ({ id: String(row.pointId), createdAt: row.createdAt, connected: row.connected, power: row.power })),
     getCustomers: () => list('/admin/driver', 'drivers', 'userId', {},
       row => ({ createdAt: row.createdAt })),
-    getTransactions: date => list('/admin/ct', 'chargeTransactions', 'transactionId', {
-      from: date, to: date, isTestTransaction: 0, exclusionZeroCost: false
-    }, row => ({
-      id: String(row.transactionId),
-      pointId: row.chargeConnector?.pointId == null ? null : String(row.chargeConnector.pointId),
-      status: row.status, startTime: row.startTime, endTime: row.endTime, totalCost: row.totalCost
-    }))
+    getTransactions: date => listTransactions({ from: date, to: date }),
+    getRawTransactions: (from, to) => listTransactions({ dateFilter: '30_NGAY_GAN_NHAT', from, to }, 10)
   };
 };
 

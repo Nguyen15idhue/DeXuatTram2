@@ -5,6 +5,23 @@ const { google } = require("googleapis");
 const cmsApi = require("./cmsApiService");
 
 const TIME_ZONE = "Asia/Ho_Chi_Minh";
+const DAY_MS = 86400000;
+const SHEET_EPOCH = Date.UTC(1899, 11, 30);
+const MAX_SHEET_DATE = (Date.UTC(9999, 11, 31) - SHEET_EPOCH) / DAY_MS;
+const RAW_TAB = "Phien_sac_raw";
+const RAW_HEADERS = [
+  "Ma_phien_sac", "Ngay_sac", "Thang_sac", "Thoi_gian_bat_dau",
+  "Thoi_gian_ket_thuc", "Thoi_luong_gio", "Ma_tram_sac", "Ten_tram_sac",
+  "Tru_sac", "Sung_sac", "Ma_khach_hang", "Bien_so_xe", "Tong_kWh",
+  "Doanh_thu_sau_giam_VAT", "Trang_thai",
+];
+const RAW_STATUS = new Map([
+  ["CHARGING", "Đang sạc"], ["FINISHED", "Đã kết thúc"], ["CANCELLED", "Đã hủy"],
+]);
+const rawTime = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
 const HEADERS = [
   "Ngày báo cáo",
   "Thời điểm lấy",
@@ -30,6 +47,7 @@ const HEADERS = [
   "Khách đăng ký lũy kế",
   "Cập nhật lúc",
   "Cảnh báo dữ liệu",
+  "Tháng báo cáo",
 ];
 let currentRun = null;
 const error = (message, statusCode = 400) =>
@@ -51,6 +69,19 @@ const validDate = (value) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(`${value}T00:00:00Z`)) &&
   new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+
+const normalizeSheetDate = (value) => {
+  if (Number.isInteger(value) && value >= 2 && value <= MAX_SHEET_DATE) {
+    return new Date(SHEET_EPOCH + value * DAY_MS).toISOString().slice(0, 10);
+  }
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
+  const date = match
+    ? `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`
+    : text;
+  return validDate(date) ? date : null;
+};
 
 const validateRange = (from, to, now = new Date()) => {
   if (!validDate(from) || !validDate(to))
@@ -186,6 +217,7 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
     excludedMissingEnd
       ? `Đã loại ${excludedMissingEnd} phiên FINISHED thiếu thời gian kết thúc khỏi tất cả chỉ số phiên sạc`
       : "",
+    Number(date.slice(5, 7)),
   ];
 };
 
@@ -197,6 +229,7 @@ const getConfig = () => {
   const tabName = String(
     process.env.CMS_GOOGLE_SHEETS_TAB_NAME || "Thống kê phiên sạc",
   ).trim();
+  const rawEnabled = process.env.CMS_RAW_SHEET_ENABLED === "true";
   const missing = [];
   if (!String(process.env.CMS_API_KEY || "").trim())
     missing.push("CMS_API_KEY");
@@ -204,6 +237,8 @@ const getConfig = () => {
     missing.push("CMS_GOOGLE_SHEETS_SPREADSHEET_ID (chỉ ID, không phải URL)");
   if (!tabName || tabName.length > 100 || /[:\\/?*[\]]/.test(tabName))
     missing.push("CMS_GOOGLE_SHEETS_TAB_NAME hợp lệ");
+  if (tabName.toLowerCase() === RAW_TAB.toLowerCase())
+    missing.push(`tab tổng hợp phải khác ${RAW_TAB}`);
   if (!credentialsFile || !fs.existsSync(credentialsFile))
     missing.push("file GOOGLE_APPLICATION_CREDENTIALS");
   return {
@@ -211,6 +246,7 @@ const getConfig = () => {
     message: missing.length ? `Thiếu cấu hình: ${missing.join(", ")}` : "",
     spreadsheetId,
     tabName,
+    rawEnabled,
     credentialsFile,
   };
 };
@@ -231,7 +267,7 @@ const sheetCall = async (request) => {
     }
   }
 };
-const createSheetWriter = async (config) => {
+const openSheet = async (config) => {
   const auth = new google.auth.GoogleAuth({
     keyFile: config.credentialsFile,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
@@ -268,21 +304,30 @@ const createSheetWriter = async (config) => {
     properties = added.data.replies[0].addSheet.properties;
   }
   const tab = `'${config.tabName.replace(/'/g, "''")}'`;
+  return { sheets, tab, properties };
+};
+const createSheetWriter = async (config) => {
+  const { sheets, tab, properties } = await openSheet(config);
+  const { columnCount, rowCount: initialRowCount } = properties.gridProperties;
+  if (columnCount < 24) {
+    throw error("Tab báo cáo CMS cần có ít nhất các cột A:X.", 409);
+  }
   const existing = await sheetCall(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A:X`,
+      range: `${tab}!A:${columnCount === 24 ? "X" : "Y"}`,
       valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "SERIAL_NUMBER",
     }),
   );
   const rows = existing.data.values || [];
+  const header = rows[0] || [];
+  const legacyHeader = rows.length > 0 && header.length === HEADERS.length - 1
+    && rows.every((row) => String(row[24] ?? "").trim() === "");
   if (
     rows.length &&
-    (rows[0].length !== HEADERS.length ||
-      !HEADERS.every((value, i) => {
-        if (i === 0) return rows[0][i] === value || rows[0][i] === "Ngày báo cáo";
-        return rows[0][i] === value;
-      }))
+    ((!legacyHeader && header.length !== HEADERS.length) ||
+      !HEADERS.slice(0, header.length).every((value, i) => header[i] === value))
   ) {
     throw error(
       "Header Google Sheet không khớp báo cáo CMS; hãy dùng tab riêng, không ghi đè tab dữ liệu khác.",
@@ -292,40 +337,60 @@ const createSheetWriter = async (config) => {
   const rowByDate = new Map();
   for (let index = 1; index < rows.length; index++) {
     if (rows[index].every((cell) => String(cell ?? "").trim() === "")) continue;
-    const date = rows[index][0];
-    if (!validDate(date) || rowByDate.has(date))
+    const raw = rows[index][0];
+    const rowNumber = index + 1;
+    const date = normalizeSheetDate(raw);
+    if (!date) {
+      const message = String(raw ?? "").trim() === ""
+        ? "đang trống. Hãy điền ngày báo cáo."
+        : "không phải ngày hợp lệ. Hãy nhập theo dd/MM/yyyy hoặc yyyy-MM-dd.";
+      throw error(`Ô A${rowNumber} ${message}`, 409);
+    }
+    if (rowByDate.has(date)) {
       throw error(
-        "Sheet có ngày thiếu/sai hoặc trùng; hãy sửa trước khi đồng bộ.",
+        `Ngày báo cáo ${date} bị trùng tại ô A${rowByDate.get(date).rowNumber} và A${rowNumber}. Hãy chỉ giữ một dòng cho ngày này.`,
         409,
       );
-    rowByDate.set(date, index + 1);
+    }
+    rowByDate.set(date, { rowNumber, existing: true });
   }
-  const isOldHeader =
-    rows.length > 0 &&
-    rows[0].length === 19 &&
-    (rows[0][0] === "Ngày lấy" || rows[0][0] === "Ngày báo cáo") &&
-    rows[0][1] === "Thời điểm lấy" &&
-    rows[0][18] === "Cảnh báo dữ liệu";
 
-  if (!rows.length || isOldHeader) {
+  if (columnCount === 24) {
+    await sheetCall(() =>
+      sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.spreadsheetId,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: { sheetId: properties.sheetId, gridProperties: { columnCount: 25 } },
+              fields: "gridProperties.columnCount",
+            },
+          }],
+        },
+      }),
+    );
+  }
+  if (!rows.length || legacyHeader) {
     await sheetCall(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
-        range: `${tab}!A1:X1`,
+        range: legacyHeader ? `${tab}!Y1` : `${tab}!A1:Y1`,
         valueInputOption: "RAW",
-        requestBody: { values: [HEADERS] },
+        requestBody: { values: [legacyHeader ? HEADERS.slice(-1) : HEADERS] },
       }),
     );
   }
   let nextRow = Math.max(2, rows.length + 1);
-  let rowCount = properties.gridProperties.rowCount;
+  let rowCount = initialRowCount;
   return {
     async write(row) {
-      let rowNumber = rowByDate.get(row[0]);
-      if (!rowNumber) {
-        rowNumber = nextRow++;
-        rowByDate.set(row[0], rowNumber);
+      const date = row[0];
+      let entry = rowByDate.get(date);
+      if (!entry) {
+        entry = { rowNumber: nextRow++, existing: false };
+        rowByDate.set(date, entry);
       }
+      const { rowNumber } = entry;
       if (rowNumber > rowCount) {
         const targetCount = Math.max(rowNumber, rowCount + 500);
         await sheetCall(() =>
@@ -348,18 +413,143 @@ const createSheetWriter = async (config) => {
         );
         rowCount = targetCount;
       }
+      if (!entry.existing) {
+        await sheetCall(() =>
+          sheets.spreadsheets.batchUpdate({
+            spreadsheetId: config.spreadsheetId,
+            requestBody: {
+              requests: [{
+                repeatCell: {
+                  range: {
+                    sheetId: properties.sheetId,
+                    startRowIndex: rowNumber - 1,
+                    endRowIndex: rowNumber,
+                    startColumnIndex: 0,
+                    endColumnIndex: 1,
+                  },
+                  cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/MM/yyyy" } } },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              }],
+            },
+          }),
+        );
+      }
       await sheetCall(() =>
         sheets.spreadsheets.values.update({
           spreadsheetId: config.spreadsheetId,
-          range: `${tab}!A${rowNumber}:X${rowNumber}`,
+          range: `${tab}!${entry.existing ? "B" : "A"}${rowNumber}:Y${rowNumber}`,
           valueInputOption: "RAW",
-          requestBody: { values: [row] },
+          requestBody: {
+            values: [entry.existing
+              ? row.slice(1)
+              : [(Date.parse(`${date}T00:00:00Z`) - SHEET_EPOCH) / DAY_MS, ...row.slice(1)]],
+          },
         }),
       );
+      entry.existing = true;
     },
   };
 };
 
+const buildRawRows = (from, transactions, to = from) => {
+  const rows = [];
+  for (const transaction of transactions) {
+    const start = timestamp(transaction.startTime, "thời gian bắt đầu phiên raw");
+    const date = dayKey(new Date(start));
+    if (date < from || date > to) continue;
+    const end = transaction.endTime == null || transaction.endTime === ""
+      ? null
+      : timestamp(transaction.endTime, "thời gian kết thúc phiên raw");
+    if (end !== null && end < start) throw error("Thời gian kết thúc phiên raw trước giờ bắt đầu");
+    if (!/^[A-Za-z0-9_ -]+$/.test(transaction.id || ""))
+      throw error("CMS trả mã phiên raw thiếu hoặc không hợp lệ");
+    if (!/^[A-Z_0-9]+$/.test(transaction.status || ""))
+      throw error("CMS trả trạng thái phiên raw thiếu hoặc không hợp lệ");
+    rows.push([
+      transaction.id, date, `${date.slice(5, 7)}/${date.slice(0, 4)}`,
+      rawTime.format(start).replace(",", ""), end === null ? "" : rawTime.format(end).replace(",", ""),
+      end === null ? "" : (end - start) / 3600000,
+      "", "", "", "", "", "", "", "",
+      RAW_STATUS.get(transaction.status) ?? transaction.status,
+    ]);
+  }
+  return rows;
+};
+
+const createRawSheetWriter = async (config) => {
+  const { sheets, tab, properties } = await openSheet({ ...config, tabName: RAW_TAB });
+  const { spreadsheetId } = config;
+  let { rowCount } = properties.gridProperties;
+  if (properties.gridProperties.columnCount < RAW_HEADERS.length)
+    throw error(`${RAW_TAB} cần có đủ các cột A:O.`, 409);
+
+  const { data } = await sheetCall(() => sheets.spreadsheets.values.get({
+    spreadsheetId, range: `${tab}!A:O`, valueRenderOption: "FORMULA",
+  }));
+  const rows = data.values || [];
+  const isEmpty = row => row.every(cell => String(cell ?? "").trim() === "");
+  const hasData = rows.some(row => !isEmpty(row));
+  if (hasData && !RAW_HEADERS.every((header, i) => rows[0]?.[i] === header))
+    throw error(`Header ${RAW_TAB}!A1:O1 không khớp; không ghi đè tab.`, 409);
+  const index = new Map();
+  for (let i = 1; i < rows.length; i++) {
+    if (isEmpty(rows[i])) continue;
+    const id = String(rows[i][0] ?? "").trim();
+    const rowNumber = i + 1;
+    if (!id) throw error(`${RAW_TAB}!A${rowNumber} thiếu mã phiên.`, 409);
+    if (!/^[A-Za-z0-9_ -]+$/.test(id))
+      throw error(`${RAW_TAB}!A${rowNumber} không phải mã phiên hợp lệ.`, 409);
+    if (index.has(id))
+      throw error(`${RAW_TAB}: mã phiên trùng tại ô A${index.get(id).rowNumber} và A${rowNumber}.`, 409);
+    index.set(id, { rowNumber, existing: true });
+  }
+  if (!hasData) {
+    await sheetCall(() => sheets.spreadsheets.values.update({
+      spreadsheetId, range: `${tab}!A1:O1`, valueInputOption: "RAW",
+      requestBody: { values: [RAW_HEADERS] },
+    }));
+  }
+  let nextRow = Math.max(2, rows.length + 1);
+  return {
+    async write(rawRows) {
+      const ids = new Set();
+      for (const [id] of rawRows) {
+        if (ids.has(id)) throw error("CMS trả trùng mã phiên raw trong ngày.");
+        ids.add(id);
+      }
+      for (let start = 0; start < rawRows.length; start += 200) {
+        const batch = rawRows.slice(start, start + 200);
+        const entries = batch.map(row => {
+          if (!index.has(row[0])) index.set(row[0], { rowNumber: nextRow++, existing: false });
+          return index.get(row[0]);
+        });
+        const needed = nextRow - 1;
+        if (needed > rowCount) {
+          await sheetCall(() => sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: { requests: [{ updateSheetProperties: {
+              properties: { sheetId: properties.sheetId, gridProperties: { rowCount: needed } },
+              fields: "gridProperties.rowCount",
+            } }] },
+          }));
+          rowCount = needed;
+        }
+        const data = batch.flatMap((row, i) => {
+          const { rowNumber: n, existing } = entries[i];
+          return existing
+            ? [{ range: `${tab}!A${n}:F${n}`, values: [row.slice(0, 6)] },
+              { range: `${tab}!O${n}`, values: [[row[14]]] }]
+            : [{ range: `${tab}!A${n}:O${n}`, values: [row] }];
+        });
+        await sheetCall(() => sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId, requestBody: { valueInputOption: "RAW", data },
+        }));
+        entries.forEach(entry => { entry.existing = true; });
+      }
+    },
+  };
+};
 const getStatus = () => {
   const config = getConfig();
   return {
@@ -372,40 +562,61 @@ const getStatus = () => {
     schedule: "07:00 Asia/Ho_Chi_Minh — ngày hôm trước",
     yesterday: yesterday(),
     headers: HEADERS,
+    raw: { enabled: config.rawEnabled, tabName: RAW_TAB, unmapped: [...RAW_HEADERS.slice(6, 10), ...RAW_HEADERS.slice(12, 14)] },
     run: currentRun,
   };
 };
 
 const executeRun = async (run, config) => {
+  const capture = async (target, date, work) => {
+    try {
+      return await work();
+    } catch (cause) {
+      console.error(`[CmsReport] ${run.id} ${target || "source"} ${date || ""}:`, cause.message);
+      run.errors.push({ ...(date && { date }), ...(target && { target }), message: cause.message });
+      return null;
+    }
+  };
   try {
     const client = cmsApi.createClient();
     await client.renewKey();
-    const writer = await module.exports.createSheetWriter(config);
     run.phase = "Đang lấy danh mục trụ và khách hàng";
-    const points = await client.getPoints();
-    const fetchedAt = new Date().toISOString();
-    const customers = await client.getCustomers();
-    for (let date = run.from; date <= run.to; date = offsetDay(date, 1)) {
-      run.phase = `Đang xử lý ${date}`;
-      try {
-        const transactions = await client.getTransactions(date);
-        const row = aggregate({
-          date,
-          points,
-          customers,
-          transactions,
-          fetchedAt,
-        });
-        await writer.write(row);
-        run.rows.push(row);
-      } catch (cause) {
-        console.error(`[CmsReport] ${run.id} ${date}:`, cause.message);
-        run.errors.push({ date, message: cause.message });
+    const summary = await capture("summary", null, async () => {
+      const writer = await module.exports.createSheetWriter(config);
+      return { writer, points: await client.getPoints(), customers: await client.getCustomers() };
+    });
+    const raw = config.rawEnabled
+      ? await capture("raw", null, () => module.exports.createRawSheetWriter(config))
+      : null;
+    const rawRowsByDate = raw && await capture("raw", null, async () => {
+      run.phase = `Đang lấy phiên raw ${run.from} → ${run.to}`;
+      const transactions = await client.getRawTransactions(run.from, run.to);
+      const byDate = new Map();
+      for (const row of buildRawRows(run.from, transactions, run.to)) {
+        const date = row[1];
+        if (!byDate.has(date)) byDate.set(date, []);
+        byDate.get(date).push(row);
       }
+      return byDate;
+    });
+    const fetchedAt = new Date().toISOString();
+    for (let date = run.from; (summary || rawRowsByDate) && date <= run.to; date = offsetDay(date, 1)) {
+      run.phase = `Đang xử lý ${date}`;
+      if (summary) await capture("summary", date, async () => {
+        const transactions = await client.getTransactions(date);
+        const row = aggregate({ date, points: summary.points, customers: summary.customers, transactions, fetchedAt });
+        await summary.writer.write(row);
+        run.rows.push(row);
+      });
+      if (rawRowsByDate) await capture("raw", date, async () => {
+        const rows = rawRowsByDate.get(date) || [];
+        await raw.write(rows);
+        run.rawResults.push({ date, count: rows.length });
+      });
       run.processed++;
     }
     run.status = run.errors.length
-      ? run.rows.length
+      ? run.rows.length || run.rawResults.length
         ? "PARTIAL"
         : "FAILED"
       : "SUCCESS";
@@ -434,6 +645,7 @@ const startRun = ({ from, to, trigger = "manual" } = {}) => {
     startedAt: new Date().toISOString(),
     finishedAt: null,
     rows: [],
+    rawResults: [],
     errors: [],
   };
   const run = currentRun;
@@ -443,6 +655,9 @@ const startRun = ({ from, to, trigger = "manual" } = {}) => {
 
 module.exports = {
   HEADERS,
+  RAW_HEADERS,
+  buildRawRows,
+  createRawSheetWriter,
   dayKey,
   yesterday,
   offsetDay,

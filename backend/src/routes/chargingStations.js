@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireSuperAdmin, requireChargingStationViewer } = require('../middlewares/auth');
+const { excelLimiter } = require('../middlewares/rateLimits');
 const chargingStationController = require('../controllers/chargingStationController');
 
 router.use(requireAuth);
@@ -51,6 +52,40 @@ router.use(requireAuth);
  *         description: Không có quyền
  */
 router.get('/', requireChargingStationViewer, chargingStationController.list);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/export:
+ *   get:
+ *     tags: [Charging Stations]
+ *     summary: Xuất Excel ON trạm theo bước, tab, từ khóa và quyền xem (không phân trang)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: stage
+ *         required: true
+ *         schema: { type: string, enum: [khoi-tao-hop-dong, xay-dung-ha-tang, giao-tru, lap-tru, nghiem-thu] }
+ *       - in: query
+ *         name: tab
+ *         schema: { type: string, enum: [need, completed, all], default: need }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Tệp Excel
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema: { type: string, format: binary }
+ *       400:
+ *         description: Bộ lọc không hợp lệ
+ *       403:
+ *         description: Không có quyền xem ON trạm
+ *       404:
+ *         description: Không có kết quả phù hợp
+ */
+router.get('/export', requireChargingStationViewer, excelLimiter, chargingStationController.exportExcel);
 
 /**
  * @swagger

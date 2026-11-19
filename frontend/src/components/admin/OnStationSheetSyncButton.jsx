@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { onStationSheetSyncService } from '../../services/api';
-import { Toast } from '../ui';
+import { ConfirmDialog, Toast } from '../ui';
 
 const EMPTY_TOAST = { message: '', type: 'success' };
 
@@ -17,6 +17,8 @@ const OnStationSheetSyncButton = () => {
   const { token, isAdmin } = useAuth();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [toast, setToast] = useState(EMPTY_TOAST);
   const timerRef = useRef(null);
@@ -48,13 +50,15 @@ const OnStationSheetSyncButton = () => {
 
   if (!isAdmin) return null;
 
-  const busy = loading || (status?.queue?.processing || 0) > 0;
+  const failed = status?.queue?.failed || 0;
+  const cancellable = (status?.queue?.pending || 0) + failed;
+  const busy = loading || cancelling || (status?.queue?.processing || 0) > 0;
   const tooltip = !status?.configured
     ? (status?.message || 'Google Sheet trạm ON chưa được cấu hình')
     : `Tab: ${status?.tabName || '—'} · ${status?.activeProposals || 0} trạm ON · Lần cuối: ${formatLastSynced(status?.lastSyncedAt)}`;
 
   const handleClick = async () => {
-    if (busy) return;
+    if (!status?.configured || busy) return;
     setLoading(true);
     try {
       const res = await onStationSheetSyncService.syncDaily(token);
@@ -69,6 +73,27 @@ const OnStationSheetSyncButton = () => {
     }
   };
 
+  const handleCancel = async () => {
+    if (loading || cancelling) return;
+    setConfirmCancel(false);
+    if (!cancellable) {
+      setToast({ message: 'Không còn mục đồng bộ đang chờ hoặc thất bại để hủy', type: 'success' });
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await onStationSheetSyncService.cancelQueued(token);
+      if (!res?.success) throw new Error(res?.message || 'Không thể hủy đồng bộ đang chờ');
+      setToast({ message: res.message, type: 'success' });
+    } catch (error) {
+      console.error('[OnStationSheetSyncButton] Cancel error:', error);
+      setToast({ message: error.message || 'Không thể hủy đồng bộ đang chờ', type: 'error' });
+    } finally {
+      await load();
+      setCancelling(false);
+    }
+  };
+
   return (
     <>
       <button
@@ -78,16 +103,36 @@ const OnStationSheetSyncButton = () => {
         disabled={!status?.configured || busy}
         title={tooltip}
       >
-        <RefreshCw size={14} className={pending ? 'animate-spin' : ''} />
-        {pending ? `Đang đồng bộ ${pending}` : 'Đồng bộ Sheet trạm ON'}
+        <RefreshCw size={14} className={status?.configured && pending ? 'animate-spin' : ''} />
+        {status?.configured && pending ? `Đang đồng bộ ${pending}` : 'Đồng bộ Sheet trạm ON'}
       </button>
-      {(loadError || status?.queue?.failed > 0) && (
+      {(cancellable > 0 || cancelling) && <button
+        type="button"
+        className="btn btn-outline btn-warning btn-sm"
+        onClick={() => setConfirmCancel(true)}
+        disabled={loading || cancelling}
+      >
+        {cancelling ? 'Đang hủy đồng bộ…' : 'Hủy đồng bộ đang chờ'}
+      </button>}
+      {status && !status.configured && <span className="text-sm text-warning">Google Sheet trạm ON chưa được cấu hình.</span>}
+      {(loadError || failed > 0) && (
         <div role="alert" className="text-sm text-error max-w-xl">
           {loadError
             ? 'Không tải được trạng thái đồng bộ. Vui lòng thử lại.'
-            : `Có ${status.queue.failed} mục đồng bộ chưa thành công. Vui lòng thử đồng bộ lại; nếu vẫn lỗi, vui lòng liên hệ quản trị viên.`}
+            : `Có ${failed} mục đồng bộ chưa thành công.${status.configured ? ' Bạn có thể thử đồng bộ lại hoặc hủy các mục này.' : ''}`}
         </div>
       )}
+      {status?.queue?.cancelled > 0 && <span className="text-sm text-base-content/70">Đã hủy đồng bộ: {status.queue.cancelled}</span>}
+      <ConfirmDialog
+        isOpen={confirmCancel}
+        title="Hủy các mục đồng bộ đang chờ?"
+        message={`Hiện có ${cancellable} mục đang chờ hoặc thất bại. Thao tác không hủy đề xuất, không thay đổi Google Sheet và không dừng mục đã bắt đầu xử lý.`}
+        confirmText="Xác nhận hủy đồng bộ"
+        cancelText="Quay lại"
+        type="warning"
+        onConfirm={handleCancel}
+        onCancel={() => setConfirmCancel(false)}
+      />
       <Toast message={toast.message} type={toast.type} onClose={() => setToast(EMPTY_TOAST)} />
     </>
   );
