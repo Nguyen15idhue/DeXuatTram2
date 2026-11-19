@@ -5,6 +5,13 @@ const addressEnrichment = require("./addressEnrichment");
 const proximityService = require("./proximityService");
 
 const ENTITY = "ev_charging_reports";
+const NEARBY_RADIUS_M = 50000;
+
+const coordinate = (value, max) => {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && Math.abs(number) <= max ? number : null;
+};
 
 const normalizePhone = (phone) => String(phone || "").replace(/[^\d]/g, "");
 
@@ -36,6 +43,49 @@ const fail = (message, statusCode = 400) => {
   const err = new Error(message);
   err.statusCode = statusCode;
   throw err;
+};
+
+exports.getNearbyStations = async ({ latitude, longitude } = {}) => {
+  const lat = coordinate(latitude, 90);
+  const lng = coordinate(longitude, 180);
+  if (lat === null || lng === null) fail("Tọa độ tra cứu không hợp lệ");
+
+  const latitudeMargin = NEARBY_RADIUS_M / 110000;
+  const bounds = [lat - latitudeMargin, lat + latitudeMargin];
+  const [rows] = await pool.query(
+    `SELECT 'station' AS source, s.id, s.name, s.latitude, s.longitude, s.status, s.address,
+            COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.ma_tram')), ''), s.ma_tram_gen) AS ma_tram,
+            JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram')) AS mo_hinh_tram,
+            JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.so_luong_tru')) AS so_luong_tru,
+            JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_tru_sac')) AS loai_tru_sac,
+            JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.power_capacity')) AS power_capacity
+       FROM stations s
+      WHERE s.status IN ('ACTIVE', 'DEPLOYING') AND s.latitude BETWEEN ? AND ?
+     UNION ALL
+     SELECT 'proposal', p.id, NULL, p.latitude, p.longitude, p.status,
+            NULL, NULL, NULL, NULL, NULL, NULL
+       FROM station_proposals p
+      WHERE p.status IN ('ACTIVE', 'DEPLOYING') AND p.latitude BETWEEN ? AND ?
+        AND NOT EXISTS (SELECT 1 FROM stations linked WHERE linked.id = p.station_id)`,
+    [...bounds, ...bounds],
+  );
+  return rows.flatMap(row => {
+    const latitude = coordinate(row.latitude, 90);
+    const longitude = coordinate(row.longitude, 180);
+    if (latitude === null || longitude === null) return [];
+    const distance = proximityService.haversineM(lat, lng, latitude, longitude);
+    if (!Number.isFinite(distance) || distance > NEARBY_RADIUS_M) return [];
+    const point = {
+      id: `${row.source}:${row.id}`, source: row.source, latitude, longitude,
+      status: row.status, distance_m: distance,
+    };
+    if (row.source === "proposal") return [point];
+    return [{
+      ...point, name: row.name, ma_tram: row.ma_tram, address: row.address,
+      mo_hinh_tram: row.mo_hinh_tram, so_luong_tru: row.so_luong_tru,
+      loai_tru_sac: row.loai_tru_sac, power_capacity: row.power_capacity,
+    }];
+  }).sort((a, b) => a.distance_m - b.distance_m || a.id.localeCompare(b.id));
 };
 
 exports.getPublicReports = async () => {

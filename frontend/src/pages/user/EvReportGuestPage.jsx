@@ -196,6 +196,7 @@ const EvReportGuestPage = () => {
   const [fields, setFields] = useState([]);
   const [dlOptions, setDlOptions] = useState({});
   const [loadingFields, setLoadingFields] = useState(true);
+  const submittingRef = useRef(false);
   const lastReverseKeyRef = useRef("");
   const turnstileRef = useRef(null);
   const turnstileWidget = useRef(null);
@@ -535,23 +536,25 @@ const EvReportGuestPage = () => {
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (submitting) return;
+    if (submittingRef.current) return;
     setError("");
     const errs = validate();
+    setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      setErrors(errs);
       setError("Vui lòng kiểm tra các trường bắt buộc");
       return;
     }
-    let submitLat = mapCoords.latitude;
-    let submitLng = mapCoords.longitude;
-    if (!submitLat || !submitLng) {
-      // Chưa có tọa độ (khách chỉ nhập địa chỉ) → tự geocode trước khi gửi
-      const parts = [values.address, values.ward, values.province].filter(
-        (v) => v && String(v).trim() !== "",
-      );
-      if (parts.length > 0) {
-        try {
+    submittingRef.current = true;
+    setSubmitting(true);
+    let sendingReport = false;
+    try {
+      let submitLat = mapCoords.latitude;
+      let submitLng = mapCoords.longitude;
+      if (!submitLat || !submitLng) {
+        const parts = [values.address, values.ward, values.province].filter(
+          (v) => v && String(v).trim() !== "",
+        );
+        if (parts.length > 0) {
           const res = await api.post("/geocode/search", {
             text: `${parts.join(", ")}, Việt Nam`,
             limit: 1,
@@ -564,8 +567,6 @@ const EvReportGuestPage = () => {
             submitLat = lat.toFixed(6);
             submitLng = lng.toFixed(6);
           }
-        } catch {
-          /* rơi xuống thông báo bên dưới */
         }
       }
       if (!submitLat || !submitLng) {
@@ -574,9 +575,7 @@ const EvReportGuestPage = () => {
         );
         return;
       }
-    }
-    setSubmitting(true);
-    try {
+      sendingReport = true;
       const res = await evReportService.createGuest({
         latitude: submitLat,
         longitude: submitLng,
@@ -604,15 +603,19 @@ const EvReportGuestPage = () => {
               : "Gửi thông tin thành công! Cảm ơn bạn đã chia sẻ.",
           type: warns.length > 0 ? "warning" : "success",
         });
-        resetCaptcha();
       } else {
         throw new Error(res.message || "Gửi thông tin thất bại");
       }
     } catch (err) {
-      setError(err.message || "Gửi thông tin thất bại");
+      setError(
+        sendingReport
+          ? err.message || "Gửi thông tin thất bại"
+          : "Không thể tìm tọa độ từ địa chỉ. Vui lòng thử lại hoặc dùng vị trí của bạn.",
+      );
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
-      resetCaptcha();
+      if (sendingReport) resetCaptcha();
     }
   };
 
@@ -1046,7 +1049,9 @@ const EvReportGuestPage = () => {
                 type="submit"
                 className="btn btn-primary w-full mt-6 shadow-lg shadow-green-600/20"
                 disabled={submitting}
+                aria-busy={submitting}
               >
+                {submitting && <Loader2 size={18} className="animate-spin" aria-hidden="true" />}
                 {submitting ? "Đang gửi..." : "Gửi thông tin đi"}
               </button>
             </form>

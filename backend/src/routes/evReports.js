@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireUserManager, optionalAuth } = require('../middlewares/auth');
-const { guestSubmitLimiter, guestTrackLimiter, excelLimiter } = require('../middlewares/rateLimits');
+const { guestSubmitLimiter, guestTrackLimiter, excelLimiter, publicDataLimiter } = require('../middlewares/rateLimits');
 const { adminLimiter } = require('../middlewares/rateLimits');
 const { validateCreateEvReport, validateUpdateEvReport } = require('../middlewares/validators');
 const evReportController = require('../controllers/evReportController');
@@ -119,6 +119,33 @@ router.post('/guest', guestSubmitLimiter, validateCreateEvReport, evReportContro
  *         description: Dữ liệu không hợp lệ
  */
 router.post('/check-nearby-public', guestTrackLimiter, evReportController.checkNearbyPublic);
+
+/**
+ * @swagger
+ * /api/ev-reports/nearby-stations:
+ *   post:
+ *     tags: [EvReports]
+ *     summary: Tìm trạm và điểm từ đề xuất trong bán kính 50 km (công khai, chỉ đọc)
+ *     description: Chỉ gồm ACTIVE và DEPLOYING, gần nhất trước. Trạm được ưu tiên nếu đã liên kết; điểm đề xuất chỉ trả mã marker, tọa độ, khoảng cách, nguồn và trạng thái.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [latitude, longitude]
+ *             properties:
+ *               latitude: { type: number, minimum: -90, maximum: 90 }
+ *               longitude: { type: number, minimum: -180, maximum: 180 }
+ *     responses:
+ *       200:
+ *         description: Danh sách trạm và điểm từ đề xuất
+ *       400:
+ *         description: Tọa độ không hợp lệ
+ *       429:
+ *         description: Quá nhiều yêu cầu
+ */
+router.post('/nearby-stations', publicDataLimiter, evReportController.getNearbyStations);
 
 /**
  * @swagger
