@@ -5,6 +5,9 @@ const { google } = require("googleapis");
 const cmsApi = require("./cmsApiService");
 
 const TIME_ZONE = "Asia/Ho_Chi_Minh";
+const DAY_MS = 86400000;
+const SHEET_EPOCH = Date.UTC(1899, 11, 30);
+const MAX_SHEET_DATE = (Date.UTC(9999, 11, 31) - SHEET_EPOCH) / DAY_MS;
 const HEADERS = [
   "Ngày báo cáo",
   "Thời điểm lấy",
@@ -30,6 +33,7 @@ const HEADERS = [
   "Khách đăng ký lũy kế",
   "Cập nhật lúc",
   "Cảnh báo dữ liệu",
+  "Tháng báo cáo",
 ];
 let currentRun = null;
 const error = (message, statusCode = 400) =>
@@ -51,6 +55,19 @@ const validDate = (value) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(`${value}T00:00:00Z`)) &&
   new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+
+const normalizeSheetDate = (value) => {
+  if (Number.isInteger(value) && value >= 2 && value <= MAX_SHEET_DATE) {
+    return new Date(SHEET_EPOCH + value * DAY_MS).toISOString().slice(0, 10);
+  }
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
+  const date = match
+    ? `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`
+    : text;
+  return validDate(date) ? date : null;
+};
 
 const validateRange = (from, to, now = new Date()) => {
   if (!validDate(from) || !validDate(to))
@@ -186,6 +203,7 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
     excludedMissingEnd
       ? `Đã loại ${excludedMissingEnd} phiên FINISHED thiếu thời gian kết thúc khỏi tất cả chỉ số phiên sạc`
       : "",
+    Number(date.slice(5, 7)),
   ];
 };
 
@@ -268,21 +286,26 @@ const createSheetWriter = async (config) => {
     properties = added.data.replies[0].addSheet.properties;
   }
   const tab = `'${config.tabName.replace(/'/g, "''")}'`;
+  const { columnCount, rowCount: initialRowCount } = properties.gridProperties;
+  if (columnCount < 24) {
+    throw error("Tab báo cáo CMS cần có ít nhất các cột A:X.", 409);
+  }
   const existing = await sheetCall(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A:X`,
+      range: `${tab}!A:${columnCount === 24 ? "X" : "Y"}`,
       valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "SERIAL_NUMBER",
     }),
   );
   const rows = existing.data.values || [];
+  const header = rows[0] || [];
+  const legacyHeader = rows.length > 0 && header.length === HEADERS.length - 1
+    && rows.every((row) => String(row[24] ?? "").trim() === "");
   if (
     rows.length &&
-    (rows[0].length !== HEADERS.length ||
-      !HEADERS.every((value, i) => {
-        if (i === 0) return rows[0][i] === value || rows[0][i] === "Ngày báo cáo";
-        return rows[0][i] === value;
-      }))
+    ((!legacyHeader && header.length !== HEADERS.length) ||
+      !HEADERS.slice(0, header.length).every((value, i) => header[i] === value))
   ) {
     throw error(
       "Header Google Sheet không khớp báo cáo CMS; hãy dùng tab riêng, không ghi đè tab dữ liệu khác.",
@@ -292,40 +315,60 @@ const createSheetWriter = async (config) => {
   const rowByDate = new Map();
   for (let index = 1; index < rows.length; index++) {
     if (rows[index].every((cell) => String(cell ?? "").trim() === "")) continue;
-    const date = rows[index][0];
-    if (!validDate(date) || rowByDate.has(date))
+    const raw = rows[index][0];
+    const rowNumber = index + 1;
+    const date = normalizeSheetDate(raw);
+    if (!date) {
+      const message = String(raw ?? "").trim() === ""
+        ? "đang trống. Hãy điền ngày báo cáo."
+        : "không phải ngày hợp lệ. Hãy nhập theo dd/MM/yyyy hoặc yyyy-MM-dd.";
+      throw error(`Ô A${rowNumber} ${message}`, 409);
+    }
+    if (rowByDate.has(date)) {
       throw error(
-        "Sheet có ngày thiếu/sai hoặc trùng; hãy sửa trước khi đồng bộ.",
+        `Ngày báo cáo ${date} bị trùng tại ô A${rowByDate.get(date).rowNumber} và A${rowNumber}. Hãy chỉ giữ một dòng cho ngày này.`,
         409,
       );
-    rowByDate.set(date, index + 1);
+    }
+    rowByDate.set(date, { rowNumber, existing: true });
   }
-  const isOldHeader =
-    rows.length > 0 &&
-    rows[0].length === 19 &&
-    (rows[0][0] === "Ngày lấy" || rows[0][0] === "Ngày báo cáo") &&
-    rows[0][1] === "Thời điểm lấy" &&
-    rows[0][18] === "Cảnh báo dữ liệu";
 
-  if (!rows.length || isOldHeader) {
+  if (columnCount === 24) {
+    await sheetCall(() =>
+      sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.spreadsheetId,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: { sheetId: properties.sheetId, gridProperties: { columnCount: 25 } },
+              fields: "gridProperties.columnCount",
+            },
+          }],
+        },
+      }),
+    );
+  }
+  if (!rows.length || legacyHeader) {
     await sheetCall(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
-        range: `${tab}!A1:X1`,
+        range: legacyHeader ? `${tab}!Y1` : `${tab}!A1:Y1`,
         valueInputOption: "RAW",
-        requestBody: { values: [HEADERS] },
+        requestBody: { values: [legacyHeader ? HEADERS.slice(-1) : HEADERS] },
       }),
     );
   }
   let nextRow = Math.max(2, rows.length + 1);
-  let rowCount = properties.gridProperties.rowCount;
+  let rowCount = initialRowCount;
   return {
     async write(row) {
-      let rowNumber = rowByDate.get(row[0]);
-      if (!rowNumber) {
-        rowNumber = nextRow++;
-        rowByDate.set(row[0], rowNumber);
+      const date = row[0];
+      let entry = rowByDate.get(date);
+      if (!entry) {
+        entry = { rowNumber: nextRow++, existing: false };
+        rowByDate.set(date, entry);
       }
+      const { rowNumber } = entry;
       if (rowNumber > rowCount) {
         const targetCount = Math.max(rowNumber, rowCount + 500);
         await sheetCall(() =>
@@ -348,14 +391,41 @@ const createSheetWriter = async (config) => {
         );
         rowCount = targetCount;
       }
+      if (!entry.existing) {
+        await sheetCall(() =>
+          sheets.spreadsheets.batchUpdate({
+            spreadsheetId: config.spreadsheetId,
+            requestBody: {
+              requests: [{
+                repeatCell: {
+                  range: {
+                    sheetId: properties.sheetId,
+                    startRowIndex: rowNumber - 1,
+                    endRowIndex: rowNumber,
+                    startColumnIndex: 0,
+                    endColumnIndex: 1,
+                  },
+                  cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/MM/yyyy" } } },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              }],
+            },
+          }),
+        );
+      }
       await sheetCall(() =>
         sheets.spreadsheets.values.update({
           spreadsheetId: config.spreadsheetId,
-          range: `${tab}!A${rowNumber}:X${rowNumber}`,
+          range: `${tab}!${entry.existing ? "B" : "A"}${rowNumber}:Y${rowNumber}`,
           valueInputOption: "RAW",
-          requestBody: { values: [row] },
+          requestBody: {
+            values: [entry.existing
+              ? row.slice(1)
+              : [(Date.parse(`${date}T00:00:00Z`) - SHEET_EPOCH) / DAY_MS, ...row.slice(1)]],
+          },
         }),
       );
+      entry.existing = true;
     },
   };
 };

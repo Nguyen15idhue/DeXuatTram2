@@ -116,7 +116,9 @@ const AdminCmsReportsPage = () => {
         {run.status === 'RUNNING' && <progress className="progress progress-primary w-full" value={run.processed} max={run.totalDays} />}
         {run.errors?.length > 0 && <div role="alert" className="alert alert-error block">
           {run.errors.map((item, index) => <p key={`${item.date || 'run'}-${index}`}>{item.date ? `${item.date}: ` : ''}{item.message}</p>)}
-          <p>Ngày bị lỗi chưa được xác nhận đồng bộ. Chọn lại ngày/khoảng ngày để chạy lại.</p>
+          <p>{run.errors.some(item => item.date)
+            ? 'Ngày bị lỗi chưa được xác nhận đồng bộ. Chọn lại ngày/khoảng ngày để chạy lại.'
+            : 'Lượt này chưa ghi báo cáo. Hãy xử lý lỗi trên trước khi chạy lại.'}</p>
         </div>}
         {run.rows?.length > 0 && <div className="overflow-x-auto rounded-box border border-base-200">
           <table className="table table-sm">
