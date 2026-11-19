@@ -515,7 +515,7 @@ const toDisplayValue = (val) => {
                     : {};
                   const cell = (
                     cellRenderers && typeof cellRenderers[key] === 'function'
-                      ? cellRenderers[key](row, getFieldValue(row, col), col)
+                      ? cellRenderers[key](row, getFieldValue(row, col), col, dataListOptions)
                       : (
                         <FieldRenderer
                           field={col}

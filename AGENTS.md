@@ -51,6 +51,9 @@ Swagger UI:  http://localhost:3000/api-docs
 - `lead_assignments`: lịch sử phân chia (đóng cũ bằng `ended_at`, không ghi đè); auto-routing theo Data List `MKT Lead Routing` (vùng→phòng ban) khi classification `TIEM_NANG`
 - `journey_activity_logs`: timeline hợp nhất Lead/Proposal/Station (`lead_created/updated/assigned/classification_changed/stage_changed/proposal_created/proposal_status_changed/proposal_updated/station_created/station_status_changed/station_updated`)
 - Proposal từ Lead: `POST /api/admin/leads/:id/create-proposal` (prefill 8 field, idempotency key); `station_proposals.journey_id` NULLABLE (migration 137)
+- Popup sửa Lead hiện phân loại trên header (chưa có giá trị → “Chưa phân loại”; hủy sửa bỏ thay đổi nháp). Người có quyền tạo đề xuất chọn kết quả `SUCCESS` (“1. Gửi vị trí đề xuất”) thấy “Lưu và tạo đề xuất”; chỉ lưu thành công mới mở form tạo nhanh, dùng họ tên/SĐT vừa lưu. Chỉ gửi form tạo nhanh mới tạo đề xuất. Tooltip ƯT1–ƯT4 của `tvbh_history.GDKV_phan_loai_KH` sửa tại `frontend/src/components/dynamic/LeadPrioritySelect.jsx`; không dùng các nhãn này để thay đổi `customer_classification`.
+- Popup xem Lead (`/admin/leads/view=ID`) hiển thị toàn bộ trường ghi chú nhiều dòng và ô ghi chú trong bảng lịch sử, giữ xuống dòng và tự ngắt chữ dài.
+- Trong các tab của bảng Lead, bấm Mã Lead để mở popup xem và giữ tab hiện tại; cột Hành động không còn nút Xem. Cột phân loại hiển thị `ƯT1_tiềm năng` hoặc `ƯT2_quan tâm` cho hai nhóm tương ứng (gồm mã cũ và mã `ut1`/`ut2`), không đổi dữ liệu hay bộ lọc.
 ### Dynamic config entities
 - **Field Definition**: 13 types chuẩn (`text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`) + type `user`. `source` = `fixed` (cột DB) hoặc `json` (trong `custom_data`)
 - **Form**: gắn 1 entity, có `purpose` (`all`/`create`/`view`), field theo `order_index`, section trong `layout_config`

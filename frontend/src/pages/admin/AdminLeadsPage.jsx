@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { leadService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
+import FieldRenderer from '../../components/dynamic/FieldRenderer';
 import LeadDetailPopup from '../../components/admin/LeadDetailPopup';
 import LeadAssignDialog from '../../components/admin/LeadAssignDialog';
 import Toast from '../../components/Toast';
@@ -19,10 +20,17 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { leadFocusSectionForRole } from '../../utils/leadSectionPerms';
-import { canAccessCustomers, canEditLead, canAssignLead, canManageAllLeads, canWriteLeadGeneral, LEAD_CONSULTATION_OPTIONS, leadConsultationTiming, leadTabPolicy } from '../../utils/leadAccess';
+import { canAccessCustomers, canEditLead, canAssignLead, canManageAllLeads, canWriteLeadGeneral, LEAD_CONSULTATION_OPTIONS, leadConsultationTiming, leadTabPolicy, normalizeLeadText } from '../../utils/leadAccess';
 import useLeadTaskCounts from '../../hooks/useLeadTaskCounts';
 import { notifyLeadTaskCountsChanged } from '../../utils/leadTaskCounts';
 import { Users, Upload, Plus, Search, RotateCcw, X, Trash2, Split, SlidersHorizontal } from 'lucide-react';
+
+const getClassificationBadge = (value) => {
+  const text = normalizeLeadText(String(value ?? '').replace(/_/g, ' '));
+  if (/^(ut1 ?)?tiem nang$|^ut1$/.test(text)) return { label: 'ƯT1_tiềm năng', color: 'badge-success' };
+  if (/^(ut2 ?)?quan tam$|^ut2$/.test(text)) return { label: 'ƯT2_quan tâm', color: 'badge-warning' };
+  return null;
+};
 
 const AdminLeadsPage = ({ basePath = '/admin/leads' }) => {
   const { token, user } = useAuth();
@@ -501,7 +509,6 @@ const AdminLeadsPage = ({ basePath = '/admin/leads' }) => {
   const renderActions = (row) => (
     <div className="flex gap-1 items-center">
       {row.deleted_at && <span className="badge badge-error badge-sm mr-1">Đã xóa</span>}
-      <button className="btn btn-sm btn-primary" onClick={() => navigate(leadPath(`/view=${row.id}`))}>Xem</button>
       {canEditLead(user, row) && <button className="btn btn-sm btn-warning" onClick={() => navigate(leadPath(`/edit=${row.id}`))}>Sửa</button>}
       {canAssignLead(user, row) && <button className="btn btn-sm btn-outline" onClick={() => { setSelectedIds([row.id]); setAssignOpen(true); }}>Phân chia</button>}
       {canWriteLeadGeneral(user, row) && (
@@ -746,6 +753,7 @@ const AdminLeadsPage = ({ basePath = '/admin/leads' }) => {
 
       {popup.open && (
         <LeadDetailPopup
+          key={popup.recordId}
           recordId={popup.recordId}
           mode={popup.mode}
           onClose={() => { setPopup({ open: false, recordId: null, mode: 'view' }); navigate(leadPath()); }}
@@ -761,6 +769,18 @@ const AdminLeadsPage = ({ basePath = '/admin/leads' }) => {
           viewId={leadsViewId}
           data={leads}
           cellRenderers={{
+            lead_code: (row, value) => (
+              <Link className="link link-primary underline" to={leadPath(`/view=${row.id}`)}>
+                {value || `#${row.id}`}
+              </Link>
+            ),
+            customer_classification: (row, value, field, dataListOptions) => {
+              const label = classificationOptions.find((option) => option.value === value)?.label;
+              const badge = getClassificationBadge(value) || getClassificationBadge(label);
+              return badge
+                ? <span className={`badge ${badge.color} whitespace-nowrap`}>{badge.label}</span>
+                : <FieldRenderer field={field} value={value} entity="leads" entityId={row.id} dataListOptions={dataListOptions} />;
+            },
             consultation_status: (row) => {
               const timing = leadConsultationTiming(row);
               return <div>
