@@ -2,6 +2,67 @@
 
 const API = process.env.E2E_API_URL || 'http://localhost:3000';
 
+test('guest submit shows loading during geocoding and saving, then allows a retry', async ({ page }) => {
+  const origin = process.env.E2E_BASE_URL || 'http://localhost:5173';
+  await page.route('**/*', route =>
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort());
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const data = path.endsWith('/field-definitions/entity/ev_charging_reports')
+      ? [{ key: 'address', type: 'text', label: 'Địa chỉ', required: true }]
+      : [];
+    return route.fulfill({ json: { success: true, data } });
+  });
+  let releaseGeocode, releaseSave;
+  const geocodeGate = new Promise(resolve => { releaseGeocode = resolve; });
+  const saveGate = new Promise(resolve => { releaseSave = resolve; });
+  let geocodes = 0, saves = 0;
+  await page.route('**/api/geocode/search', async route => {
+    geocodes++;
+    await geocodeGate;
+    await route.fulfill({ json: { success: true, data: { results: [{ lat: 21.03, lon: 105.85 }] } } });
+  });
+  await page.route('**/api/ev-reports/guest', async route => {
+    if (++saves === 1) {
+      await saveGate;
+      return route.fulfill({ status: 500, json: { success: false, message: 'Không thể lưu bản thử' } });
+    }
+    return route.fulfill({ status: 201, json: { success: true, data: { address: 'Địa chỉ thử' } } });
+  });
+  try {
+    await page.goto(`${origin}/nhu-cau-sac-xe`);
+    await page.getByRole('button', { name: /Đăng ký thông tin nhu cầu sạc/ }).click();
+    const address = page.locator('[data-field-key="address"] input');
+    const submit = page.locator('form.dynamic-form button[type="submit"]');
+    await submit.click();
+    await expect(page.getByText('Vui lòng kiểm tra các trường bắt buộc')).toBeVisible();
+    await address.fill('Địa chỉ thử');
+    await submit.click();
+    await expect.poll(() => geocodes).toBe(1);
+    await expect(submit).toHaveText('Đang gửi...');
+    await expect(submit).toBeDisabled();
+    await expect(submit.locator('.animate-spin')).toBeVisible();
+    await submit.locator('..').dispatchEvent('submit');
+    releaseGeocode();
+    await expect.poll(() => saves).toBe(1);
+    await expect(submit).toBeDisabled();
+    await expect(submit).toHaveAttribute('aria-busy', 'true');
+    releaseSave();
+    await expect(page.getByText('Không thể lưu bản thử')).toBeVisible();
+    await expect(submit).toBeEnabled();
+    await expect(submit).toHaveText('Gửi thông tin đi');
+    await expect(address).toHaveValue('Địa chỉ thử');
+    expect(geocodes).toBe(1);
+    expect(saves).toBe(1);
+    await submit.click();
+    await expect(page.getByText('Cảm ơn bạn đã chia sẻ!')).toBeVisible();
+    expect(saves).toBe(2);
+  } finally {
+    releaseGeocode();
+    releaseSave();
+  }
+});
+
 // FE-06: form khách nặc danh chia sẻ điểm sạc xe điện (kế hoạch 78).
 // Quy ước: không ảnh, không tracking code, không status; 1 SĐT gửi được
 // nhiều record; SĐT bắt buộc ở validator, cột DB nullable. Yêu cầu backend
@@ -151,8 +212,14 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     await expect(freeText).toHaveCount(0);
   });
 
-  test('nearby preview: search address opens 20km stations modal', async ({ page }) => {
-    // Mock geocode + stations: chỉ ACTIVE/DEPLOYING trong 20 km mới hiện
+  test('nearby preview shows stations and proposal markers, and distinguishes load errors', async ({ page }) => {
+    const origin = process.env.E2E_BASE_URL || 'http://localhost:5173';
+    await page.route('**/*', route =>
+      new URL(route.request().url()).origin === origin ? route.fallback() : route.abort());
+    await page.route('**/api/**', route =>
+      route.fulfill({ json: { success: true, data: [] } }));
+    await page.route('**/api/map-configs?*', route =>
+      route.fulfill({ json: { success: true, data: { renderer: 'leaflet' } } }));
     await page.route('**/api/geocode/search', (route) =>
       route.fulfill({
         status: 200,
@@ -168,56 +235,57 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
         })
       })
     );
-    const station = (id, status, lat, lng) => ({
-      id,
-      name: `Trạm ${id}`,
-      status,
-      latitude: lat,
-      longitude: lng,
-      address: 'Hà Tĩnh'
+    const requests = [];
+    let responseMode = 'populated';
+    await page.route('**/api/ev-reports/nearby-stations', route => {
+      requests.push(route.request().postDataJSON());
+      if (responseMode === 'error') {
+        return route.fulfill({ status: 500, json: { success: false } });
+      }
+      return route.fulfill({ json: { success: true, data: responseMode === 'empty' ? [] : [
+        { id: 'station:1', source: 'station', status: 'ACTIVE', name: 'Trạm 1',
+          address: 'Hà Tĩnh', latitude: 18.38, longitude: 105.80, distance_m: 11000 },
+        { id: 'proposal:1', source: 'proposal', status: 'DEPLOYING',
+          latitude: 18.42, longitude: 106.0, distance_m: 13000 },
+      ] } });
     });
-    await page.route('**/api/stations*', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: [
-            station(1, 'ACTIVE', 18.352, 105.901),
-            station(2, 'DEPLOYING', 18.42, 105.95),
-            station(3, 'PLANNING', 18.36, 105.91),
-            station(4, 'ACTIVE', 19.5, 105.9)
-          ]
-        })
-      })
-    );
 
-    await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Họ và tên')).toBeVisible({ timeout: 15000 });
-
-    // Nút "Vị trí của tôi" nằm dòng riêng bên trái ô tìm kiếm
-    const myLoc = page.getByRole('button', { name: 'Vị trí của tôi', exact: true });
-    const searchBox = page.locator('input[placeholder="Hoặc nhập địa chỉ cần xem trạm sạc lân cận..."]');
-    await expect(myLoc).toBeVisible();
-    await expect(searchBox).toBeVisible();
-    const myLocBox = await myLoc.boundingBox();
-    const searchBoxPos = await searchBox.boundingBox();
-    expect(myLocBox.x + myLocBox.width, 'ô tìm kiếm nằm bên phải nút').toBeLessThanOrEqual(searchBoxPos.x);
-
-    await searchBox.fill('Thạch Hà, Hà Tĩnh');
-    // Tự tìm khi gõ (debounce) — không cần nút "Tìm"
-    await expect(page.getByRole('button', { name: 'Tìm', exact: true })).toHaveCount(0);
-    await page.locator('.dynamic-select-dropdown > div').first().waitFor({ state: 'visible', timeout: 20000 });
-    await page.locator('.dynamic-select-dropdown > div').first().click();
+    await page.goto(`${origin}/nhu-cau-sac-xe`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: /Kiểm tra trạm sạc ở gần bạn/ }).click();
+    const searchBox = page.getByPlaceholder(/nhập địa chỉ cần xem trạm sạc/i);
+    const openFromAddress = async query => {
+      await searchBox.fill(query);
+      await page.getByText('Thạch Hà, Hà Tĩnh, Việt Nam', { exact: true }).click();
+    };
+    await openFromAddress('Thạch Hà');
 
     const modal = page.locator('.location-map-modal');
-    await expect(modal).toBeVisible({ timeout: 20000 });
-    await expect(modal.locator('.location-map-toolbar')).toContainText('Bán kính 20 km');
+    await expect(modal.locator('.location-map-toolbar')).toContainText('Bán kính 50 km');
     await expect(modal.locator('.location-map-toolbar')).toContainText('2 trạm lân cận');
-    // Legend khoá cứng 2 trạng thái: Hoạt động + Triển khai
-    await expect(modal.locator('.map-legend-item')).toHaveCount(2);
-    await expect(modal.locator('.map-legend')).toContainText('Hoạt động');
-    await expect(modal.locator('.map-legend')).toContainText('Triển khai');
+    expect(requests[0]).toEqual({ latitude: 18.352, longitude: 105.901 });
+    const markers = modal.locator('.leaflet-marker-pane .leaflet-marker-icon[role="button"]:not(.location-point-icon)');
+    await expect(markers).toHaveCount(2);
+    await markers.nth(1).click();
+    const proposalPopup = modal.locator('.leaflet-popup-content').filter({ hasText: 'Nguồn: Đề xuất' });
+    await expect(proposalPopup).toContainText(/triển khai/i);
+    await expect(proposalPopup).toContainText('13.00 km');
+    await expect(proposalPopup).not.toContainText('Địa chỉ');
+    await markers.first().click();
+    const stationPopup = modal.locator('.leaflet-popup-content').filter({ hasText: 'Trạm 1' });
+    await expect(stationPopup).toContainText(/hoạt động/i);
+    await expect(stationPopup).toContainText('Hà Tĩnh');
+    await modal.getByRole('button', { name: 'Close', exact: true }).click();
+
+    responseMode = 'error';
+    await openFromAddress('Thạch Hà, Hà Tĩnh');
+    await expect(modal.getByRole('alert')).toContainText('Không tải được trạm sạc lân cận');
+    await expect(modal.getByText(/Không có trạm sạc nào/)).toHaveCount(0);
+    await modal.getByRole('button', { name: 'Close', exact: true }).click();
+
+    responseMode = 'empty';
+    await openFromAddress('Địa chỉ tại Thạch Hà');
+    await expect(modal.getByText('Không có trạm sạc nào trong bán kính 50 km.')).toBeVisible();
+    await expect(modal.getByRole('alert')).toHaveCount(0);
   });
 
   test('admin ev-reports header links to the guest form', async ({ page, request }) => {

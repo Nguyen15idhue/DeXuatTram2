@@ -72,6 +72,19 @@ exports.checkNearbyPublic = async (req, res) => {
   }
 };
 
+exports.getNearbyStations = async (req, res) => {
+  try {
+    const data = await evReportService.getNearbyStations(req.body || {});
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    console.error("Get nearby charging stations error:", error);
+    res.status(500).json({ success: false, message: "Không tải được trạm sạc lân cận" });
+  }
+};
+
 exports.adminList = async (req, res) => {
   try {
     const reports = await evReportService.getAllReports({

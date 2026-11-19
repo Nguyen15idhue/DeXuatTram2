@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { MapPinned, LayoutGrid } from "lucide-react";
-import { stationService } from "../services/api";
+import { evReportService } from "../services/api";
 import { getMarkerColor } from "../utils/mapHelpers";
 import { getMarkerIcon, getMarkerIconBg } from "../utils/mapMarkerIcons";
 import { getStatusLabel } from "../utils/mapStatuses";
-import { haversineM } from "../utils/formatDistance";
 import { MapBadge } from "./MarkerIcon";
 import useMapStatuses from "../hooks/useMapStatuses";
 import useMapConfig from "../hooks/useMapConfig";
@@ -44,7 +43,7 @@ function createStationPopup(station) {
     station.name ||
     station.ma_tram ||
     station.ma_tram_gen ||
-    `Trạm #${station.id}`;
+    "Trạm sạc";
   div.appendChild(h3);
   const addRow = (label, value) => {
     if (value === undefined || value === null || String(value).trim() === "")
@@ -65,7 +64,8 @@ function createStationPopup(station) {
   statusP.appendChild(statusStrong);
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
-  addRow("Khoảng cách", `${Number(station._distanceKm || 0).toFixed(2)} km`);
+  if (station.source === "proposal") addRow("Nguồn", "Đề xuất");
+  addRow("Khoảng cách", `${(station.distance_m / 1000).toFixed(2)} km`);
   addRow("Địa chỉ", station.address);
   addRow(
     "Mô hình",
@@ -80,15 +80,14 @@ const NearbyStationsModal = ({
   open,
   lat,
   lng,
-  radiusKm = NEARBY_RADIUS_KM,
-  statuses = NEARBY_STATION_STATUSES,
   title = "Trạm sạc lân cận",
   onClose,
 }) => {
   const { stationStatuses } = useMapStatuses();
   const mapConfig = useMapConfig();
   const [stations, setStations] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showLegend, setShowLegend] = useState(() =>
     typeof window !== "undefined"
       ? window.matchMedia("(min-width: 768px)").matches
@@ -100,18 +99,25 @@ const NearbyStationsModal = ({
   );
   const valid =
     open && Number.isFinite(position[0]) && Number.isFinite(position[1]);
+  const radiusKm = NEARBY_RADIUS_KM;
 
   useEffect(() => {
     if (!valid) return undefined;
     let cancelled = false;
+    setStations([]);
+    setError("");
     setLoading(true);
-    stationService
-      .getAll()
+    evReportService
+      .getNearbyStations(...position)
       .then((res) => {
-        if (!cancelled) setStations(res && res.success ? res.data || [] : []);
+        if (cancelled) return;
+        if (!res?.success || !Array.isArray(res.data)) {
+          throw new Error(res?.message || "Không tải được trạm sạc lân cận");
+        }
+        setStations(res.data);
       })
       .catch(() => {
-        if (!cancelled) setStations([]);
+        if (!cancelled) setError("Không tải được trạm sạc lân cận. Vui lòng đóng bản đồ và thử lại.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -119,37 +125,23 @@ const NearbyStationsModal = ({
     return () => {
       cancelled = true;
     };
-  }, [valid]);
+  }, [valid, position]);
 
-  const statusSet = useMemo(() => new Set(statuses), [statuses]);
   const legendItems = useMemo(
-    () => stationStatuses.filter((s) => statusSet.has(s.value)),
-    [stationStatuses, statusSet],
+    () => stationStatuses.filter((s) => NEARBY_STATION_STATUSES.includes(s.value)),
+    [stationStatuses],
   );
-
-  const nearby = useMemo(() => {
-    const [clat, clng] = position;
-    return stations
-      .filter((s) => statusSet.has(s.status))
-      .map((s) => ({
-        ...s,
-        _distanceKm: haversineM(clat, clng, s.latitude, s.longitude) / 1000,
-      }))
-      .filter(
-        (s) => Number.isFinite(s._distanceKm) && s._distanceKm <= radiusKm,
-      )
-      .sort((a, b) => a._distanceKm - b._distanceKm);
-  }, [stations, position, radiusKm, statusSet]);
 
   const canvasStations = useMemo(
     () =>
-      nearby.map((s) => ({
+      stations.map((s) => ({
         ...s,
+        name: s.source === "proposal" ? "Điểm sạc từ đề xuất" : s.name,
         _color: getMarkerColor(s.status, "station"),
         _icon: getMarkerIcon(s.status, "station"),
         _bg: getMarkerIconBg(s.status, "station"),
       })),
-    [nearby],
+    [stations],
   );
   const circle = useMemo(
     () => ({ center: position, radiusM: radiusKm * 1000 }),
@@ -201,7 +193,7 @@ const NearbyStationsModal = ({
             Bán kính {radiusKm} km
           </span>
           <span className="ml-auto text-xs text-base-content/50">
-            {loading ? "Đang tải trạm sạc..." : `${nearby.length} trạm lân cận`}
+            {loading ? "Đang tải trạm sạc..." : !error && `${stations.length} trạm lân cận`}
           </span>
         </div>
 
@@ -259,7 +251,8 @@ const NearbyStationsModal = ({
               </div>
             </div>
           )}
-          {!loading && nearby.length === 0 && (
+          {error && <div role="alert" className="location-map-note">{error}</div>}
+          {!loading && !error && stations.length === 0 && (
             <div className="location-map-note">
               Không có trạm sạc nào trong bán kính {radiusKm} km.
             </div>

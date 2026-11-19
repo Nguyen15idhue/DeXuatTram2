@@ -367,6 +367,9 @@ export const proposalService = {
 };
 
 export const evReportService = {
+  getNearbyStations(latitude, longitude) {
+    return api.post('/ev-reports/nearby-stations', { latitude, longitude });
+  },
   getAll(token) {
     return token ? api.getWithAuth('/ev-reports', token) : api.get('/ev-reports');
   },
