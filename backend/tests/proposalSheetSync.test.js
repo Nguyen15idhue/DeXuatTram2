@@ -4,6 +4,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const pool = require('../src/utils/db');
 const service = require('../src/services/proposalSheetSyncService');
+const { backfill } = require('../scripts/backfill-proposal-status-changed-at');
 
 const config = { spreadsheetId: 'test', tabName: 'Đề xuất' };
 const definitions = [
@@ -82,6 +83,46 @@ test('current header does not rewrite rows; safe append preserves external colum
   assert.deepEqual(legacy.calls, []);
 });
 
+test('fills only an empty status-time header in the already prepared layout', async () => {
+  const index = headers.indexOf('Thời gian cập nhật trạng thái');
+  const prepared = headers.slice();
+  prepared[index] = '';
+  const sheet = createSheet([...prepared, 'Ghi chú riêng'], [[1, 1]]);
+  await service.assertHeader(sheet.sheets, config, fields);
+  assert.deepEqual(sheet.calls, [['update', "'Đề xuất'!AW1"]]);
+  assert.deepEqual(sheet.cells[0], [...headers, 'Ghi chú riêng']);
+
+  const occupiedRow = Array(headers.length).fill('');
+  occupiedRow[index] = 'Dữ liệu riêng';
+  const occupied = createSheet(prepared, [occupiedRow]);
+  await assert.rejects(service.assertHeader(occupied.sheets, config, fields), /cột đã có dữ liệu/);
+  assert.deepEqual(occupied.calls, []);
+});
+
+test('exports the selected GĐKV department and independent status and actual ON dates', () => {
+  const columns = service.buildColumns([]);
+  const proposal = record(1, {
+    submitter_name: 'CTV', parent_name: 'GĐKV', parent_chuc_vu: 'Giám đốc Khu vực',
+    parent_department: 'Phòng Bắc', grandparent_name: 'GĐTT',
+    grandparent_chuc_vu: 'Giám đốc Trung tâm Kinh doanh', grandparent_department: 'Phòng khác',
+    status_changed_at: new Date('2026-01-02T03:04:00Z'),
+    ngay_du_kien_on: '2026-02-01', actual_on_date: '2026-02-03'
+  });
+  const row = service.mapProposalToRow(proposal, [], 1);
+  assert.equal(columns[6].key, '__area_department');
+  assert.equal(columns[47].key, '__proposal_status');
+  assert.equal(columns[48].key, '__status_changed_at');
+  assert.equal(columns[53].key, '__expected_on_date');
+  assert.equal(columns[54].key, '__actual_on_date');
+  assert.equal(row[6], 'Phòng Bắc');
+  assert.equal(row[48], '02/01/2026 10:04');
+  assert.equal(row[54], '03/02/2026');
+  const noManager = service.mapProposalToRow(record(2, { actual_on_date: null }), [], 1);
+  assert.equal(noManager[6], '');
+  assert.equal(noManager[48], '');
+  assert.equal(noManager[54], '');
+});
+
 test('exports managers, fixed values, user names, empty amounts and boolean values correctly', () => {
   const proposal = record(1, {
     submitter_name: 'Nhân viên',
@@ -131,8 +172,8 @@ test('exports independent proposed and committed pole counts by category', () =>
   const columns = service.buildColumns(fields);
   const row = service.mapProposalToRow(proposal, fields, 1, new Map(), definitions);
   const values = Object.fromEntries(columns.map((column, index) => [column.key, row[index]]));
-  assert.equal(columns[18].header, 'Quy mô trụ đề xuất');
-  assert.equal(columns[31].header, 'Quy mô trụ chốt');
+  assert.equal(columns[19].header, 'Quy mô trụ đề xuất');
+  assert.equal(columns[32].header, 'Quy mô trụ chốt');
   assert.equal(values.__proposed_AC22, 3);
   assert.equal(values.__proposed_DC30, 1);
   assert.equal(values.__proposed_DC60, 1);
@@ -284,11 +325,60 @@ test('column migration refuses unknown headers and merged ranges before writing'
   assert.equal(writes, 0);
 });
 
+test('pole migration still recognizes layouts predating the three new columns', async () => {
+  const legacy = service.buildColumns(fields)
+    .filter((column) => !['areaDepartment', 'statusChangedAt', 'actualOnDate'].includes(column.kind));
+  let header = legacy.filter((column) => column.kind !== 'poleCount').map((column) => column.header);
+  const sheets = { spreadsheets: {
+    get: async () => ({ data: { sheets: [{ properties: { title: config.tabName, sheetId: 7 }, merges: [] }] } }),
+    values: { get: async () => ({ data: { values: [header] } }) }
+  } };
+  assert.deepEqual(await service.migratePoleColumns(sheets, config, fields), { status: 'ready', columnsPerGroup: 12 });
+  header = legacy.map((column) => column.header);
+  assert.deepEqual(await service.migratePoleColumns(sheets, config, fields), { status: 'already_migrated' });
+});
+
 test('migration CLI refuses apply without backup and worker-stop confirmations', () => {
   const script = path.resolve(__dirname, '../scripts/migrate-proposal-sheet-poles.js');
   const result = spawnSync(process.execPath, [script, '--apply'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /confirm-backup --confirm-workers-stopped/);
+  const backfillScript = path.resolve(__dirname, '../scripts/backfill-proposal-status-changed-at.js');
+  const backfillResult = spawnSync(process.execPath, [backfillScript, '--apply'], { encoding: 'utf8' });
+  assert.equal(backfillResult.status, 1);
+  assert.match(backfillResult.stderr, /confirm-backup --confirm-workers-stopped/);
+});
+
+test('status backfill skips missing or mismatched logs and queues only successful inserts', async () => {
+  const rows = [
+    { id: 1, status: 'ACTIVE', log_id: 8, to_status: 'ACTIVE', log_created_at: '2026-01-01' },
+    { id: 2, status: 'PENDING', log_id: null, to_status: null },
+    { id: 3, status: 'ACTIVE', log_id: 9, to_status: 'PENDING', log_created_at: '2026-01-01' },
+    { id: 4, status: 'ACTIVE', log_id: 10, to_status: 'ACTIVE', log_created_at: '2026-01-01' }
+  ];
+  const calls = [];
+  const connection = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (sql.includes('LEFT JOIN proposal_status_change_times')) return [params[0] === 0 ? rows : []];
+      if (sql.includes('INSERT INTO proposal_status_change_times')) {
+        return [{ affectedRows: params[1] === 1 ? 1 : 0 }];
+      }
+      if (sql.includes('INSERT INTO proposal_sheet_sync_queue')) return [{ affectedRows: 1 }];
+      throw new Error('Unexpected query');
+    },
+    beginTransaction: async () => calls.push({ action: 'begin' }),
+    commit: async () => calls.push({ action: 'commit' }),
+    rollback: async () => calls.push({ action: 'rollback' })
+  };
+  assert.deepEqual(await backfill(connection, false),
+    { eligible: 2, missing: 1, mismatch: 1, updated: 0, concurrent: 0 });
+  assert.equal(calls.filter((call) => call.action === 'begin').length, 0);
+  calls.length = 0;
+  assert.deepEqual(await backfill(connection, true),
+    { eligible: 2, missing: 1, mismatch: 1, updated: 1, concurrent: 1 });
+  assert.equal(calls.filter((call) => call.sql?.includes('INSERT INTO proposal_sheet_sync_queue')).length, 1);
+  assert.equal(calls.filter((call) => call.action === 'commit').length, 2);
 });
 
 test('deleting and appending compacts only live serials, retaining external columns', async () => {
