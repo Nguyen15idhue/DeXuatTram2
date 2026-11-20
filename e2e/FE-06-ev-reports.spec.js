@@ -2,10 +2,19 @@
 
 const API = process.env.E2E_API_URL || 'http://localhost:3000';
 
-test('guest submit shows loading during geocoding and saving, then allows a retry', async ({ page }) => {
+for (const allowAds of [false, true]) {
+test(`guest submit shows loading and allows a retry with ad tracking ${allowAds ? 'enabled' : 'declined'}`, async ({ page }) => {
   const origin = process.env.E2E_BASE_URL || 'http://localhost:5173';
   await page.route('**/*', route =>
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort());
+  let pixelLoads = 0;
+  await page.route('https://connect.facebook.com/en_US/fbevents.js', (route) => {
+    pixelLoads++;
+    return route.fulfill({ contentType: 'application/javascript', body:
+      'window.pixelCalls = []; window.fbq.callMethod = (...args) => window.pixelCalls.push(args);' });
+  });
+  const pixelEvents = () => page.evaluate(() =>
+    (window.pixelCalls || []).filter(([command]) => command === 'trackSingle').map(([, , ...event]) => event));
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
     const data = path.endsWith('/field-definitions/entity/ev_charging_reports')
@@ -31,6 +40,12 @@ test('guest submit shows loading during geocoding and saving, then allows a retr
   });
   try {
     await page.goto(`${origin}/nhu-cau-sac-xe`);
+    const notice = page.getByRole('region', { name: 'Đo lường quảng cáo Meta' });
+    await expect(notice).toBeVisible();
+    expect(pixelLoads).toBe(0);
+    await notice.getByRole('button', { name: allowAds ? 'Đồng ý' : 'Không đồng ý', exact: true }).click();
+    await expect(notice).toBeHidden();
+    if (allowAds) await expect.poll(pixelEvents).toEqual([['PageView']]);
     await page.getByRole('button', { name: /Đăng ký thông tin nhu cầu sạc/ }).click();
     const address = page.locator('[data-field-key="address"] input');
     const submit = page.locator('form.dynamic-form button[type="submit"]');
@@ -54,14 +69,45 @@ test('guest submit shows loading during geocoding and saving, then allows a retr
     await expect(address).toHaveValue('Địa chỉ thử');
     expect(geocodes).toBe(1);
     expect(saves).toBe(1);
+    expect(await pixelEvents()).toEqual(allowAds ? [['PageView']] : []);
     await submit.click();
     await expect(page.getByText('Cảm ơn bạn đã chia sẻ!')).toBeVisible();
     expect(saves).toBe(2);
+    await expect.poll(pixelEvents).toEqual(allowAds ? [['PageView'], ['Lead']] : []);
+    expect(pixelLoads).toBe(allowAds ? 1 : 0);
+
+    await page.reload();
+    const settings = page.getByRole('button', { name: 'Cài đặt đo lường quảng cáo' });
+    await expect(settings).toBeVisible();
+    await expect(notice).toBeHidden();
+    if (allowAds) {
+      await expect.poll(pixelEvents).toEqual([['PageView']]);
+      await page.goto(`${origin}/login`);
+      await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
+      await expect(settings).toHaveCount(0);
+      expect(pixelLoads).toBe(2);
+      await page.goBack();
+      await expect(settings).toBeVisible();
+      await expect.poll(pixelEvents).toEqual([['PageView']]);
+      const loadsBeforeRevocation = pixelLoads;
+      await settings.click();
+      await notice.getByRole('button', { name: 'Không đồng ý', exact: true }).click();
+      await expect.poll(() => page.evaluate(() => window.pixelCalls.at(-1))).toEqual(['consent', 'revoke']);
+      await page.reload();
+      await expect(settings).toBeVisible();
+      expect(pixelLoads).toBe(loadsBeforeRevocation);
+    }
+    const loadsBeforeLogin = pixelLoads;
+    await page.goto(`${origin}/login`);
+    await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
+    await expect(settings).toHaveCount(0);
+    expect(pixelLoads).toBe(loadsBeforeLogin);
   } finally {
     releaseGeocode();
     releaseSave();
   }
 });
+}
 
 // FE-06: form khách nặc danh chia sẻ điểm sạc xe điện (kế hoạch 78).
 // Quy ước: không ảnh, không tracking code, không status; 1 SĐT gửi được

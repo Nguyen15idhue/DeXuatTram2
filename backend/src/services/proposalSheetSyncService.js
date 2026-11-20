@@ -32,6 +32,7 @@ const BASE_COLUMNS = [
   { kind: 'createdAt', key: '__created_at', header: 'Ngày tạo' },
   { kind: 'submitter', key: '__submitter_name', header: 'Người đề xuất' },
   { kind: 'areaDirector', key: '__area_director', header: 'GĐKV quản lý' },
+  { kind: 'areaDepartment', key: '__area_department', header: 'Phòng ban' },
   { kind: 'centerDirector', key: '__center_director', header: 'Giám đốc TTKD' },
   { kind: 'legalName', key: '__legal_name', header: 'Pháp nhân / Chủ trạm' },
   { kind: 'contactPhone', key: '__contact_phone', header: 'SĐT liên hệ' },
@@ -51,11 +52,13 @@ const BASE_COLUMNS = [
   { kind: 'totalCost', key: '__total_cost', header: 'Tổng chi phí' },
   { kind: 'committedTotal', key: '__committed_total', header: 'Tổng giá trị trụ chốt' },
   { kind: 'proposalStatus', key: '__proposal_status', header: 'Trạng thái đề xuất' },
+  { kind: 'statusChangedAt', key: '__status_changed_at', header: 'Thời gian cập nhật trạng thái' },
   { kind: 'reviewLevel', key: '__review_level', header: 'Mức độ xem xét' },
   { kind: 'qhStatus', key: '__qh_status', header: 'Trạng thái Quy hoạch' },
   { kind: 'plStatus', key: '__pl_status', header: 'Trạng thái Pháp lý' },
   { kind: 'proposalNote', key: '__proposal_note', header: 'Ghi chú trạng thái' },
   { kind: 'expectedOnDate', key: '__expected_on_date', header: 'Ngày dự kiến ON' },
+  { kind: 'actualOnDate', key: '__actual_on_date', header: 'Ngày ON thực tế' },
   { kind: 'updatedAt', key: '__updated_at', header: 'Ngày cập nhật' },
   { kind: 'mapUrl', key: '__map_url', header: 'Google Maps' }
 ];
@@ -66,7 +69,8 @@ const EXPLICIT_FIELD_KEYS = new Set([
   'xa_phuong', 'province', 'vung_mien', 'land_type', 'dien_tich_mat_bang',
   'loai_tru', 'so_luong_tru', 'tdt_tru', 'loai_tru_nq', 'loai_tru_nq_cs', 'loai_tru_lk',
   'chot_so_luong_tru', 'tong_chi_phi', 'tong_gia_tri_chot', 'status', 'review_level',
-  'quy_hoach_score', 'phap_ly_score', 'note', 'ngay_du_kien_on', 'link_google_map', 'link_gg_map'
+  'quy_hoach_score', 'phap_ly_score', 'note', 'ngay_du_kien_on', 'status_changed_at',
+  'on_date', 'link_google_map', 'link_gg_map'
 ]);
 
 const REVIEW_LEVEL_LABELS = {
@@ -216,6 +220,17 @@ const formatDateTime = (value) => {
   }).format(date);
 };
 
+const formatStatusChangeTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Thời gian cập nhật trạng thái không hợp lệ');
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date).map(({ type, value: part }) => [type, part]));
+  return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+};
+
 const formatDate = (value) => {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -350,8 +365,10 @@ const resolveProposalManagers = (proposal) => {
     salesProfile({ full_name: proposal.parent_name, department: proposal.parent_department, chuc_vu: proposal.parent_chuc_vu }),
     salesProfile({ full_name: proposal.grandparent_name, department: proposal.grandparent_department, chuc_vu: proposal.grandparent_chuc_vu })
   ];
+  const areaDirector = chain.find((user) => isGdkv(user.chucVu, user.department));
   return {
-    areaDirector: chain.find((user) => isGdkv(user.chucVu, user.department))?.name || '',
+    areaDirector: areaDirector?.name || '',
+    areaDepartment: areaDirector?.department || '',
     centerDirector: chain.find((user) => isGdtt(user.chucVu, user.department))?.name || ''
   };
 };
@@ -390,8 +407,13 @@ const buildColumns = (fields) => [
 const buildHeaderRow = (fields) => buildColumns(fields).map((column) => column.header);
 
 const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}) => {
-  const expected = buildHeaderRow(fields);
-  const previous = buildColumns(fields).filter((column) => column.kind !== 'poleCount').map((column) => column.header);
+  const columns = buildColumns(fields);
+  const addedKinds = new Set(['areaDepartment', 'statusChangedAt', 'actualOnDate']);
+  const layouts = [columns, columns.filter((column) => !addedKinds.has(column.kind))]
+    .map((layout) => ({
+      expected: layout.map((column) => column.header),
+      previous: layout.filter((column) => column.kind !== 'poleCount').map((column) => column.header)
+    }));
   const [headerResponse, metadataResponse] = await Promise.all([
     sheets.spreadsheets.values.get({
       spreadsheetId: config.spreadsheetId,
@@ -405,10 +427,14 @@ const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}
   const existing = (headerResponse.data.values?.[0] || []).map((value) => String(value || '').trim());
   const sheet = (metadataResponse.data.sheets || []).find((item) => item.properties?.title === config.tabName);
   if (!sheet || !Number.isInteger(sheet.properties.sheetId)) throw new Error('Không tìm thấy tab Google Sheet cần chuyển đổi');
-  if (expected.every((header, index) => existing[index] === header)) return { status: 'already_migrated' };
-  if (!previous.every((header, index) => existing[index] === header)) {
+  if (layouts.some(({ expected }) => expected.every((header, index) => existing[index] === header))) {
+    return { status: 'already_migrated' };
+  }
+  const layout = layouts.find(({ previous }) => previous.every((header, index) => existing[index] === header));
+  if (!layout) {
     throw new Error('Header hiện tại không khớp cấu trúc cũ; không thể tự chèn cột an toàn');
   }
+  const { expected, previous } = layout;
   const proposedIndex = previous.indexOf('Quy mô trụ đề xuất') + 1;
   const committedIndex = previous.indexOf('Quy mô trụ chốt') + 1;
   const count = POLE_CATEGORIES.length;
@@ -489,6 +515,7 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
     __created_at: formatDateTime(proposal.created_at),
     __submitter_name: proposal.submitter_name || '',
     __area_director: managers.areaDirector,
+    __area_department: managers.areaDepartment,
     __center_director: managers.centerDirector,
     __legal_name: legalName,
     __contact_phone: phone,
@@ -508,6 +535,7 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
     __total_cost: formatMoney(custom.tong_chi_phi),
     __committed_total: formatMoney(proposal.tong_gia_tri_chot),
     __proposal_status: statusLabel,
+    __status_changed_at: formatStatusChangeTime(proposal.status_changed_at),
     __review_level: reviewLevel,
     __qh_status: departmentReviewLabel({
       score: proposal.quy_hoach_score,
@@ -523,6 +551,7 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
     }),
     __proposal_note: noteLabel,
     __expected_on_date: formatDate(proposal.ngay_du_kien_on),
+    __actual_on_date: formatDate(proposal.actual_on_date),
     __updated_at: formatDateTime(proposal.updated_at),
     __map_url: mapUrl
   };
@@ -637,7 +666,7 @@ const compactSheetSerials = async (sheets, config, rowById) => {
 const loadProposals = async (proposalIds) => {
   if (!proposalIds.length) return [];
   const [rows] = await pool.query(
-    `SELECT p.*,
+    `SELECT p.*, cs.on_date AS actual_on_date, pst.changed_at AS status_changed_at,
             u.full_name AS submitter_name,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS submitter_department,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.chuc_vu')) AS submitter_chuc_vu,
@@ -658,6 +687,8 @@ const loadProposals = async (proposalIds) => {
                  AND r.target_department = 'PL'
             ) AS pl_regrade_pending
         FROM station_proposals p
+        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
+        LEFT JOIN proposal_status_change_times pst ON pst.proposal_id = p.id
         LEFT JOIN users u ON u.id = p.user_id
         LEFT JOIN users parent ON parent.id = u.parent_id
         LEFT JOIN users grandparent ON grandparent.id = parent.parent_id
@@ -739,6 +770,22 @@ const assertHeader = async (sheets, config, fields) => {
   const existing = (response.data.values?.[0] || []).map((value) => String(value || '').trim());
   const expected = buildHeaderRow(fields);
   if (expected.every((header, index) => existing[index] === header)) return;
+  const statusTimeIndex = columns.findIndex((column) => column.kind === 'statusChangedAt');
+  if (!existing[statusTimeIndex]
+      && expected.every((header, index) => index === statusTimeIndex || existing[index] === header)) {
+    const column = columnName(statusTimeIndex + 1);
+    const cells = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId, range: `${tab}!${column}2:${column}`
+    });
+    if ((cells.data.values || []).some((row) => row.some((value) => String(value ?? '').trim()))) {
+      throw new Error('Không thể đặt header thời gian trạng thái vì cột đã có dữ liệu. Hãy sao lưu và kiểm tra Sheet.');
+    }
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId, range: `${tab}!${column}1`,
+      valueInputOption: 'RAW', requestBody: { values: [[expected[statusTimeIndex]]] }
+    });
+    return;
+  }
   const matchesPrefix = existing.every((header, index) => header === expected[index]);
   if (matchesPrefix && existing.length < expected.length) {
     const firstColumn = columnName(existing.length + 1);

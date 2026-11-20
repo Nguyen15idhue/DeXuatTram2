@@ -11,6 +11,7 @@ import NearbyStationsModal, {
   NEARBY_RADIUS_KM,
 } from "../../components/NearbyStationsModal";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
+import useEvReportMetaPixel from "../../hooks/useEvReportMetaPixel";
 import Toast from "../../components/Toast";
 import {
   LocateFixed,
@@ -179,6 +180,8 @@ const PlaceSearchInput = ({ onPick, placeholder, className = "" }) => {
 };
 
 const EvReportGuestPage = () => {
+  const { consent, chooseConsent, trackLead } = useEvReportMetaPixel();
+  const [showAdSettings, setShowAdSettings] = useState(false);
   const [mapCoords, setMapCoords] = useState({ latitude: "", longitude: "" });
   const [locating, setLocating] = useState(false);
   const [website, setWebsite] = useState("");
@@ -594,6 +597,7 @@ const EvReportGuestPage = () => {
         website,
       });
       if (res.success) {
+        trackLead();
         setDone(res.data);
         const warns = res.warnings || [];
         setToast({
@@ -874,6 +878,30 @@ const EvReportGuestPage = () => {
             Cho chúng tôi biết bạn thường sạc xe ở đâu, TMT-EGREEN sẽ mở thêm trạm sạc gần bạn.
           </p>
         </header>
+
+        {consent === null || showAdSettings ? (
+          <section aria-labelledby="ev-ad-consent" className="rounded-xl border border-base-300 bg-base-100 p-4">
+            <h2 id="ev-ad-consent" className="font-semibold">Đo lường quảng cáo Meta</h2>
+            <p className="mt-1 text-sm text-base-content/80">
+              Nếu bạn đồng ý, Meta Pixel sẽ được tải và có thể sử dụng cookie để đo lượt xem trang này và lượt gửi
+              nhu cầu sạc thành công. Bạn vẫn có thể gửi thông tin nếu không đồng ý.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => {
+                chooseConsent("denied");
+                setShowAdSettings(false);
+              }}>Không đồng ý</button>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => {
+                chooseConsent("granted");
+                setShowAdSettings(false);
+              }}>Đồng ý</button>
+            </div>
+          </section>
+        ) : (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAdSettings(true)}>
+            Cài đặt đo lường quảng cáo
+          </button>
+        )}
 
       {previewOpen && previewCenter && (
         <NearbyStationsModal
