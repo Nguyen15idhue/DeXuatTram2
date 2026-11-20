@@ -63,6 +63,56 @@ const BASE_COLUMNS = [
   { kind: 'mapUrl', key: '__map_url', header: 'Google Maps' }
 ];
 
+const DATA_QT1_FIELDS = [
+  ['area', 'Diện tích (dạng chữ)'],
+  ['description', 'Mô tả'],
+  ['ma_tinh', 'Mã tỉnh'],
+  ['phap_ly_dat', 'Pháp lý đất'],
+  ['ghi_chu', 'Ghi chú'],
+  ['tdt_tong_cong', 'Tổng cộng chi phí'],
+  ['lk_dia_chi_dkkd', 'Địa chỉ ĐKKD'],
+  ['lk_sdt', 'SĐT CĐT'],
+  ['nq_gia_niem_yet', 'Giá niêm yết'],
+  ['nq_gia_uu_dai', 'Giá ưu đãi'],
+  ['nq_ten_khach_hang', 'Tên khách hàng'],
+  ['nq_mst', 'MST'],
+  ['nq_so_tai_khoan', 'Số tài khoản'],
+  ['link_de_xuat', 'Kiểm tra quy hoạch'],
+  ['loai_uu_tien', 'Loại ưu tiên'],
+  ['ngan_hang', 'Tên ngân hàng'],
+  ['chinh_sach_nq', 'Chính sách Nhượng quyền'],
+  ['chi_phi_van_chuyen', 'Chi phí vận chuyển'],
+  ['chi_phi_tram_bien_ap', 'Chi phí trạm biến áp'],
+  ['chi_phi_ha_tang', 'Chi phí hạ tầng'],
+  ['chi_phi_thue_vi_tri', 'Chi phí thuê vị trí'],
+  ['dat_coc', 'Đặt cọc'],
+  ['ghi_chu_dat_coc', 'Ghi chú về khoản cọc'],
+  ['hien_trang_mat_bang', 'Ảnh toàn mặt bằng'],
+  ['video_mat_bang', 'Video mặt bằng (nếu có)'],
+  ['doi_tac', 'Người liên hệ'],
+  ['hop_dong_thue', 'Hợp đồng thuê đất (Nếu có)'],
+  ['quan_he_mat_bang', 'Quan hệ với mặt bằng'],
+  ['thoi_han_thue_dat', 'Thời hạn sử dụng/thuê'],
+  ['do_rong_loi_ra', 'Độ rộng lối ra, vào (m)'],
+  ['loai_khach_hang', 'Phân loại khách hàng'],
+  ['note_phap_ly', 'Ghi chú về hồ sơ pháp lý'],
+  ['note_quy_hoach', 'Ghi chú về Quy hoạch'],
+  ['note_tai_chinh', 'Ghi chú về Tài chính'],
+  ['nhom_mat_bang', 'Nhóm mặt bằng'],
+  ['vi_tri_lap_tru', 'Ảnh vị trí dự kiến lắp đặt trụ sạc'],
+  ['chinh_sach_lk', 'Chính sách Liên kết'],
+  ['CCCD_ng_dai_dien', 'CCCD người đại diện'],
+  ['ban_ve_tay', 'Bản vẽ tay'],
+  ['chieu_rong_mat_tien', 'Chiều rộng mặt tiền(m)'],
+  ['chieu_rong_long_duong', 'Bề rộng lòng đường phía trc lô đất(m)'],
+  ['dien_ba_pha', 'Điện ba pha'],
+  ['tram_bien_ap', 'Trạm biến áp'],
+  ['cong_suat_tba_kha_dung', 'Công suất khả dụng của trạm biến áp để làm trạm sạc (kW).'],
+  ['email', 'Email'],
+  ['quy_hoach_note', 'Quy hoạch đánh giá'],
+  ['phap_ly_note', 'Pháp lý đánh giá']
+];
+
 const EXPLICIT_FIELD_KEYS = new Set([
   'ma_de_xuat', 'ma_de_xuat_gen', 'created_at', 'updated_at', 'user_name',
   'owner_name', 'owner_phone', 'mo_hinh_dau_tu', 'address', 'latitude', 'longitude',
@@ -399,15 +449,23 @@ const getExportFields = (definitions) => {
     .map((field) => ({ key: field.key, label: field.label || field.key, type: field.type, options: field.options }));
 };
 
-const buildColumns = (fields) => [
-  ...BASE_COLUMNS,
-  ...(fields || []).map((field) => ({ kind: 'field', key: field.key, header: field.label }))
-];
-
-const buildHeaderRow = (fields) => buildColumns(fields).map((column) => column.header);
+const buildColumns = (fields, tabName) => {
+  if (tabName === 'Data_QT1') {
+    return [
+      ...BASE_COLUMNS.map((column) => column.key.startsWith('__proposed_') && column.kind === 'poleCount'
+        ? { ...column, header: `ĐX_${column.header}` }
+        : column),
+      ...DATA_QT1_FIELDS.map(([key, header]) => ({ kind: 'field', key, header }))
+    ];
+  }
+  return [
+    ...BASE_COLUMNS,
+    ...(fields || []).map((field) => ({ kind: 'field', key: field.key, header: field.label }))
+  ];
+};
 
 const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}) => {
-  const columns = buildColumns(fields);
+  const columns = buildColumns(fields, config.tabName);
   const addedKinds = new Set(['areaDepartment', 'statusChangedAt', 'actualOnDate']);
   const layouts = [columns, columns.filter((column) => !addedKinds.has(column.kind))]
     .map((layout) => ({
@@ -454,7 +512,7 @@ const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}
   const header = (index) => ({
     updateCells: {
       range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: index, endColumnIndex: index + count },
-      rows: [{ values: POLE_CATEGORIES.map(([, title]) => ({ userEnteredValue: { stringValue: title } })) }],
+      rows: [{ values: expected.slice(index, index + count).map((title) => ({ userEnteredValue: { stringValue: title } })) }],
       fields: 'userEnteredValue'
     }
   });
@@ -596,13 +654,12 @@ const resolveFieldValue = (proposal, custom, key, definitions, usersById) => {
   }
 };
 
-const mapProposalToRow = (proposal, fields, serial = '', usersById = new Map(), definitions = []) => {
+const mapProposalToRow = (proposal, fields, serial = '', usersById = new Map(), definitions = [], tabName) => {
   const custom = parseObject(proposal.custom_data);
   const values = resolveBaseRowValues(proposal, definitions, serial);
-  for (const field of fields) {
-    values[field.key] = resolveFieldValue(proposal, custom, field.key, definitions, usersById);
-  }
-  return buildColumns(fields).map((column) => values[column.key]);
+  return buildColumns(fields, tabName).map(({ kind, key }) => kind === 'field'
+    ? resolveFieldValue(proposal, custom, key, definitions, usersById)
+    : values[key]);
 };
 
 const columnName = (columnNumber) => {
@@ -701,7 +758,7 @@ const loadProposals = async (proposalIds) => {
 const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, definitions, usersById = new Map()) => {
   const tab = quoteTab(config.tabName);
   const { rowById, maxSerial, orphanSerialRows } = await readSheetRows(sheets, config);
-  const columns = buildColumns(fields);
+  const columns = buildColumns(fields, config.tabName);
   const endColumn = columnName(columns.length);
   const updates = [];
   const appends = [];
@@ -720,10 +777,10 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, defin
       const serial = existing.serial || nextSerial++;
       updates.push({
         range: `${tab}!A${existing.row}:${endColumn}${existing.row}`,
-        values: [mapProposalToRow(proposal, fields, serial, usersById, definitions)]
+        values: [mapProposalToRow(proposal, fields, serial, usersById, definitions, config.tabName)]
       });
     } else {
-      appends.push(mapProposalToRow(proposal, fields, nextSerial++, usersById, definitions));
+      appends.push(mapProposalToRow(proposal, fields, nextSerial++, usersById, definitions, config.tabName));
     }
   }
 
@@ -764,18 +821,18 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, fields, defin
 
 const assertHeader = async (sheets, config, fields) => {
   const tab = quoteTab(config.tabName);
-  const columns = buildColumns(fields);
+  const columns = buildColumns(fields, config.tabName);
   const endColumn = columnName(columns.length);
   const response = await sheets.spreadsheets.values.get({ spreadsheetId: config.spreadsheetId, range: `${tab}!1:1` });
   const existing = (response.data.values?.[0] || []).map((value) => String(value || '').trim());
-  const expected = buildHeaderRow(fields);
+  const expected = columns.map((column) => column.header);
   if (expected.every((header, index) => existing[index] === header)) return;
   const statusTimeIndex = columns.findIndex((column) => column.kind === 'statusChangedAt');
   if (!existing[statusTimeIndex]
       && expected.every((header, index) => index === statusTimeIndex || existing[index] === header)) {
     const column = columnName(statusTimeIndex + 1);
     const cells = await sheets.spreadsheets.values.get({
-      spreadsheetId: config.spreadsheetId, range: `${tab}!${column}2:${column}`
+      spreadsheetId: config.spreadsheetId, range: `${tab}!${column}2:${column}`, valueRenderOption: 'FORMULA'
     });
     if ((cells.data.values || []).some((row) => row.some((value) => String(value ?? '').trim()))) {
       throw new Error('Không thể đặt header thời gian trạng thái vì cột đã có dữ liệu. Hãy sao lưu và kiểm tra Sheet.');
@@ -791,7 +848,8 @@ const assertHeader = async (sheets, config, fields) => {
     const firstColumn = columnName(existing.length + 1);
     const cells = await sheets.spreadsheets.values.get({
       spreadsheetId: config.spreadsheetId,
-      range: `${tab}!${firstColumn}2:${endColumn}`
+      range: `${tab}!${firstColumn}2:${endColumn}`,
+      valueRenderOption: 'FORMULA'
     });
     if ((cells.data.values || []).some((row) => row.some((value) => String(value ?? '').trim()))) {
       throw new Error('Không thể thêm cột đồng bộ vì vùng cột mới đã có dữ liệu. Hãy sao lưu và kiểm tra Sheet.');
