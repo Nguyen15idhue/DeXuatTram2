@@ -229,6 +229,7 @@ app.listen(PORT, '0.0.0.0', () => {
   proposalSheetSyncWorker.start().catch((err) => {
     console.error('[ProposalSheetSyncWorker] start error:', err.message);
   });
+  require('./services/leadSheetSyncService').start();
   onStationSheetSyncWorker.start().catch((err) => {
     console.error('[OnStationSheetSyncWorker] start error:', err.message);
   });
