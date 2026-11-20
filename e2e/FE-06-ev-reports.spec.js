@@ -3,8 +3,11 @@
 const API = process.env.E2E_API_URL || 'http://localhost:3000';
 
 for (const allowAds of [false, true]) {
-test(`guest submit shows loading and allows a retry with ad tracking ${allowAds ? 'enabled' : 'declined'}`, async ({ page }) => {
+test(`guest submit shows loading and allows a retry with ad tracking ${allowAds ? 'enabled by default' : 'previously disabled'}`, async ({ page }) => {
   const origin = process.env.E2E_BASE_URL || 'http://localhost:5173';
+  if (!allowAds) {
+    await page.addInitScript(() => localStorage.setItem('ev-report-meta-consent-v1', 'denied'));
+  }
   await page.route('**/*', route =>
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort());
   let pixelLoads = 0;
@@ -41,11 +44,14 @@ test(`guest submit shows loading and allows a retry with ad tracking ${allowAds 
   try {
     await page.goto(`${origin}/nhu-cau-sac-xe`);
     const notice = page.getByRole('region', { name: 'Đo lường quảng cáo Meta' });
-    await expect(notice).toBeVisible();
-    expect(pixelLoads).toBe(0);
-    await notice.getByRole('button', { name: allowAds ? 'Đồng ý' : 'Không đồng ý', exact: true }).click();
-    await expect(notice).toBeHidden();
-    if (allowAds) await expect.poll(pixelEvents).toEqual([['PageView']]);
+    const settings = page.getByRole('button', { name: 'Cài đặt đo lường quảng cáo' });
+    if (allowAds) {
+      await expect(notice).toBeVisible();
+      await expect.poll(pixelEvents).toEqual([['PageView']]);
+    } else {
+      await expect(settings).toBeVisible();
+      expect(pixelLoads).toBe(0);
+    }
     await page.getByRole('button', { name: /Đăng ký thông tin nhu cầu sạc/ }).click();
     const address = page.locator('[data-field-key="address"] input');
     const submit = page.locator('form.dynamic-form button[type="submit"]');
@@ -77,26 +83,25 @@ test(`guest submit shows loading and allows a retry with ad tracking ${allowAds 
     expect(pixelLoads).toBe(allowAds ? 1 : 0);
 
     await page.reload();
-    const settings = page.getByRole('button', { name: 'Cài đặt đo lường quảng cáo' });
-    await expect(settings).toBeVisible();
-    await expect(notice).toBeHidden();
     if (allowAds) {
+      await expect(notice).toBeVisible();
       await expect.poll(pixelEvents).toEqual([['PageView']]);
       await page.goto(`${origin}/login`);
       await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
       await expect(settings).toHaveCount(0);
       expect(pixelLoads).toBe(2);
       await page.goBack();
-      await expect(settings).toBeVisible();
+      await expect(notice).toBeVisible();
       await expect.poll(pixelEvents).toEqual([['PageView']]);
       const loadsBeforeRevocation = pixelLoads;
-      await settings.click();
-      await notice.getByRole('button', { name: 'Không đồng ý', exact: true }).click();
+      await notice.getByRole('button', { name: 'Tắt đo lường', exact: true }).click();
       await expect.poll(() => page.evaluate(() => window.pixelCalls.at(-1))).toEqual(['consent', 'revoke']);
       await page.reload();
       await expect(settings).toBeVisible();
       expect(pixelLoads).toBe(loadsBeforeRevocation);
     }
+    await expect(settings).toBeVisible();
+    await expect(notice).toBeHidden();
     const loadsBeforeLogin = pixelLoads;
     await page.goto(`${origin}/login`);
     await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();

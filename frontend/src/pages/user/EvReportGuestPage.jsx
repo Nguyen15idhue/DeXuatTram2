@@ -875,220 +875,227 @@ const EvReportGuestPage = () => {
             Tìm trạm sạc & đăng ký nhu cầu sạc
           </h1>
           <p className="text-base md:text-lg text-base-content/70 max-w-2xl mx-auto">
-            Cho chúng tôi biết bạn thường sạc xe ở đâu, TMT-EGREEN sẽ mở thêm trạm sạc gần bạn.
+            Cho chúng tôi biết bạn thường sạc xe ở đâu, TMT-EGREEN sẽ mở thêm
+            trạm sạc gần bạn.
           </p>
         </header>
 
-        {consent === null || showAdSettings ? (
-          <section aria-labelledby="ev-ad-consent" className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <h2 id="ev-ad-consent" className="font-semibold">Đo lường quảng cáo Meta</h2>
-            <p className="mt-1 text-sm text-base-content/80">
-              Nếu bạn đồng ý, Meta Pixel sẽ được tải và có thể sử dụng cookie để đo lượt xem trang này và lượt gửi
-              nhu cầu sạc thành công. Bạn vẫn có thể gửi thông tin nếu không đồng ý.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => {
-                chooseConsent("denied");
-                setShowAdSettings(false);
-              }}>Không đồng ý</button>
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => {
-                chooseConsent("granted");
-                setShowAdSettings(false);
-              }}>Đồng ý</button>
-            </div>
-          </section>
-        ) : (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAdSettings(true)}>
-            Cài đặt đo lường quảng cáo
-          </button>
+        {previewOpen && previewCenter && (
+          <NearbyStationsModal
+            open
+            lat={previewCenter[0]}
+            lng={previewCenter[1]}
+            title={`Trạm sạc lân cận (bán kính ${NEARBY_RADIUS_KM} km)`}
+            onClose={() => setPreviewOpen(false)}
+          />
         )}
 
-      {previewOpen && previewCenter && (
-        <NearbyStationsModal
-          open
-          lat={previewCenter[0]}
-          lng={previewCenter[1]}
-          title={`Trạm sạc lân cận (bán kính ${NEARBY_RADIUS_KM} km)`}
-          onClose={() => setPreviewOpen(false)}
-        />
-      )}
-
-      <section className="rounded-2xl border border-green-100 bg-white shadow-lg shadow-green-900/5 overflow-hidden">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-green-50/60 transition-colors"
-          onClick={() => setNearbyOpen((v) => !v)}
-          aria-expanded={nearbyOpen}
-        >
-          <span className="flex items-center gap-3">
-            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-600 text-white text-sm font-bold shrink-0 shadow-sm">
-              01
-            </span>
-            <span className="font-bold text-lg">
-              Kiểm tra trạm sạc ở gần bạn
-            </span>
-          </span>
-          <ChevronDown
-            size={18}
-            className={`shrink-0 transition-transform duration-200 ${
-              nearbyOpen ? "rotate-180" : ""
-            }`}
-          />
-        </button>
-        {nearbyOpen && (
-          <div className="border-t border-green-100 bg-green-50/30 p-5 space-y-3">
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-              <button
-                type="button"
-                className="btn btn-outline btn-sm gap-2 shrink-0 border-green-600 text-green-700 hover:bg-green-600 hover:text-white"
-                onClick={handlePreviewMyLocation}
-                disabled={previewLoading}
-              >
-                <LocateFixed size={14} />
-                {previewLoading ? "Đang lấy vị trí..." : "Vị trí của tôi"}
-              </button>
-              <span className="text-sm font-medium text-base-content/70">
-                Hoặc tìm địa chỉ
+        <section className="rounded-2xl border border-green-100 bg-white shadow-lg shadow-green-900/5 overflow-hidden">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-green-50/60 transition-colors"
+            onClick={() => setNearbyOpen((v) => !v)}
+            aria-expanded={nearbyOpen}
+          >
+            <span className="flex items-center gap-3">
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-600 text-white text-sm font-bold shrink-0 shadow-sm">
+                01
               </span>
-              <PlaceSearchInput
-                className="flex-1"
-                placeholder="Nhập địa chỉ cần xem trạm sạc lân cận..."
-                onPick={handlePickPlace}
-              />
+              <span className="font-bold text-lg">
+                Kiểm tra trạm sạc ở gần bạn
+              </span>
+            </span>
+            <ChevronDown
+              size={18}
+              className={`shrink-0 transition-transform duration-200 ${
+                nearbyOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+          {nearbyOpen && (
+            <div className="border-t border-green-100 bg-green-50/30 p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm gap-2 shrink-0 border-green-600 text-green-700 hover:bg-green-600 hover:text-white"
+                  onClick={handlePreviewMyLocation}
+                  disabled={previewLoading}
+                >
+                  <LocateFixed size={14} />
+                  {previewLoading ? "Đang lấy vị trí..." : "Vị trí của tôi"}
+                </button>
+                <span className="text-sm font-medium text-base-content/70">
+                  Hoặc tìm địa chỉ
+                </span>
+                <PlaceSearchInput
+                  className="flex-1"
+                  placeholder="Nhập địa chỉ cần xem trạm sạc lân cận..."
+                  onPick={handlePickPlace}
+                />
+              </div>
+              <p className="text-xs text-base-content/60">
+                Bấm "Vị trí của tôi" hoặc nhập địa chỉ (tối thiểu 3 ký tự, hệ
+                thống tự tìm) rồi chọn từ danh sách để xem các trạm đang hoạt
+                động / đang triển khai trong bán kính {NEARBY_RADIUS_KM} km.
+              </p>
             </div>
-            <p className="text-xs text-base-content/60">
-              Bấm "Vị trí của tôi" hoặc nhập địa chỉ (tối thiểu 3 ký tự, hệ thống
-              tự tìm) rồi chọn từ danh sách để xem các trạm đang hoạt động / đang
-              triển khai trong bán kính {NEARBY_RADIUS_KM} km.
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl border border-green-100 bg-white shadow-lg shadow-green-900/5 overflow-hidden">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-green-50/60 transition-colors border-b border-green-100 bg-green-50/40"
-          onClick={() => setRegisterOpen((v) => !v)}
-          aria-expanded={registerOpen}
-        >
-          <span className="flex items-center gap-3">
-            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-600 text-white text-sm font-bold shrink-0 shadow-sm">
-              02
-            </span>
-            <span className="font-bold text-xl text-green-800">
-              Đăng ký thông tin nhu cầu sạc
-            </span>
-          </span>
-          <ChevronDown
-            size={20}
-            className={`shrink-0 text-green-700 transition-transform duration-200 ${
-              registerOpen ? "rotate-180" : ""
-            }`}
-          />
-        </button>
-        {registerOpen && (
-          <div className={`p-5 md:p-6 ${done ? "space-y-4" : ""}`}>
-          {done ? (
-            <>
-                <div className="flex items-center gap-3">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 text-green-600">
-                    <CheckCircle2 size={28} />
-                  </div>
-                  <h2 className="font-bold text-xl text-green-700">Cảm ơn bạn đã chia sẻ!</h2>
-                </div>
-          <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm space-y-1.5">
-            <div className="flex justify-between gap-3"><span className="text-base-content/60">Hãng xe</span><strong>{done.hang_xe || "—"}</strong></div>
-            <div className="flex justify-between gap-3"><span className="text-base-content/60">Nhóm phương tiện</span><strong>{Array.isArray(done.nhom_phuong_tien) && done.nhom_phuong_tien.length > 0 ? done.nhom_phuong_tien.join(", ") : done.nhom_phuong_tien || "—"}</strong></div>
-            <div className="flex justify-between gap-3"><span className="text-base-content/60">Địa chỉ</span><strong>{done.address || done.province || "—"}</strong></div>
-          </div>
-          <p className="text-sm text-base-content/70">
-            Thông tin của bạn sẽ giúp chúng tôi chọn vị trí mở trạm sạc mới. Bạn có thể gửi thêm nhiều vị trí khác.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <button className="btn btn-primary gap-2 shadow-sm" onClick={handleSendAnother}>
-              <PlusCircle size={16} /> Gửi thêm vị trí khác
-            </button>
-            <a className="btn btn-ghost" href="/">
-              Về trang chủ
-            </a>
-          </div>
-              </>
-            ) : (
-              <>
-                <p className="text-base-content/70 mb-4">
-                  Cho chúng tôi biết bạn thường sạc xe ở đâu để TMT-EGREEN mở
-                  thêm trạm sạc gần bạn.
-                </p>
-
-          {loadingFields ? (
-            <div className="empty-state">Đang tải form...</div>
-          ) : (
-            <form
-              className="dynamic-form"
-              onSubmit={handleFormSubmit}
-              noValidate
-            >
-              {error && (
-                <div className="alert alert-error text-sm mb-3">{error}</div>
-              )}
-              <fieldset className="rounded-xl border border-base-200 bg-base-50/60 p-4 md:p-5 space-y-3">
-                <legend className="px-2 text-base font-bold text-green-700">
-                  Vị trí thường xuyên sạc
-                </legend>
-
-                {regLocControls}
-                {coordsInfo}
-                {renderRow(["province", "ward"])}
-                {renderRow(["address"])}
-              </fieldset>
-
-              <fieldset className="rounded-xl border border-base-200 bg-base-50/60 p-4 md:p-5 space-y-3">
-                <legend className="px-2 text-base font-bold text-green-700">
-                  Thông tin chia sẻ
-                </legend>
-                {renderRow(["full_name", "phone"])}
-                {renderRow(["hang_xe"])}
-                {renderRow(["nhom_phuong_tien"])}
-                {renderRow(["hop_tac_lap_tram"])}
-              </fieldset>
-
-              <input
-                type="text"
-                name="website"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                autoComplete="off"
-                tabIndex={-1}
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  left: "-9999px",
-                  opacity: 0,
-                  height: 0,
-                }}
-              />
-
-              {TURNSTILE_SITE_KEY && (
-                <div ref={turnstileRef} className="mt-3" />
-              )}
-
-              <button
-                type="submit"
-                className="btn btn-primary w-full mt-6 shadow-lg shadow-green-600/20"
-                disabled={submitting}
-                aria-busy={submitting}
-              >
-                {submitting && <Loader2 size={18} className="animate-spin" aria-hidden="true" />}
-                {submitting ? "Đang gửi..." : "Gửi thông tin đi"}
-              </button>
-            </form>
           )}
-              </>
-            )}
-          </div>
-        )}
-      </section>
+        </section>
+
+        <section className="rounded-2xl border border-green-100 bg-white shadow-lg shadow-green-900/5 overflow-hidden">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-green-50/60 transition-colors border-b border-green-100 bg-green-50/40"
+            onClick={() => setRegisterOpen((v) => !v)}
+            aria-expanded={registerOpen}
+          >
+            <span className="flex items-center gap-3">
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-600 text-white text-sm font-bold shrink-0 shadow-sm">
+                02
+              </span>
+              <span className="font-bold text-xl text-green-800">
+                Đăng ký thông tin nhu cầu sạc
+              </span>
+            </span>
+            <ChevronDown
+              size={20}
+              className={`shrink-0 text-green-700 transition-transform duration-200 ${
+                registerOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+          {registerOpen && (
+            <div className={`p-5 md:p-6 ${done ? "space-y-4" : ""}`}>
+              {done ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 text-green-600">
+                      <CheckCircle2 size={28} />
+                    </div>
+                    <h2 className="font-bold text-xl text-green-700">
+                      Cảm ơn bạn đã chia sẻ!
+                    </h2>
+                  </div>
+                  <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm space-y-1.5">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-base-content/60">Hãng xe</span>
+                      <strong>{done.hang_xe || "—"}</strong>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-base-content/60">
+                        Nhóm phương tiện
+                      </span>
+                      <strong>
+                        {Array.isArray(done.nhom_phuong_tien) &&
+                        done.nhom_phuong_tien.length > 0
+                          ? done.nhom_phuong_tien.join(", ")
+                          : done.nhom_phuong_tien || "—"}
+                      </strong>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-base-content/60">Địa chỉ</span>
+                      <strong>{done.address || done.province || "—"}</strong>
+                    </div>
+                  </div>
+                  <p className="text-sm text-base-content/70">
+                    Thông tin của bạn sẽ giúp chúng tôi chọn vị trí mở trạm sạc
+                    mới. Bạn có thể gửi thêm nhiều vị trí khác.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      className="btn btn-primary gap-2 shadow-sm"
+                      onClick={handleSendAnother}
+                    >
+                      <PlusCircle size={16} /> Gửi thêm vị trí khác
+                    </button>
+                    <a className="btn btn-ghost" href="/">
+                      Về trang chủ
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-base-content/70 mb-4">
+                    Cho chúng tôi biết bạn thường sạc xe ở đâu để TMT-EGREEN mở
+                    thêm trạm sạc gần bạn.
+                  </p>
+
+                  {loadingFields ? (
+                    <div className="empty-state">Đang tải form...</div>
+                  ) : (
+                    <form
+                      className="dynamic-form"
+                      onSubmit={handleFormSubmit}
+                      noValidate
+                    >
+                      {error && (
+                        <div className="alert alert-error text-sm mb-3">
+                          {error}
+                        </div>
+                      )}
+                      <fieldset className="rounded-xl border border-base-200 bg-base-50/60 p-4 md:p-5 space-y-3">
+                        <legend className="px-2 text-base font-bold text-green-700">
+                          Vị trí thường xuyên sạc
+                        </legend>
+
+                        {regLocControls}
+                        {coordsInfo}
+                        {renderRow(["province", "ward"])}
+                        {renderRow(["address"])}
+                      </fieldset>
+
+                      <fieldset className="rounded-xl border border-base-200 bg-base-50/60 p-4 md:p-5 space-y-3">
+                        <legend className="px-2 text-base font-bold text-green-700">
+                          Thông tin chia sẻ
+                        </legend>
+                        {renderRow(["full_name", "phone"])}
+                        {renderRow(["hang_xe"])}
+                        {renderRow(["nhom_phuong_tien"])}
+                        {renderRow(["hop_tac_lap_tram"])}
+                      </fieldset>
+
+                      <input
+                        type="text"
+                        name="website"
+                        value={website}
+                        onChange={(e) => setWebsite(e.target.value)}
+                        autoComplete="off"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          left: "-9999px",
+                          opacity: 0,
+                          height: 0,
+                        }}
+                      />
+
+                      {TURNSTILE_SITE_KEY && (
+                        <div ref={turnstileRef} className="mt-3" />
+                      )}
+
+                      <button
+                        type="submit"
+                        className="btn btn-primary w-full mt-6 shadow-lg shadow-green-600/20"
+                        disabled={submitting}
+                        aria-busy={submitting}
+                      >
+                        {submitting && (
+                          <Loader2
+                            size={18}
+                            className="animate-spin"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {submitting ? "Đang gửi..." : "Gửi thông tin đi"}
+                      </button>
+                    </form>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
