@@ -5,13 +5,13 @@ const leadFields = [
   { key: 'full_name', label: 'Họ và tên', type: 'text', required: true },
   { key: 'phone', label: 'Số điện thoại', type: 'phone', required: true },
   { key: 'customer_classification', label: 'Phân loại khách hàng', type: 'select',
-    options: [{ value: 'ut1', label: 'ƯT1_Tiềm năng', color: '#4ade80' }] },
+    options: [{ value: 'ut1', label: 'ƯT1_Tiềm năng', color: '#4ade80' }, { value: 'ut2', label: 'ƯT2_Quan tâm' }] },
   { key: 'sales_outcome', label: 'Kết quả tư vấn cuối cùng', type: 'select',
     options: [{ value: 'SUCCESS', label: '1. Gửi vị trí đề xuất' }, { value: 'FAILED', label: '2. Không làm' }] },
   { key: 'note', label: 'Ghi chú khách hàng', type: 'textarea' },
   { key: 'tvbh_history', label: 'Lịch sử tư vấn', type: 'table', source_config: {
     columns: [{ key: 'GDKV_phan_loai_KH', label: 'GĐKV phân loại KH', column_type: 'select',
-      options: ['ƯT1', 'ƯT2', 'ƯT3', 'ƯT4', 'KH không nghe máy', 'KH hẹn gọi lại sau'] },
+      options: ['ƯT1_Tiềm năng', 'ƯT2_Quan tâm', 'ƯT3_Theo dõi thêm', 'KƯT_Không chất lượng', 'KH không nghe máy', 'KH hẹn gọi lại sau'] },
     { key: 'ghi_chu', label: 'Ghi chú', column_type: 'text' }]
   } }
 ];
@@ -125,21 +125,43 @@ test('shows draft classification and the priority explanations without changing 
   const badge = page.locator('.popup-header [aria-label="Phân loại khách hàng"]');
   await expect(badge).toHaveText('Chưa phân loại');
   await choose(page, 0, 'ƯT1_Tiềm năng');
-  await expect(badge).toHaveText('ƯT1_Tiềm năng');
+  await expect(badge).toHaveText('ƯT2_Tiềm năng');
+  await choose(page, 0, 'ƯT2_Quan tâm');
+  await expect(badge).toHaveText('ƯT1_Quan tâm');
 
   const priority = page.getByRole('button', { name: 'GĐKV phân loại KH: -- Chọn --' });
   await priority.click();
-  for (const n of [1, 2, 3, 4]) {
-    await page.getByRole('button', { name: `ƯT${n}`, exact: true }).hover();
-    await expect(page.getByRole('tooltip')).toHaveText(`Đây là định nghĩa của Ưu tiên ${n}`);
+  const tooltip = page.getByRole('tooltip');
+  for (const [label, description] of [
+    ['ƯT1_Tiềm năng', 'có sẵn nguồn điện'],
+    ['ƯT2_Quan tâm', 'chưa có nguồn điện'],
+    ['ƯT3_Theo dõi thêm', 'chỉ muốn cho thuê mặt bằng'],
+    ['KƯT_Không chất lượng', 'thông tin không dùng được']
+  ]) {
+    const option = page.getByRole('button', { name: label, exact: true });
+    await option.hover();
+    await expect(tooltip).toContainText(description);
+    const optionBox = await option.boundingBox();
+    const tooltipBox = await tooltip.boundingBox();
+    expect(tooltipBox.x >= optionBox.x + optionBox.width || tooltipBox.x + tooltipBox.width <= optionBox.x).toBe(true);
+    await expect(option).toHaveAttribute('aria-pressed', 'false');
   }
+  await page.getByRole('button', { name: 'KH không nghe máy', exact: true }).hover();
+  await expect(tooltip).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
-  await expect(page.getByRole('tooltip')).toHaveText('Đây là định nghĩa của Ưu tiên 1');
+  await expect(tooltip).toContainText('có sẵn nguồn điện');
   await page.keyboard.press('Escape');
   await expect(priority).toBeVisible();
   await page.getByRole('button', { name: 'Hủy', exact: true }).click();
   await expect(badge).toHaveText('Chưa phân loại');
 });
+
+for (const [stored, label] of [['QUAN_TAM', 'ƯT1_Quan tâm'], ['TIEM_NANG', 'ƯT2_Tiềm năng']]) {
+  test(`shows the header label for stored classification ${stored}`, async ({ page }) => {
+    await openLead(page, { notes: { customer_classification: stored } });
+    await expect(page.locator('.popup-header [aria-label="Phân loại khách hàng"]')).toHaveText(label);
+  });
+}
 
 test('keeps the normal save action without consultation permission', async ({ page }) => {
   await openLead(page, { canConsult: false });
@@ -191,12 +213,12 @@ test.describe('touch device', () => {
   test('shows inline priority descriptions and saves the original option value', async ({ page }) => {
     const state = await openLead(page);
     await page.getByRole('button', { name: 'GĐKV phân loại KH: -- Chọn --' }).tap();
-    const option = page.getByRole('button', { name: 'ƯT2', exact: true });
-    await expect(option.getByText('Đây là định nghĩa của Ưu tiên 2')).toBeInViewport();
+    const option = page.getByRole('button', { name: 'ƯT2_Quan tâm', exact: true });
+    await expect(option.getByText(/chưa có nguồn điện/)).toBeInViewport();
     await option.tap();
-    await expect(page.getByRole('button', { name: 'GĐKV phân loại KH: ƯT2' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'GĐKV phân loại KH: ƯT2_Quan tâm' })).toBeVisible();
     await page.getByRole('button', { name: 'Lưu', exact: true }).tap();
     await expect(page).toHaveURL(/\/view=17(?:\?|$)/);
-    expect(state.updates[0].tvbh_history).toEqual([{ GDKV_phan_loai_KH: 'ƯT2' }]);
+    expect(state.updates[0].tvbh_history).toEqual([{ GDKV_phan_loai_KH: 'ƯT2_Quan tâm' }]);
   });
 });

@@ -25,6 +25,7 @@ import useDataListMap from "../../hooks/useDataListMap";
 import useDefaultViewId from "../../hooks/useDefaultViewId";
 import useFieldOptions from "../../hooks/useFieldOptions";
 import { collectTableDatalistIds } from "../../utils/tableColumnSource";
+import { getLeadClassificationKind } from "../../utils/leadAccess";
 import {
   parseGoogleMapsLink,
   resolveGoogleMapsShortUrl,
@@ -123,6 +124,12 @@ const LeadDetailPopup = ({
   const classification = (mode === "edit" ? draftFields.customer_classification : undefined)
     ?? record?.customer_classification;
   const classificationOptions = getSelectOptions("customer_classification");
+  const classificationKind = getLeadClassificationKind(classification)
+    || getLeadClassificationKind(classificationOptions.find((option) => option.value === classification)?.label);
+  const editClassificationLabel = mode === "edit" && (
+    classificationKind === "interested" ? "ƯT1_Quan tâm"
+      : classificationKind === "potential" ? "ƯT2_Tiềm năng" : null
+  );
   const [viewFields, setViewFields] = useState([]);
   const [allFields, setAllFields] = useState([]);
   const [formConfig, setFormConfig] = useState(null);
@@ -613,13 +620,13 @@ const LeadDetailPopup = ({
             </h2>
             {!loading && record && (
               <span className="badge badge-ghost" aria-label="Phân loại khách hàng">
-                {classification ? (
+                {editClassificationLabel || (classification ? (
                   <FieldRenderer
                     field={{ type: "select", options: classificationOptions }}
                     value={classification}
                     entity="leads"
                   />
-                ) : "Chưa phân loại"}
+                ) : "Chưa phân loại")}
               </span>
             )}
           </div>

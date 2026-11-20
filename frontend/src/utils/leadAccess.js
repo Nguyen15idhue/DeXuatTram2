@@ -2,6 +2,13 @@ export const normalizeLeadText = (value) => String(value || '').normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
   .toLowerCase().replace(/\s+/g, ' ').trim();
 
+export const getLeadClassificationKind = (value) => {
+  const text = normalizeLeadText(String(value ?? '').replace(/_/g, ' '));
+  if (/^(ut1 ?)?tiem nang$|^ut1$/.test(text)) return 'potential';
+  if (/^(ut2 ?)?quan tam$|^ut2$/.test(text)) return 'interested';
+  return null;
+};
+
 const departmentOf = (user) => normalizeLeadText(user?.department || user?.custom_data?.department);
 const titleOf = (user) => normalizeLeadText(user?.chuc_vu || user?.custom_data?.chuc_vu);
 export const isLeadCeo = (user) => ['tong giam doc', 'tgd'].includes(titleOf(user));
