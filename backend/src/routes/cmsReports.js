@@ -45,6 +45,9 @@ router.get('/status', (req, res) => {
  *               to:
  *                 type: string
  *                 format: date
+ *               rawOnly:
+ *                 type: boolean
+ *                 description: Chỉ ghi tab Phien_sac_raw, lấy tối đa đến ngày hiện tại theo giờ Việt Nam; yêu cầu đã bật CMS_RAW_SHEET_ENABLED.
  *     responses:
  *       202:
  *         description: Đã bắt đầu lượt chạy nền
@@ -59,7 +62,7 @@ router.get('/status', (req, res) => {
  */
 router.post('/run', (req, res) => {
   try {
-    const run = reports.startRun({ from: req.body?.from, to: req.body?.to });
+    const run = reports.startRun({ from: req.body?.from, to: req.body?.to, rawOnly: req.body?.rawOnly });
     res.status(202).json({ success: true, data: { id: run.id }, message: 'Đã bắt đầu thống kê CMS' });
   } catch (cause) {
     console.error('[CmsReport] start:', cause.message);

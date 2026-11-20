@@ -33,6 +33,11 @@ const getContext = async (user, executor = pool) => {
   return rows[0]?.status === 'ACTIVE' ? context(rows[0]) : context(null);
 };
 
+const assignmentRank = (ctx) => {
+  if (ctx.role === 'ADMIN' || ctx.role === 'SUPER_ADMIN' || ctx.isSuper) return 'ADMIN';
+  return ctx.isGdtt ? 'GDTTKD' : ctx.isGdkv ? 'GDKV' : null;
+};
+
 const assertAccess = (ctx) => {
   if (!ctx.canAccess) throw Object.assign(new Error('Không có quyền truy cập Quản lý khách hàng'), { statusCode: 403 });
 };
@@ -80,4 +85,4 @@ const tabPolicy = (ctx) => {
   return { tabs: ['all'], defaultTab: 'all', taskTabs: [] };
 };
 
-module.exports = { normalize, context, getContext, assertAccess, buildScope, permissions, permissionResolver, tabPolicy };
+module.exports = { normalize, context, getContext, assignmentRank, assertAccess, buildScope, permissions, permissionResolver, tabPolicy };

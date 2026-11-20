@@ -9,6 +9,7 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
   const posts = [];
   const errors = [];
   const cmsRequests = [];
+  let rawOnly = false;
   page.on('pageerror', cause => errors.push(cause.message));
   await page.addInitScript(() => localStorage.setItem('token', 'cms-ui-fixture'));
   await page.route('**/api/**', async route => {
@@ -21,16 +22,17 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
       const completed = statusReads > 1;
       data = {
         configured, message: configured ? '' : 'Thiếu cấu hình: CMS_API_KEY',
-        yesterday: '2026-11-16', headers: HEADERS,
+        yesterday: '2026-11-16', today: '2026-11-17', headers: HEADERS,
         schedule: '07:00 Asia/Ho_Chi_Minh — ngày hôm trước',
         spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/cms-fixture/edit',
         ...(raw && { raw: { enabled: true, tabName: 'Phien_sac_raw', unmapped: ['Tong_kWh'] } }),
         run: started ? {
+          rawOnly,
           from: '2026-11-16', to: '2026-11-16', status: completed ? (sheetError ? 'FAILED' : partial ? 'PARTIAL' : 'SUCCESS') : 'RUNNING',
           processed: completed && !sheetError ? 1 : 0, totalDays: 1,
           phase: completed ? 'Đã kết thúc' : 'Đang xử lý 2026-11-16',
           startedAt: '2026-11-17T00:00:00Z', finishedAt: completed ? '2026-11-17T00:00:05Z' : null,
-          rows: completed && !sheetError ? [['2026-11-16', '2026-11-17T00:00:00Z',
+          rows: completed && !sheetError && !rawOnly ? [['2026-11-16', '2026-11-17T00:00:00Z',
             10, 5, 15, 12, 3, 20, 10, 30, 2, 2, 2, 30, 15, 3, 3, 3,
             100000, 50000, 150000, 100, '2026-11-17T00:00:05Z',
             'Đã loại 1 phiên FINISHED thiếu thời gian kết thúc khỏi tất cả chỉ số phiên sạc', 11]] : [],
@@ -43,6 +45,7 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
     }
     if (url.pathname.endsWith('/cms-reports/run')) {
       posts.push(route.request().postDataJSON());
+      rawOnly = posts.at(-1).rawOnly === true;
       if (runError) {
         await route.fulfill({ status: 409, json: { success: false, message: 'Đang có lượt thống kê CMS chạy' } });
         return;
@@ -56,6 +59,24 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
   return { posts, errors, cmsRequests };
 };
 
+test('raw-only button submits the selected range and shows only raw results', async ({ page }) => {
+  const { posts, errors } = await setup(page, { raw: true });
+  await page.goto('/admin/cms-reports');
+  await page.getByLabel('Chế độ lấy dữ liệu').selectOption('range');
+  await page.getByLabel('Từ ngày', { exact: true }).fill('2026-11-12');
+  await page.getByLabel('Đến ngày', { exact: true }).fill('2026-11-17');
+  await page.getByRole('button', { name: 'Lấy dữ liệu và xuất Google Sheet', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('chỉ lấy đến ngày hôm qua');
+  expect(posts).toEqual([]);
+  await page.getByRole('button', { name: 'Chỉ lấy raw data phiên sạc và xuất Google sheet', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Lấy dữ liệu và xuất Google Sheet', exact: true })).toBeDisabled();
+  await expect(page.getByText('Chỉ dữ liệu raw', { exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Đã đồng bộ Phien_sac_raw' })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Các ngày đã ghi thành công lên Google Sheet')).toHaveCount(0);
+  expect(posts).toEqual([{ from: '2026-11-12', to: '2026-11-17', rawOnly: true }]);
+  expect(errors).toEqual([]);
+});
+
 test('ADMIN sees raw counts and separate raw errors alongside the summary', async ({ page }) => {
   await setup(page, { raw: true, partial: true });
   await page.goto('/admin/cms-reports');
@@ -63,7 +84,7 @@ test('ADMIN sees raw counts and separate raw errors alongside the summary', asyn
   await expect(page.getByText('Các ngày đã ghi thành công lên Google Sheet')).toBeVisible({ timeout: 10000 });
   await expect(page.getByRole('table', { name: 'Đã đồng bộ Phien_sac_raw' }).getByRole('cell', { name: '32', exact: true })).toBeVisible();
   await expect(page.getByText('[Raw] 2026-11-15: CMS dữ liệu thiếu', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Không xuất mã khách hàng và biển số/)).toContainText('Tong_kWh');
+  await expect(page.getByText(/Không xuất mã khách hàng, biển số/)).toContainText('số điện thoại');
 });
 
 for (const role of ['ADMIN', 'SUPER_ADMIN']) {
@@ -73,6 +94,7 @@ for (const role of ['ADMIN', 'SUPER_ADMIN']) {
     await expect(page.getByRole('heading', { name: 'Thống kê phiên sạc CMS', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Mở Google Sheet' })).toHaveAttribute('href', /cms-fixture/);
     await expect(page.getByLabel('Ngày báo cáo', { exact: true })).toHaveValue('2026-11-16');
+    await expect(page.getByRole('button', { name: 'Chỉ lấy raw data phiên sạc và xuất Google sheet' })).toBeDisabled();
     if (role === 'SUPER_ADMIN') {
       await page.getByLabel('Chế độ lấy dữ liệu').selectOption('range');
       await page.getByLabel('Từ ngày', { exact: true }).fill('2026-11-10');

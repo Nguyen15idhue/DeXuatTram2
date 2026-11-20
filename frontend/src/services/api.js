@@ -247,7 +247,8 @@ export const api = {
 
 export const cmsReportService = {
   getStatus: token => api.getWithAuth('/admin/cms-reports/status', token),
-  run: (from, to, token) => api.postWithAuth('/admin/cms-reports/run', { from, to }, token)
+  run: (from, to, token, { rawOnly = false } = {}) =>
+    api.postWithAuth('/admin/cms-reports/run', { from, to, ...(rawOnly && { rawOnly }) }, token)
 };
 
 const _pendingGets = new Map();
