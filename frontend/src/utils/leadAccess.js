@@ -2,6 +2,13 @@ export const normalizeLeadText = (value) => String(value || '').normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
   .toLowerCase().replace(/\s+/g, ' ').trim();
 
+export const getLeadClassificationKind = (value) => {
+  const text = normalizeLeadText(String(value ?? '').replace(/_/g, ' '));
+  if (/^(ut1 ?)?tiem nang$|^ut1$/.test(text)) return 'potential';
+  if (/^(ut2 ?)?quan tam$|^ut2$/.test(text)) return 'interested';
+  return null;
+};
+
 const departmentOf = (user) => normalizeLeadText(user?.department || user?.custom_data?.department);
 const titleOf = (user) => normalizeLeadText(user?.chuc_vu || user?.custom_data?.chuc_vu);
 export const isLeadCeo = (user) => ['tong giam doc', 'tgd'].includes(titleOf(user));
@@ -12,18 +19,20 @@ export const isLeadCenterDirector = (user) => isLeadBusinessCenter(user)
 export const isLeadAreaDirector = (user) => ['giam doc khu vuc', 'gdkv'].includes(titleOf(user));
 export const isLeadPortal = (user) => user?.role === 'MKT' && user.lead_portal === true;
 export const canManageAllLeads = (user) => user?.role === 'SUPER_ADMIN' || isLeadPortal(user);
-export const canAccessCustomers = (user) => !!user && (canManageAllLeads(user)
-  || isLeadCeo(user) || isLeadPlanning(user) || isLeadBusinessCenter(user));
+export const canViewAllLeads = (user) => canManageAllLeads(user)
+  || isLeadCeo(user) || isLeadPlanning(user) || departmentOf(user) === 'ban tong giam doc'
+  || (user?.role === 'SALES' && departmentOf(user) === 'kenh nha phan phoi');
+export const canAccessCustomers = (user) => !!user && (canViewAllLeads(user) || isLeadBusinessCenter(user));
 export const canManageBusinessCalendar = (user) => !!user && (user.role === 'SUPER_ADMIN'
   || departmentOf(user).replace(/\s+/g, '').includes('backoffice'));
 export const canWriteLeadGeneral = (user, record) => canManageAllLeads(user)
   && record?.permissions?.can_write_general !== false;
 export const canAssignLead = (user, record) => canAccessCustomers(user)
-  && (canManageAllLeads(user) || (!isLeadCeo(user) && !isLeadPlanning(user) && isLeadCenterDirector(user)))
+  && (canManageAllLeads(user) || (!canViewAllLeads(user) && isLeadCenterDirector(user)))
   && record?.permissions?.can_assign !== false;
 export const canConsultLead = (user, record) => {
   if (!user) return false;
-  if (!canManageAllLeads(user) && (isLeadCeo(user) || isLeadPlanning(user)
+  if (!canManageAllLeads(user) && (canViewAllLeads(user)
     || !isLeadBusinessCenter(user) || (!isLeadCenterDirector(user) && !isLeadAreaDirector(user)))) return false;
   if (typeof record?.permissions?.can_consult === 'boolean') return record.permissions.can_consult;
   if (!canAccessCustomers(user)) return false;
@@ -38,7 +47,7 @@ export const LEAD_TABS = [
   { key: 'all', label: 'Tất cả' },
 ];
 export const leadTabPolicy = (user) => {
-  if (canManageAllLeads(user) || isLeadCeo(user) || isLeadPlanning(user)) {
+  if (canViewAllLeads(user)) {
     return { tabs: LEAD_TABS, defaultTab: 'all' };
   }
   const keys = isLeadCenterDirector(user) ? ['allocation', 'allocated', 'all']

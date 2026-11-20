@@ -14,13 +14,16 @@ const context = (user) => {
   const dept = normalize(department);
   const isSuper = canManageAllLeads(user);
   const isTgd = ['tong giam doc', 'tgd'].includes(title);
+  const isExecutiveOffice = dept === 'ban tong giam doc';
   const isPlanning = /(?:cong nghe|quan he) va quy hoach/.test(dept);
   const isBusiness = /(?:kinh doanh|trung tam kd).*mien (?:bac|trung|nam)/.test(dept);
+  const isDistributorSales = user?.role === 'SALES' && dept === 'kenh nha phan phoi';
+  const canViewAll = isSuper || isTgd || isExecutiveOffice || isPlanning || isDistributorSales;
   return {
-    ...user, department, isSuper, isTgd, isPlanning, isBusiness,
+    ...user, department, isSuper, isTgd, isPlanning, isBusiness, canViewAll,
     isGdtt: isBusiness && isGdtt(cd.chuc_vu, department),
     isGdkv: isBusiness && isGdkv(cd.chuc_vu, department),
-    canAccess: isSuper || isTgd || isPlanning || isBusiness
+    canAccess: canViewAll || isBusiness
   };
 };
 
@@ -37,7 +40,7 @@ const assertAccess = (ctx) => {
 const buildScope = async (user, executor = pool, alias = 'l') => {
   const ctx = await getContext(user, executor);
   assertAccess(ctx);
-  if (ctx.isSuper || ctx.isTgd || ctx.isPlanning) return null;
+  if (ctx.canViewAll) return null;
   const ids = await require('./adminUserService').getBranchIds(ctx.id);
   const branch = [...new Set([Number(ctx.id), ...ids.map(Number)])];
   if (ctx.isGdtt) {
@@ -49,7 +52,7 @@ const buildScope = async (user, executor = pool, alias = 'l') => {
 const permissionResolver = async (user, executor = pool) => {
   const ctx = await getContext(user, executor);
   assertAccess(ctx);
-  const global = ctx.isSuper || ctx.isTgd || ctx.isPlanning;
+  const global = ctx.canViewAll;
   const ids = global ? [] : await require('./adminUserService').getBranchIds(ctx.id);
   const branch = new Set([Number(ctx.id), ...ids.map(Number)]);
   return (lead) => {
@@ -57,8 +60,8 @@ const permissionResolver = async (user, executor = pool) => {
       || (ctx.isGdtt && lead.assigned_department === ctx.department);
     return {
       can_view: inScope,
-      can_consult: inScope && (ctx.isSuper || (!ctx.isTgd && !ctx.isPlanning && (ctx.isGdtt || ctx.isGdkv))),
-      can_assign: inScope && (ctx.isSuper || (!ctx.isTgd && !ctx.isPlanning && ctx.isGdtt)),
+      can_consult: inScope && (ctx.isSuper || (!global && (ctx.isGdtt || ctx.isGdkv))),
+      can_assign: inScope && (ctx.isSuper || (!global && ctx.isGdtt)),
       can_write_general: ctx.isSuper
     };
   };
@@ -67,9 +70,9 @@ const permissionResolver = async (user, executor = pool) => {
 const permissions = async (lead, user, executor = pool) => (await permissionResolver(user, executor))(lead);
 
 const tabPolicy = (ctx) => {
-  if (ctx.isSuper || ctx.isTgd || ctx.isPlanning) {
+  if (ctx.canViewAll) {
     return { tabs: ['allocation', 'allocated', 'first-contact', 'consulting', 'completed', 'all'],
-      defaultTab: 'all', taskTabs: ['allocation', 'first-contact', 'consulting'] };
+      defaultTab: 'all', taskTabs: ctx.isSuper || ctx.isTgd || ctx.isPlanning ? ['allocation', 'first-contact', 'consulting'] : [] };
   }
   if (ctx.isGdtt) return { tabs: ['allocation', 'allocated', 'all'], defaultTab: 'allocation', taskTabs: ['allocation'] };
   if (ctx.isGdkv) return { tabs: ['first-contact', 'consulting', 'completed', 'all'],

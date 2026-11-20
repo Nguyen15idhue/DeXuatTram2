@@ -20,15 +20,15 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { leadFocusSectionForRole } from '../../utils/leadSectionPerms';
-import { canAccessCustomers, canEditLead, canAssignLead, canManageAllLeads, canWriteLeadGeneral, LEAD_CONSULTATION_OPTIONS, leadConsultationTiming, leadTabPolicy, normalizeLeadText } from '../../utils/leadAccess';
+import { canAccessCustomers, canEditLead, canAssignLead, canManageAllLeads, canWriteLeadGeneral, LEAD_CONSULTATION_OPTIONS, leadConsultationTiming, leadTabPolicy, getLeadClassificationKind } from '../../utils/leadAccess';
 import useLeadTaskCounts from '../../hooks/useLeadTaskCounts';
 import { notifyLeadTaskCountsChanged } from '../../utils/leadTaskCounts';
 import { Users, Upload, Plus, Search, RotateCcw, X, Trash2, Split, SlidersHorizontal } from 'lucide-react';
 
 const getClassificationBadge = (value) => {
-  const text = normalizeLeadText(String(value ?? '').replace(/_/g, ' '));
-  if (/^(ut1 ?)?tiem nang$|^ut1$/.test(text)) return { label: 'ƯT1_tiềm năng', color: 'badge-success' };
-  if (/^(ut2 ?)?quan tam$|^ut2$/.test(text)) return { label: 'ƯT2_quan tâm', color: 'badge-warning' };
+  const kind = getLeadClassificationKind(value);
+  if (kind === 'potential') return { label: 'ƯT1_tiềm năng', color: 'badge-success' };
+  if (kind === 'interested') return { label: 'ƯT2_quan tâm', color: 'badge-warning' };
   return null;
 };
 
