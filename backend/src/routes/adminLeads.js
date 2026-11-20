@@ -1,8 +1,44 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireLeadManager, requireLeadWriter } = require('../middlewares/auth');
+const { requireAuth, requireLeadManager, requireLeadWriter, requireSuperAdmin } = require('../middlewares/auth');
 const { validateCreateLead, validateUpdateLead } = require('../middlewares/validators');
 const adminLeadController = require('../controllers/adminLeadController');
+const leadSheetSync = require('../services/leadSheetSyncService');
+
+/**
+ * @swagger
+ * /api/admin/leads/sheet-sync/status:
+ *   get:
+ *     tags: [Leads]
+ *     summary: Xem trạng thái đồng bộ khách hàng lên Google Sheets (SUPER_ADMIN)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Cấu hình, hàng đợi và lượt đồng bộ gần nhất }
+ *       403: { description: Không đủ quyền }
+ * /api/admin/leads/sheet-sync:
+ *   post:
+ *     tags: [Leads]
+ *     summary: Xếp hàng đồng bộ toàn bộ khách hàng (SUPER_ADMIN)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       202: { description: Đã xếp hàng }
+ *       403: { description: Không đủ quyền }
+ *       409: { description: Đã có lượt đang chạy }
+ *       503: { description: Đồng bộ đang tắt hoặc thiếu cấu hình }
+ */
+const sheetHandler = (action, status) => async (req, res) => {
+  try {
+    return res.status(status).json({ success: true, data: await action(req.user.id) });
+  } catch (error) {
+    if (error.safeMessage) {
+      return res.status(error.statusCode).json({ success: false, message: error.safeMessage });
+    }
+    console.error('[LeadSheetSync] API error:', error.code || error.name);
+    return res.status(500).json({ success: false, message: 'Không thể xử lý đồng bộ Google Sheets' });
+  }
+};
+router.get('/sheet-sync/status', requireAuth, requireSuperAdmin, sheetHandler(leadSheetSync.getStatus, 200));
+router.post('/sheet-sync', requireAuth, requireSuperAdmin, sheetHandler(leadSheetSync.startRun, 202));
 
 /**
  * @swagger

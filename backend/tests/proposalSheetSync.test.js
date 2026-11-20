@@ -64,6 +64,49 @@ const createSheet = (header, rows = []) => {
   return { sheets, cells, calls };
 };
 
+test('Data_QT1 validates the requested headers and writes only A:CZ regardless of field-definition order', async () => {
+  const qtConfig = { ...config, tabName: 'Data_QT1' };
+  const requested = [
+    'STT|ID đề xuất|Mã đề xuất|Ngày tạo|Người đề xuất|GĐKV quản lý|Phòng ban|Giám đốc TTKD|Pháp nhân / Chủ trạm|SĐT liên hệ|Mô hình đầu tư|Địa chỉ|Vĩ độ|Kinh độ|Phường/Xã|Tỉnh/Thành phố|Miền|Loại đất|Diện tích mặt bằng|Quy mô trụ đề xuất',
+    'ĐX_AC 7 kW|ĐX_AC 22 kW|ĐX_DC 20 kW|ĐX_DC 30 kW|ĐX_DC 60 kW|ĐX_DC 120 kW|ĐX_DC 240 kW|ĐX_DC 320 kW|ĐX_DC 400 kW|ĐX_DC 480 kW|ĐX_DC 960 kW|ĐX_GBT 60 kW',
+    'Quy mô trụ chốt|AC 7 kW|AC 22 kW|DC 20 kW|DC 30 kW|DC 60 kW|DC 120 kW|DC 240 kW|DC 320 kW|DC 400 kW|DC 480 kW|DC 960 kW|GBT 60 kW',
+    'Tổng chi phí|Tổng giá trị trụ chốt|Trạng thái đề xuất|Thời gian cập nhật trạng thái|Mức độ xem xét|Trạng thái Quy hoạch|Trạng thái Pháp lý|Ghi chú trạng thái|Ngày dự kiến ON|Ngày ON thực tế|Ngày cập nhật|Google Maps',
+    'Diện tích (dạng chữ)|Mô tả|Mã tỉnh|Pháp lý đất|Ghi chú|Tổng cộng chi phí|Địa chỉ ĐKKD|SĐT CĐT|Giá niêm yết|Giá ưu đãi|Tên khách hàng|MST|Số tài khoản|Kiểm tra quy hoạch|Loại ưu tiên|Tên ngân hàng|Chính sách Nhượng quyền',
+    'Chi phí vận chuyển|Chi phí trạm biến áp|Chi phí hạ tầng|Chi phí thuê vị trí|Đặt cọc|Ghi chú về khoản cọc|Ảnh toàn mặt bằng|Video mặt bằng (nếu có)|Người liên hệ|Hợp đồng thuê đất (Nếu có)|Quan hệ với mặt bằng|Thời hạn sử dụng/thuê|Độ rộng lối ra, vào (m)|Phân loại khách hàng',
+    'Ghi chú về hồ sơ pháp lý|Ghi chú về Quy hoạch|Ghi chú về Tài chính|Nhóm mặt bằng|Ảnh vị trí dự kiến lắp đặt trụ sạc|Chính sách Liên kết|CCCD người đại diện|Bản vẽ tay|Chiều rộng mặt tiền(m)|Bề rộng lòng đường phía trc lô đất(m)|Điện ba pha|Trạm biến áp|Công suất khả dụng của trạm biến áp để làm trạm sạc (kW).|Email|Quy hoạch đánh giá|Pháp lý đánh giá'
+  ].join('|').split('|');
+  const sheet = createSheet([...requested, 'Cột riêng'], [
+    [1, '1', ...Array(102).fill(''), 'Giữ nguyên khi cập nhật'],
+    [2, '2', ...Array(102).fill('Dữ liệu cũ'), 'Giữ nguyên khi xóa']
+  ]);
+  const old = createSheet(requested.map((title) => title.replace(/^ĐX_/, '')));
+  await assert.rejects(service.assertHeader(old.sheets, qtConfig, fields), /Header Google Sheet không khớp/);
+  assert.deepEqual(old.calls, []);
+  await service.assertHeader(sheet.sheets, qtConfig, fields);
+  assert.deepEqual(sheet.calls, []);
+
+  const proposals = new Map([
+    [1, record(1, {
+      area: '200 m²', description: 'Mô tả thử', quy_hoach_note: 'QH thử', phap_ly_note: 'PL thử',
+      custom_data: { ma_tinh: 'TEST', ghi_chu: 'Ghi chú thử', mo_hinh_dau_tu: 'NQ',
+        loai_tru_nq: [{ loai_tru: 'AC 7 kW', so_luong: 2 }] },
+      chot_so_luong_tru: [{ loai_tru: 'AC 7 kW', so_luong: 1 }]
+    })],
+    [3, record(3)]
+  ]);
+  await service.writeSheetRows(sheet.sheets, qtConfig, [
+    { proposal_id: 1, operation: 'UPSERT' }, { proposal_id: 2, operation: 'DELETE' },
+    { proposal_id: 3, operation: 'UPSERT' }
+  ], proposals, fields, definitions);
+  const at = (col) => sheet.cells[1][columnIndex(col)];
+  assert.deepEqual([at('U'), at('AH'), at('BF'), at('BG'), at('BH'), at('BJ'), at('CY'), at('CZ'), at('DA')],
+    [2, 1, '200 m²', 'Mô tả thử', 'TEST', 'Ghi chú thử', 'QH thử', 'PL thử', 'Giữ nguyên khi cập nhật']);
+  assert.ok(sheet.cells[2].slice(0, 104).every((value) => value === ''));
+  assert.equal(sheet.cells[2][104], 'Giữ nguyên khi xóa');
+  assert.equal(sheet.cells[3].length, 104);
+  assert.equal(sheet.cells[3][1], '3');
+});
+
 test('current header does not rewrite rows; safe append preserves external columns and rejects occupied cells', async () => {
   const current = createSheet([...headers, 'Ghi chú riêng'], [[1, 1, 'existing']]);
   await service.assertHeader(current.sheets, config, fields);

@@ -45,12 +45,13 @@ const readConsent = () => {
     return normalizeConsent(window.localStorage.getItem(CONSENT_KEY));
   } catch (error) {
     console.warn("[EvReportMetaPixel] Không đọc được lựa chọn quảng cáo", error);
-    return null;
+    return "denied";
   }
 };
 
 export default function useEvReportMetaPixel() {
   const [consent, setConsent] = useState(readConsent);
+  const trackingEnabled = consent !== "denied";
   const consentRef = useRef(consent);
   const pageViewSent = useRef(false);
   const tracking = useRef(null);
@@ -77,10 +78,10 @@ export default function useEvReportMetaPixel() {
   }, []);
 
   useEffect(() => {
-    if (consent !== "granted" || !isSurveyPage()) return;
+    if (!trackingEnabled || !isSurveyPage()) return;
     let active = true;
     let granted = false;
-    const canTrack = () => active && consentRef.current === "granted" && isSurveyPage();
+    const canTrack = () => active && consentRef.current !== "denied" && isSurveyPage();
     const reportError = (error) => console.warn("[EvReportMetaPixel] Lỗi đo lường", error);
     const ready = loadPixel().then(() => {
       if (!canTrack()) return;
@@ -115,7 +116,7 @@ export default function useEvReportMetaPixel() {
         }
       }
     };
-  }, [consent]);
+  }, [trackingEnabled]);
 
   return { consent, chooseConsent, trackLead: () => tracking.current?.() };
 }

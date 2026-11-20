@@ -491,6 +491,11 @@ export const proposalSheetSyncService = {
   }
 };
 
+export const leadSheetSyncService = {
+  getStatus: (token) => api.getWithAuth('/admin/leads/sheet-sync/status', token),
+  start: (token) => api.postWithAuth('/admin/leads/sheet-sync', {}, token)
+};
+
 export const onStationSheetSyncService = {
   getStatus(token) {
     return api.getWithAuth('/admin/on-station-sheet-sync/status', token);

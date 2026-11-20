@@ -7,6 +7,7 @@ import DynamicForm from '../../components/dynamic/DynamicForm';
 import FieldRenderer from '../../components/dynamic/FieldRenderer';
 import LeadDetailPopup from '../../components/admin/LeadDetailPopup';
 import LeadAssignDialog from '../../components/admin/LeadAssignDialog';
+import LeadSheetSyncControl from '../../components/admin/LeadSheetSyncControl';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -536,6 +537,9 @@ const AdminLeadsPage = ({ basePath = '/admin/leads' }) => {
             <ViewPickerMenu label="File mẫu" views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
           )}
           <ViewPickerMenu label="Xuất Excel" views={excelViews} onPick={handleExportLeads} title="Chọn bộ cột để export" />
+          {basePath === '/admin/leads' && activeTab === 'all' && role === 'SUPER_ADMIN' && (
+            <LeadSheetSyncControl token={token} />
+          )}
           {canWriteLeadGeneral(user) && (
             <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
               <Upload size={14} /> Nhập Excel
