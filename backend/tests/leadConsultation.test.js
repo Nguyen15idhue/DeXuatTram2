@@ -10,12 +10,42 @@ test('customer access depends on title/department, not ADMIN/MKT bypass', () => 
   assert.equal(access.context(user('ADMIN')).canAccess, false);
   assert.equal(access.context(user('MKT')).canAccess, false);
   assert.equal(access.context(user('ADMIN', 'Ban Tổng Giám đốc', 'Tổng Giám đốc')).canAccess, true);
-  assert.equal(access.context(user('ADMIN', 'Ban Tổng Giám đốc', 'Phó Tổng Giám đốc')).canAccess, false);
+  assert.equal(access.context(user('ADMIN', 'Phòng Tài chính', 'Phó Tổng Giám đốc')).canAccess, false);
   assert.equal(access.context(user('MKT', 'Phòng Công nghệ và Quy hoạch')).isPlanning, true);
   for (const region of ['Bắc', 'Trung', 'Nam']) {
     assert.equal(access.context(user('SALES', `Trung tâm KD miền ${region}`)).canAccess, true);
   }
-  assert.equal(access.context(user('SALES', 'Kênh Nhà phân phối')).canAccess, false);
+  for (const role of ['ADMIN', 'MKT', 'CTV', 'NPP']) {
+    assert.equal(access.context(user(role, 'Kênh Nhà phân phối')).canAccess, false);
+  }
+  assert.equal(access.context(user('SALES', 'Kênh Nhà phân phối khác')).canAccess, false);
+});
+
+test('distributor SALES can view all leads but cannot update them', async () => {
+  const member = { ...user('SALES', '  KÊNH Nhà phân phối  ', 'Trưởng phòng phụ trách kênh NPP'), id: 99, status: 'ACTIVE' };
+  const executor = { query: async () => [[member]] };
+  const otherLead = { assigned_user_id: 23, assigned_department: 'Trung tâm KD miền Bắc' };
+  assert.equal(await access.buildScope(member, executor), null);
+  const policy = access.tabPolicy(access.context(member));
+  assert.equal(policy.defaultTab, 'all');
+  assert.deepEqual(policy.taskTabs, []);
+  assert.deepEqual(await access.permissions(otherLead, member, executor), {
+    can_view: true, can_consult: false, can_assign: false, can_write_general: false
+  });
+  await assert.rejects(consultation.assertUpdateAllowed(otherLead, { tvbh_note: 'Không ghi' }, member, executor),
+    { statusCode: 403 });
+});
+test('Executive Office can read leads across departments without gaining write permissions', async () => {
+  const member = { ...user('SALES', '  BAN Tổng Giám đốc  ', 'Chuyên viên'), id: 98, status: 'ACTIVE' };
+  const executor = { query: async () => [[member]] };
+  const otherLead = { assigned_user_id: 23, assigned_department: 'Trung tâm KD miền Bắc' };
+  assert.equal(await access.buildScope(member, executor), null);
+  assert.equal(access.tabPolicy(access.context(member)).defaultTab, 'all');
+  assert.deepEqual(await access.permissions(otherLead, member, executor), {
+    can_view: true, can_consult: false, can_assign: false, can_write_general: false
+  });
+  await assert.rejects(consultation.assertUpdateAllowed(otherLead, { tvbh_note: 'Không ghi' }, member, executor),
+    { statusCode: 403 });
 });
 
 test('full form empty and scalar user values compare consistently', () => {

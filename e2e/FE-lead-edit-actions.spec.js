@@ -28,8 +28,8 @@ function formConfig(id, definitions) {
   };
 }
 
-async function openLead(page, { canConsult = true, mode = 'edit', notes = {}, classifications = [] } = {}) {
-  const user = { id: 501, role: 'SUPER_ADMIN', full_name: 'Quản trị thử nghiệm' };
+async function openLead(page, { canConsult = true, mode = 'edit', notes = {}, classifications = [], authUser = {} } = {}) {
+  const user = { id: 501, role: 'SUPER_ADMIN', full_name: 'Quản trị thử nghiệm', ...authUser };
   let lead = {
     id: 17, lead_code: 'LD-000017', full_name: 'Khách mẫu', phone: '0900000000',
     customer_classification: null, sales_outcome: null, consultation_status: 'CONSULTING',
@@ -44,6 +44,7 @@ async function openLead(page, { canConsult = true, mode = 'edit', notes = {}, cl
     const { pathname } = new URL(req.url());
     let data = [];
     if (pathname === '/api/auth/me') data = { user };
+    if (pathname === '/api/admin/excel/views') data = [{ id: 28, name: 'Danh sách Lead đầy đủ', usage: 'excel_full' }];
     if (pathname === '/api/field-definitions/entity/leads') data = leadFields;
     if (pathname === '/api/forms/by-entity-purpose') data = { id: 19 };
     if (pathname === '/api/forms/19') data = { id: 19, fields: leadFields };
@@ -74,10 +75,47 @@ async function openLead(page, { canConsult = true, mode = 'edit', notes = {}, cl
     }
     await route.fulfill({ json: { success: true, data, pagination: { total: 1, totalPages: 1, page: 1 } } });
   });
-  await page.goto(`${base}/admin/leads${mode === 'list' ? '?tab=consulting' : `/${mode}=17`}`);
+  await page.goto(`${base}/admin/leads${mode === 'list' ? '?tab=consulting' : mode === 'default-list' ? '' : `/${mode}=17`}`);
   if (mode === 'edit') await expect(page.locator('#lead-edit-form .dynamic-field-select').first()).toBeVisible();
   return state;
 }
+
+async function checkReadOnlyLeadExport(page, department) {
+  await openLead(page, {
+    mode: 'default-list',
+    authUser: { role: 'SALES', department, chuc_vu: 'Chuyên viên' },
+    notes: { assigned_department: 'Trung tâm KD miền Bắc' }
+  });
+  await page.route(/\/api\/admin\/excel\/export\/leads\?/, async route => {
+    expect(new URL(route.request().url()).searchParams.get('tab')).toBe('all');
+    await route.fulfill({
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      headers: { 'content-disposition': 'attachment; filename="leads.xlsx"' },
+      body: 'mock download'
+    });
+  });
+  await expect(page.getByRole('tab', { name: 'Tất cả', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const code = page.getByRole('link', { name: 'LD-000017' });
+  await expect(code).toBeVisible();
+  for (const name of ['Thêm Lead', 'Nhập Excel', 'Sửa', 'Xóa', 'Phân chia']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+  await page.getByRole('button', { name: 'Xuất Excel', exact: true }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: /Danh sách Lead đầy đủ/ }).click();
+  expect((await download).suggestedFilename()).toBe('leads.xlsx');
+  await code.click();
+  await expect(page.getByRole('heading', { name: 'Lead #17', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sửa', exact: true })).toHaveCount(0);
+}
+
+test('Executive Office staff can view all and download Excel without seeing write actions', async ({ page }) => {
+  await checkReadOnlyLeadExport(page, 'Ban Tổng Giám đốc');
+});
+
+test('Distributor SALES can view all and download Excel without seeing write actions', async ({ page }) => {
+  await checkReadOnlyLeadExport(page, 'Kênh Nhà phân phối');
+});
 
 async function choose(page, index, label) {
   const field = page.locator('#lead-edit-form .dynamic-field-select').nth(index);

@@ -16,7 +16,7 @@ exports.assigneeOptions = async (req, res) => {
     const options = rows.flatMap((row) => {
       const target = require('../services/leadAccessService').context(row);
       if (!target.isBusiness || (!target.isGdtt && !target.isGdkv)) return [];
-      if (!ctx.isSuper && !ctx.isTgd && !ctx.isPlanning && target.department !== ctx.department) return [];
+      if (!ctx.canViewAll && target.department !== ctx.department) return [];
       const cd = typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data || {};
       return [{ id: row.id, full_name: row.full_name, department: target.department,
         chuc_vu: cd.chuc_vu || '', is_gdtt: target.isGdtt, is_gdkv: target.isGdkv }];

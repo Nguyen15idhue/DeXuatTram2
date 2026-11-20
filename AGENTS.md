@@ -46,6 +46,8 @@ Swagger UI:  http://localhost:3000/api-docs
 - `land_type` (Loại đất) là field `fixed` type `select`, 6 lựa chọn (Đất thương mại dịch vụ / khu công nghiệp / giao thông-Bến bãi-Điểm dừng nghỉ / ở / nông nghiệp / khác-chưa xác định) — migration `75`
 - Liên hệ chủ trạm: `chu_tram` (text/json) + `sdt_chu_tram` (phone/json) — migration `103`; map-mode + `GET /stations` trả khi đã đăng nhập (`optionalAuth`), ẩn khi public
 ### Lead & Journey (MKT, migration 134–148, xem docs/8/68–69)
+- Tài khoản hoạt động thuộc `Ban Tổng Giám đốc` có quyền xem và xuất Excel toàn bộ Lead qua `/admin/leads`, bất kể chức vụ; tab mặc định là Tất cả, bộ lọc xuất vẫn áp dụng. Quyền theo phòng ban này không cấp quyền thêm, sửa, xóa, phân chia, nhập Excel hay tạo đề xuất.
+- Tài khoản hoạt động có role `SALES` và phòng ban `Kênh Nhà phân phối` cũng được xem và xuất Excel toàn bộ Lead, mặc định ở tab Tất cả. Không cấp quyền ghi hoặc giao tác vụ theo quy tắc này.
 - `business_journeys`: `journey_code` UUID unique (mã chung Lead↔Proposal↔Station), `current_stage` (NEW→ASSIGNED→…→PROPOSAL→STATION→ON, chỉ nâng không hạ; terminal UNQUALIFIED/LOST không bị ghi đè)
 - `leads`: `lead_code` tuần tự `LD-%06d` (UNIQUE + read-only, migration 148), stage/classification/sales_outcome (`sales_outcome=SUCCESS` mới được tạo đề xuất), `assigned_user_id`/`assigned_department`, `custom_data` (bảng `cskh_history`/`tvbh_history` + note), soft delete (`deleted_at`); tạo Lead tự tạo journey + log `lead_created`
 - `lead_assignments`: lịch sử phân chia (đóng cũ bằng `ended_at`, không ghi đè); auto-routing theo Data List `MKT Lead Routing` (vùng→phòng ban) khi classification `TIEM_NANG`
