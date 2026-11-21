@@ -107,6 +107,18 @@ test('Data_QT1 validates the requested headers and writes only A:CZ regardless o
   assert.equal(sheet.cells[3][1], '3');
 });
 
+test('TEST_Data_QT1 uses the same fixed columns and log query as Data_QT1', async t => {
+  assert.deepEqual(service.buildColumns(fields, 'TEST_Data_QT1'), service.buildColumns(fields, 'Data_QT1'));
+  let query;
+  t.mock.method(pool, 'query', async sql => {
+    query = sql;
+    return [[]];
+  });
+  await service.loadProposals([1], 'TEST_Data_QT1');
+  assert.match(query, /JOIN proposal_activity_logs status_log/);
+  assert.match(query, /ORDER BY l\.created_at DESC, l\.id DESC LIMIT 1/);
+});
+
 test('current header does not rewrite rows; safe append preserves external columns and rejects occupied cells', async () => {
   const current = createSheet([...headers, 'Ghi chú riêng'], [[1, 1, 'existing']]);
   await service.assertHeader(current.sheets, config, fields);
@@ -164,6 +176,29 @@ test('exports the selected GĐKV department and independent status and actual ON
   assert.equal(noManager[6], '');
   assert.equal(noManager[48], '');
   assert.equal(noManager[54], '');
+});
+
+test('Data_QT1 loads latest status-change log by proposal and falls back only when no log exists', async t => {
+  const calls = [];
+  t.mock.method(pool, 'query', async (sql, params) => {
+    calls.push({ sql, params });
+    return [[record(1, { status_log_id: 7, status_changed_at: new Date('2026-01-02T03:04:00Z') })]];
+  });
+  const rows = await service.loadProposals([1, 2], 'Data_QT1');
+  assert.match(calls[0].sql, /l\.action = 'status_change'/);
+  assert.match(calls[0].sql, /NOT \(l\.from_status <=> l\.to_status\)/);
+  assert.match(calls[0].sql, /ORDER BY l\.created_at DESC, l\.id DESC LIMIT 1/);
+  assert.match(calls[0].sql, /CASE WHEN status_log\.id IS NULL THEN pst\.changed_at ELSE status_log\.created_at END/);
+  assert.deepEqual(calls[0].params, [1, 2]);
+  assert.equal(service.mapProposalToRow(rows[0], fields, 1, new Map(), definitions, 'Data_QT1')[48], '02/01/2026 10:04');
+  await service.loadProposals([1], 'Đề xuất');
+  assert.doesNotMatch(calls[1].sql, /JOIN proposal_activity_logs/);
+  assert.equal((await service.loadProposals([], 'Data_QT1')).length, 0);
+});
+
+test('a status log with a missing timestamp fails the batch instead of using a fallback', async t => {
+  t.mock.method(pool, 'query', async () => [[record(1, { status_log_id: 8, status_changed_at: null })]]);
+  await assert.rejects(service.loadProposals([1], 'Data_QT1'), /nhật ký đổi trạng thái không có thời gian/);
 });
 
 test('exports managers, fixed values, user names, empty amounts and boolean values correctly', () => {

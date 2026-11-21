@@ -46,8 +46,58 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
   };
+  const loadProposals = (ids, tabName) => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'services',
+      'proposalSheetSyncService.js')).toString('base64');
+    const script = `
+      const Module = require('module');
+      const filename = '/app/src/services/proposalSheetSyncService.js';
+      const m = new Module(filename, module);
+      m.filename = filename;
+      m.paths = Module._nodeModulePaths('/app/src/services');
+      m._compile(Buffer.from('${source}', 'base64').toString('utf8') +
+        '\\nexports.__formatStatusChangeTime = formatStatusChangeTime;', filename);
+      (async () => {
+        try {
+          const rows = await m.exports.loadProposals(${JSON.stringify(ids)}, ${JSON.stringify(tabName)});
+          console.log(JSON.stringify(rows.map(r => ({ id: r.id, status_changed_at: r.status_changed_at,
+            status_log_id: r.status_log_id, formatted: m.exports.__formatStatusChangeTime(r.status_changed_at) }))));
+        } finally { await require('/app/src/utils/db').end(); }
+      })().catch(e => { console.error(e.message); process.exitCode = 1; });
+    `;
+    const result = spawnSync('docker', [
+      'exec', '-i', '-e', `DB_NAME=${database}`, 'station-backend', 'node', '-'
+    ], { input: script, encoding: 'utf8' });
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
+  };
+  const finishJob = (success, version) => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'services',
+      'proposalSheetSyncService.js')).toString('base64');
+    const script = `
+      const Module = require('module');
+      const filename = '/app/src/services/proposalSheetSyncService.js';
+      const m = new Module(filename, module);
+      m.filename = filename;
+      m.paths = Module._nodeModulePaths('/app/src/services');
+      m._compile(Buffer.from('${source}', 'base64').toString('utf8') +
+        '\\nexports.__finish = ${success ? 'updateSuccessfulJob' : 'updateFailedJob'};', filename);
+      (async () => {
+        try { await m.exports.__finish({ proposal_id: 10, requested_version: ${version}, attempt_number: 8 }, new Error('test failure')); }
+        finally { await require('/app/src/utils/db').end(); }
+      })().catch(e => { console.error(e.message); process.exitCode = 1; });
+    `;
+    const result = spawnSync('docker', [
+      'exec', '-i', '-e', `DB_NAME=${database}`, 'station-backend', 'node', '-'
+    ], { input: script, encoding: 'utf8' });
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+  };
+  let created = false;
   try {
     mysql(`CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+    created = true;
     run(`
       CREATE TABLE users (id INT PRIMARY KEY, full_name VARCHAR(100), parent_id INT NULL, custom_data JSON);
       CREATE TABLE station_proposals (id INT PRIMARY KEY, user_id INT NULL, status VARCHAR(30),
@@ -57,7 +107,8 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
         from_status VARCHAR(30), to_status VARCHAR(30), created_at TIMESTAMP);
       CREATE TABLE proposal_sheet_sync_queue (proposal_id INT PRIMARY KEY, operation VARCHAR(10),
         requested_version BIGINT, synced_version BIGINT, status VARCHAR(20), attempt_count INT,
-        next_attempt_at DATETIME NULL, last_error TEXT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        next_attempt_at DATETIME NULL, last_error TEXT NULL, last_synced_at DATETIME NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
       INSERT INTO users VALUES (1,'GDKV',NULL,'{"department":"North","chuc_vu":"GDKV"}'),
         (2,'CTV',1,'{}'),(3,'Other',NULL,'{}');
       INSERT INTO station_proposals (id,user_id,status) VALUES (10,2,'PENDING'),(11,3,'PENDING');
@@ -113,7 +164,59 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
       DELETE FROM users WHERE id=3;
       SELECT GROUP_CONCAT(proposal_id ORDER BY proposal_id) FROM proposal_sheet_sync_queue;
     `), ['5', '10,11,12']);
+    run(`CREATE TABLE proposal_requests (proposal_id INT, request_type VARCHAR(30),
+      status VARCHAR(30), target_department VARCHAR(20));`);
+    const statusLogMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'database',
+      '251-proposal-sheet-status-log-sync.sql'), 'utf8');
+    run(statusLogMigration);
+    run(statusLogMigration);
+    run(`
+      DELETE FROM proposal_sheet_sync_queue;
+      UPDATE proposal_status_change_times SET changed_at='2024-01-01 10:00:00' WHERE proposal_id=10;
+      INSERT INTO proposal_activity_logs VALUES
+        (2,10,'status_change','PENDING','REVIEWING','2025-01-01 01:00:00'),
+        (3,10,'status_change','REVIEWING','APPROVED','2025-01-01 01:00:00'),
+        (4,10,'status_change_denied','APPROVED','CANCELLED','2026-01-01 01:00:00'),
+        (5,10,'status_change','APPROVED','APPROVED','2026-02-01 01:00:00');
+    `);
+    const dataQt1 = loadProposals([10, 11, 12], 'Data_QT1');
+    const testDataQt1 = loadProposals([10, 11, 12], 'TEST_Data_QT1');
+    const legacy = loadProposals([10, 11, 12], 'Đề xuất');
+    assert.deepEqual(testDataQt1, dataQt1);
+    const qt1Record = dataQt1.find(row => row.id === 10);
+    const legacyRecord = legacy.find(row => row.id === 10);
+    assert.equal(qt1Record.status_log_id, 3);
+    assert.equal(qt1Record.formatted, '01/01/2025 01:00');
+    assert.equal(legacyRecord.formatted, '01/01/2024 10:00');
+    assert.notEqual(qt1Record.status_changed_at, legacyRecord.status_changed_at);
+    assert.equal(dataQt1.find(row => row.id === 11).status_log_id, null);
+    assert.equal(dataQt1.find(row => row.id === 11).status_changed_at, null);
+    assert.ok(dataQt1.find(row => row.id === 12).status_changed_at);
+    assert.equal(dataQt1.find(row => row.id === 12).status_changed_at,
+      legacy.find(row => row.id === 12).status_changed_at);
+    assert.deepEqual(run(`
+      SELECT requested_version FROM proposal_sheet_sync_queue WHERE proposal_id=10;
+      UPDATE proposal_sheet_sync_queue SET status='PROCESSING' WHERE proposal_id=10;
+      INSERT INTO proposal_activity_logs VALUES (6,10,'status_change','APPROVED','ACTIVE','2026-03-01 01:00:00');
+      SELECT CONCAT(status,':',requested_version) FROM proposal_sheet_sync_queue WHERE proposal_id=10;
+      START TRANSACTION;
+      INSERT INTO proposal_activity_logs VALUES (7,10,'status_change','ACTIVE','CANCELLED','2026-04-01 01:00:00');
+      ROLLBACK;
+      SELECT CONCAT(status,':',requested_version) FROM proposal_sheet_sync_queue WHERE proposal_id=10;
+    `), ['2', 'PROCESSING:3', 'PROCESSING:3']);
+    assert.equal(loadProposals([10], 'Data_QT1')[0].status_log_id, 6);
+    finishJob(true, 2);
+    assert.deepEqual(run(`SELECT CONCAT(status,':',requested_version,':',synced_version)
+      FROM proposal_sheet_sync_queue WHERE proposal_id=10;`), ['PENDING:3:2']);
+    run(`UPDATE proposal_sheet_sync_queue SET status='PROCESSING', attempt_count=8 WHERE proposal_id=10;`);
+    finishJob(false, 2);
+    assert.deepEqual(run(`SELECT CONCAT(status,':',attempt_count,':',next_attempt_at IS NOT NULL)
+      FROM proposal_sheet_sync_queue WHERE proposal_id=10;`), ['PENDING:0:1']);
+    run(`UPDATE proposal_sheet_sync_queue SET status='PROCESSING', attempt_count=8 WHERE proposal_id=10;`);
+    finishJob(false, 3);
+    assert.deepEqual(run(`SELECT CONCAT(status,':',attempt_count,':',next_attempt_at IS NULL)
+      FROM proposal_sheet_sync_queue WHERE proposal_id=10;`), ['FAILED:8:1']);
   } finally {
-    mysql(`DROP DATABASE IF EXISTS \`${database}\`;`);
+    if (created) mysql(`DROP DATABASE \`${database}\`;`);
   }
 });
