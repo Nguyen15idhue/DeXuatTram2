@@ -1,14 +1,14 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 
 const PRIORITY_DESCRIPTIONS = {
-  "ƯT1_Tiềm năng":
-    "Chủ đầu tư (CĐT) có sẵn mặt bằng, đạt điều kiện về loại đất và có sẵn nguồn điện; muốn hợp tác theo mô hình Liên kết hoặc Nhượng quyền.",
-  "ƯT2_Quan tâm":
-    "CĐT có sẵn mặt bằng đạt điều kiện về loại đất nhưng chưa có nguồn điện; muốn tìm hiểu mô hình Liên kết hoặc Nhượng quyền.",
-  "ƯT3_Theo dõi thêm":
-    "Nhóm CĐT chỉ muốn cho thuê mặt bằng, chưa muốn tìm hiểu mô hình hợp tác đầu tư trạm sạc",
-  "KƯT_Không chất lượng":
-    "Khách chưa quan tâm mô hình trạm sạc, hoặc thông tin không dùng được.",
+  "1. Có sẵn hạ tầng triển khai được ngay":
+    "Khách hàng có mặt bằng, nguồn điện và các điều kiện cơ bản phù hợp để triển khai trạm sạc; sẵn sàng phối hợp khảo sát và đầu tư.",
+  "2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)":
+    "Khách hàng có quỹ đất hoặc mặt bằng tiềm năng để phát triển HUB trạm sạc quy mô lớn, có nhu cầu hợp tác đầu tư hoặc cho thuê.",
+  "3. Dừng không tư vấn":
+    "Khách hàng không có nhu cầu, từ chối hợp tác hoặc không đáp ứng các điều kiện cần thiết để triển khai trạm sạc.",
+  "4. Khác":
+    "Khách hàng chưa xác định rõ nhu cầu, cần thêm thông tin, đang cân nhắc hoặc hẹn liên hệ lại để tiếp tục tư vấn.",
 };
 
 const LeadPrioritySelect = ({
@@ -36,7 +36,8 @@ const LeadPrioritySelect = ({
     ),
   ];
   const selected = choices.find((option) => option.value === value);
-  const descriptionFor = ({ value, label }) => PRIORITY_DESCRIPTIONS[value] ?? PRIORITY_DESCRIPTIONS[label];
+  const descriptionFor = ({ value, label }) =>
+    PRIORITY_DESCRIPTIONS[value] ?? PRIORITY_DESCRIPTIONS[label];
   const description = active?.description;
 
   useLayoutEffect(() => {
@@ -50,7 +51,10 @@ const LeadPrioritySelect = ({
     tooltip.style.width = `${Math.max(0, Math.min(280, showRight ? right : left))}px`;
     tooltip.style.left = showRight ? "calc(100% + 8px)" : "auto";
     tooltip.style.right = showRight ? "auto" : "calc(100% + 8px)";
-    const top = Math.max(8, Math.min(option.top, window.innerHeight - tooltip.offsetHeight - 8));
+    const top = Math.max(
+      8,
+      Math.min(option.top, window.innerHeight - tooltip.offsetHeight - 8),
+    );
     tooltip.style.top = `${top - menu.top}px`;
   }, [active, description]);
 
@@ -84,7 +88,10 @@ const LeadPrioritySelect = ({
       return;
     }
     const anchor = triggerRef.current.getBoundingClientRect();
-    const width = Math.min(Math.max(240, anchor.width), window.innerWidth - (window.innerWidth >= 600 ? 344 : 16));
+    const width = Math.min(
+      Math.max(240, anchor.width),
+      window.innerWidth - (window.innerWidth >= 600 ? 344 : 16),
+    );
     const spaceBelow = window.innerHeight - anchor.bottom - 12;
     const spaceAbove = anchor.top - 12;
     const below = spaceBelow >= 260 || spaceBelow >= spaceAbove;
@@ -131,7 +138,8 @@ const LeadPrioritySelect = ({
         popover="auto"
         className="fixed m-0 overflow-visible rounded-md border border-gray-300 bg-white text-gray-900 shadow-lg"
         onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) setActive(null);
+          if (!event.currentTarget.contains(event.relatedTarget))
+            setActive(null);
         }}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -144,45 +152,61 @@ const LeadPrioritySelect = ({
           buttons[Math.max(0, Math.min(next, buttons.length - 1))]?.focus();
         }}
       >
-        <div className="overflow-auto p-1" onMouseLeave={() => setActive(null)} onWheel={() => setActive(null)}>
-        {choices.map((option, index) => {
-          const optionDescription = descriptionFor(option);
-          const showDescription = (event) => setActive(optionDescription
-            ? { element: event.currentTarget, description: optionDescription }
-            : null);
-          return (
-            <button
-              key={option.value}
-              type="button"
-              className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-100 focus:bg-gray-100"
-              aria-label={option.label}
-              aria-pressed={option.value === value}
-              aria-describedby={
-                optionDescription ? `${menuId}-description-${index}` : undefined
-              }
-              onMouseEnter={showDescription}
-              onFocus={showDescription}
-              onClick={() => {
-                menuRef.current.hidePopover();
-                triggerRef.current.focus();
-                onChange(option.value);
-              }}
-            >
-              {option.label}
-              {optionDescription && (
-                <span
-                  id={`${menuId}-description-${index}`}
-                  className="sr-only max-[599px]:not-sr-only max-[599px]:block [@media(hover:none)]:not-sr-only [@media(hover:none)]:block text-xs text-gray-600"
-                >
-                  {optionDescription}
-                </span>
-              )}
-            </button>
-          );
-        })}
+        <div
+          className="overflow-auto p-1"
+          onMouseLeave={() => setActive(null)}
+          onWheel={() => setActive(null)}
+        >
+          {choices.map((option, index) => {
+            const optionDescription = descriptionFor(option);
+            const showDescription = (event) =>
+              setActive(
+                optionDescription
+                  ? {
+                      element: event.currentTarget,
+                      description: optionDescription,
+                    }
+                  : null,
+              );
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-100 focus:bg-gray-100"
+                aria-label={option.label}
+                aria-pressed={option.value === value}
+                aria-describedby={
+                  optionDescription
+                    ? `${menuId}-description-${index}`
+                    : undefined
+                }
+                onMouseEnter={showDescription}
+                onFocus={showDescription}
+                onClick={() => {
+                  menuRef.current.hidePopover();
+                  triggerRef.current.focus();
+                  onChange(option.value);
+                }}
+              >
+                {option.label}
+                {optionDescription && (
+                  <span
+                    id={`${menuId}-description-${index}`}
+                    className="sr-only max-[599px]:not-sr-only max-[599px]:block [@media(hover:none)]:not-sr-only [@media(hover:none)]:block text-xs text-gray-600"
+                  >
+                    {optionDescription}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
         {description && (
-          <div ref={tooltipRef} role="tooltip" className="pointer-events-none absolute rounded-md border border-gray-300 bg-white p-3 text-xs text-gray-700 shadow-lg max-[599px]:hidden [@media(hover:none)]:hidden">
+          <div
+            ref={tooltipRef}
+            role="tooltip"
+            className="pointer-events-none absolute rounded-md border border-gray-300 bg-white p-3 text-xs text-gray-700 shadow-lg max-[599px]:hidden [@media(hover:none)]:hidden"
+          >
             {description}
           </div>
         )}
