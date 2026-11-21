@@ -16,6 +16,8 @@ import ViewPickerMenu from "../../../components/admin/ViewPickerMenu";
 import ImportViewPanel from "../../../components/admin/ImportViewPanel";
 import { usageLabel } from "../../../components/admin/ViewPickerMenu";
 import Pagination from "../../../components/Pagination";
+import SearchableMultiSelect from "../../../components/ui/SearchableMultiSelect";
+import { appendMultiFilter, hasFilterValue } from "../../../utils/proposalMultiFilters";
 import useFieldOptions from "../../../hooks/useFieldOptions";
 import useDefaultViewId from "../../../hooks/useDefaultViewId";
 import useDebouncedValue from "../../../hooks/useDebouncedValue";
@@ -116,6 +118,7 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
   const [filterSalesOutcome, setFilterSalesOutcome] = useState("");
   const [filterDepartment, setFilterDepartment] = useState("");
   const [filterAssignee, setFilterAssignee] = useState("");
+  const [multiFilters, setMultiFilters] = useState({});
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dateField, setDateField] = useState("created_at");
@@ -246,13 +249,18 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
             : columnFilters;
 
         if (s) params.append("search", s);
-        if (st) params.append("consultation_status", st);
-        if (so) params.append("source", so);
-        if (pr) params.append("province", pr);
-        if (cl) params.append("customer_classification", cl);
-        if (oc) params.append("sales_outcome", oc);
-        if (dp) params.append("assigned_department", dp);
-        if (asg) params.append("assigned_user_id", asg);
+        if (activeTab === "all") {
+          const selected = overrides.multiFilters !== undefined ? overrides.multiFilters : multiFilters;
+          Object.entries(selected).forEach(([key, value]) => appendMultiFilter(params, `filter_${key}`, value));
+        } else {
+          if (st) params.append("consultation_status", st);
+          if (so) params.append("source", so);
+          if (pr) params.append("province", pr);
+          if (cl) params.append("customer_classification", cl);
+          if (oc) params.append("sales_outcome", oc);
+          if (dp) params.append("assigned_department", dp);
+          if (asg) params.append("assigned_user_id", asg);
+        }
 
         if (df || dt) {
           params.append("date_field", dfield);
@@ -300,6 +308,7 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
       filterSalesOutcome,
       filterDepartment,
       filterAssignee,
+      multiFilters,
       dateFrom,
       dateTo,
       dateField,
@@ -367,6 +376,7 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
     setFilterSalesOutcome("");
     setFilterDepartment("");
     setFilterAssignee("");
+    setMultiFilters({});
     setDateFrom("");
     setDateTo("");
     setDateField("created_at");
@@ -382,6 +392,7 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
       filterSalesOutcome: "",
       filterDepartment: "",
       filterAssignee: "",
+      multiFilters: {},
       dateFrom: "",
       dateTo: "",
       dateField: "created_at",
@@ -446,19 +457,43 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
   };
 
   const activeFilterCount = [
-    filterStage,
-    filterSource,
-    filterProvince,
-    filterClassification,
-    filterSalesOutcome,
-    filterDepartment,
-    filterAssignee,
-    dateFrom,
-    dateTo,
-  ].filter(Boolean).length;
+    ...(activeTab === "all" ? Object.values(multiFilters) : [
+      filterStage, filterSource, filterProvince, filterClassification,
+      filterSalesOutcome, filterDepartment, filterAssignee,
+    ]),
+    dateFrom, dateTo,
+  ].filter(hasFilterValue).length;
+
+  const renderMultiFilter = (key, placeholder, options) => (
+    <SearchableMultiSelect
+      placeholder={placeholder}
+      selectedLabel="mục"
+      options={options}
+      values={multiFilters[key] || []}
+      onChange={(selected) => setMultiFilters((current) => ({ ...current, [key]: selected }))}
+    />
+  );
 
   const filterFields = (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {activeTab === "all" ? <>
+        {renderMultiFilter("consultation_status", "Tất cả trạng thái tư vấn", stageOptions)}
+        {renderMultiFilter("source", "Tất cả nguồn", sourceOptions)}
+        {renderMultiFilter("customer_classification", "Tất cả phân loại KH", [
+          { value: "__empty__", label: "Chưa phân loại" },
+          { value: "Tiềm năng", label: "Tiềm năng" },
+          { value: "Quan tâm", label: "Quan tâm" },
+        ])}
+        {renderMultiFilter("sales_outcome", "Tất cả kết quả TVBH", [
+          { value: "__empty__", label: "Chưa cập nhật" }, ...salesOutcomeOptions,
+        ])}
+        {renderMultiFilter("province", "Tất cả tỉnh/thành", provinceOptions)}
+        {renderMultiFilter("assigned_department", "Tất cả phòng ban", departmentOptions.map((value) => ({ value, label: value })))}
+        {renderMultiFilter("assigned_user_id", "Tất cả người phụ trách", [
+          { value: "__empty__", label: "Chưa giao phụ trách" },
+          ...gdkvOptions.map((user) => ({ value: user.id, label: user.full_name })),
+        ])}
+      </> : <>
       <select
         className="select select-bordered select-sm w-full"
         value={filterStage}
@@ -546,6 +581,7 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
           </option>
         ))}
       </select>
+      </>}
       <div className="flex items-center gap-2">
         <span className="text-xs text-base-content/60 whitespace-nowrap">
           Thời gian
@@ -598,13 +634,13 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
         tab: activeTab,
         search,
         viewIds: viewIds?.length ? viewIds.join(",") : undefined,
-        consultation_status: filterStage || undefined,
-        source: filterSource || undefined,
-        province: filterProvince || undefined,
-        customer_classification: filterClassification || undefined,
-        sales_outcome: filterSalesOutcome || undefined,
-        assigned_department: filterDepartment || undefined,
-        assigned_user_id: filterAssignee || undefined,
+        consultation_status: activeTab !== "all" ? filterStage || undefined : undefined,
+        source: activeTab !== "all" ? filterSource || undefined : undefined,
+        province: activeTab !== "all" ? filterProvince || undefined : undefined,
+        customer_classification: activeTab !== "all" ? filterClassification || undefined : undefined,
+        sales_outcome: activeTab !== "all" ? filterSalesOutcome || undefined : undefined,
+        assigned_department: activeTab !== "all" ? filterDepartment || undefined : undefined,
+        assigned_user_id: activeTab !== "all" ? filterAssignee || undefined : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         date_field: dateFrom || dateTo ? dateField : undefined,
@@ -618,6 +654,9 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
             String(value).trim() !== "",
         ),
       );
+      if (activeTab === "all") {
+        Object.entries(multiFilters).forEach(([key, value]) => appendMultiFilter(params, `filter_${key}`, value));
+      }
       await excelService.downloadBlob(
         `/admin/excel/export/leads?${params}`,
         token,
