@@ -7,11 +7,16 @@ const LOCK = 'lead_google_sheet_sync';
 const MANUAL_LOCK = 'lead_google_sheet_sync_manual';
 const HEADERS = [
   'Mã khách hàng', 'Họ và tên', 'Số điện thoại', 'Email', 'Địa chỉ', 'Phường/Xã',
-  'Tỉnh/Thành phố', 'Vùng miền', 'Đối tượng khách hàng', 'Nguồn Lead', 'Ghi chú chung',
+  'Tỉnh/Thành phố', 'Vùng miền', 'Nguồn Lead', 'Ghi chú chung',
   'Giai đoạn', 'Phân loại khách hàng', 'Trạng thái tư vấn', 'Kết quả TVBH', 'Ngày tạo',
   'Ngày cập nhật', 'ID người phụ trách', 'Người phụ trách', 'Chức vụ', 'Phòng ban hiện tại',
-  'Phòng ban được phân chia', 'Thời điểm phân chia', 'Ghi chú CSKH', 'Ghi chú TVBH', 'Lịch sử tư vấn'
+  'Phòng ban được phân chia', 'Thời điểm phân chia', 'Ghi chú TVBH',
+  'GĐKV phân loại KH', 'Thời gian GĐKV phân loại KH', 'Ghi chú GĐKV phân loại KH',
+  'Thời gian gọi lần đầu', 'Thời gian chốt kết quả cuối cùng', 'Lịch sử tư vấn'
 ];
+const HISTORY_COLUMN_INDEX = HEADERS.length - 1;
+const END_COLUMN = 'AC';
+const GDKV_CLASSIFICATION = 'GDKV_phan_loai_KH';
 const STATUS_LABELS = {
   WAITING_ALLOCATION: 'Chờ GĐTTKD phân bổ', WAITING_FIRST_CONTACT: 'Chờ GĐKV tư vấn lần đầu',
   CONSULTING: 'GĐKV đang tư vấn', SUCCESS: 'Đã tư vấn thành công', FAILED: 'Đã tư vấn thất bại'
@@ -41,15 +46,36 @@ const dateFormat = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
 });
 const localTime = (value) => {
+  if (value instanceof Date) return value.getTime();
   const input = text(value);
   if (!input) return NaN;
   const normalized = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(input)
     ? `${input.replace(' ', 'T')}+07:00` : input;
-  return value instanceof Date ? value.getTime() : Date.parse(normalized);
+  return Date.parse(normalized);
 };
 const displayDate = (value) => {
   const ms = localTime(value);
   return Number.isFinite(ms) ? dateFormat.format(ms).replace(',', '') : text(value);
+};
+const latestHistory = (data) => {
+  const rows = json(data.tvbh_history) ?? [];
+  if (!Array.isArray(rows)) throw fault('Bảng lịch sử khách hàng không đúng định dạng');
+  let latest;
+  let max = -Infinity;
+  for (const row of rows) {
+    const time = row?.thoi_gian;
+    if (typeof time !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}[T ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(time)) continue;
+    const date = time.slice(0, 10);
+    const utc = new Date(`${date}T00:00:00Z`);
+    if (!Number.isFinite(utc.getTime()) || utc.toISOString().slice(0, 10) !== date) continue;
+    const ms = localTime(time.replace(' ', 'T'));
+    if (Number.isFinite(ms) && ms >= max) {
+      max = ms;
+      latest = row;
+    }
+  }
+  return latest;
 };
 const oneLine = (value) => text(value).replace(/\r\n?|\n|\u2028|\u2029/g, ' ↵ ').replace(/--/g, '—');
 const formatHistory = (data, label = (_, value) => text(value)) => ['CSKH', 'TVBH']
@@ -71,11 +97,15 @@ const formatHistory = (data, label = (_, value) => text(value)) => ['CSKH', 'TVB
 async function loadLabels(db) {
   const [defs] = await db.query(`SELECT \`key\`, options, data_list_id, data_list_column, data_list_label_column, source_config
     FROM field_definitions WHERE entity = 'leads' AND status = 'active' AND \`key\` IN
-    ('region','customer_type','source','stage','customer_classification','sales_outcome','cskh_history','tvbh_history')`);
-  const sources = defs.map(def => ({
-    key: def.key, options: json(def.options),
-    list: json(def.source_config)?.columns?.find(col => col.key === 'tinh_trang') || def
-  }));
+    ('region','source','stage','customer_classification','sales_outcome','cskh_history','tvbh_history')`);
+  const sources = defs.flatMap(def => {
+    const columns = json(def.source_config)?.columns;
+    const rank = def.key === 'tvbh_history' && columns?.find(col => col.key === GDKV_CLASSIFICATION);
+    return [
+      { key: def.key, options: json(def.options), list: columns?.find(col => col.key === 'tinh_trang') || def },
+      ...(rank ? [{ key: GDKV_CLASSIFICATION, options: rank.options, list: rank }] : [])
+    ];
+  });
   const ids = [...new Set(sources.map(({ list }) => list.data_list_id).filter(Boolean))];
   const [rows] = ids.length ? await db.query(
     'SELECT list_id, data FROM data_list_rows WHERE list_id IN (?) ORDER BY sort_order, id', [ids]) : [[]];
@@ -91,29 +121,31 @@ async function loadLabels(db) {
     }
     return [key, map];
   }));
-  return (key, value) => maps.get(key)?.get(text(value)) || text(value);
+  return (key, value) => maps.get(key)?.get(text(value)) || (key === GDKV_CLASSIFICATION ? '' : text(value));
 }
 
-function mapLeadToRow(lead, label = (_, value) => text(value)) {
+function mapLeadToRow(lead, label = (key, value) => key === GDKV_CLASSIFICATION ? '' : text(value)) {
   const data = json(lead.custom_data) || {};
   const assignee = json(lead.assignee_data) || {};
+  const latest = latestHistory(data);
   const row = [
     lead.lead_code, lead.full_name, lead.phone, lead.email, lead.address, lead.ward, lead.province,
-    ...['region', 'customer_type', 'source'].map(key => label(key, lead[key])), lead.note,
+    label('region', lead.region), label('source', lead.source), lead.note,
     label('stage', lead.stage), label('customer_classification', lead.customer_classification),
     STATUS_LABELS[lead.consultation_status] || lead.consultation_status, label('sales_outcome', lead.sales_outcome),
     displayDate(lead.created_at), displayDate(lead.updated_at), lead.assigned_user_id, lead.assignee_name,
     assignee.chuc_vu, assignee.department, lead.assigned_department, displayDate(lead.assigned_at),
-    data.cskh_note, data.tvbh_note, formatHistory(data, label)
+    data.tvbh_note,
+    label(GDKV_CLASSIFICATION, latest?.[GDKV_CLASSIFICATION]), displayDate(latest?.thoi_gian),
+    text(latest?.ghi_chu) ? 'Có ghi chú trong hồ sơ' : '',
+    displayDate(lead.first_consultation_created_at),
+    displayDate(lead.sales_outcome_at), formatHistory(data, label)
   ].map(text);
   if (row.some(value => value.length > 50000)) throw fault('Có ô vượt giới hạn 50.000 ký tự của Google Sheets');
   return row;
 }
 
 function indexRows(rows) {
-  if (!HEADERS.every((value, i) => rows[0]?.[i] === value)) {
-    throw fault(`Tiêu đề A–Z của tab ${TAB} không đúng bố cục`);
-  }
   const index = new Map();
   rows.slice(1).forEach((row, i) => {
     const code = text(row[0]);
@@ -133,34 +165,41 @@ async function writeRows(sheets, spreadsheetId, jobs) {
   if (!tab && jobs.every(job => !job.values)) return;
   if (!tab) {
     const result = await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: {
-      requests: [{ addSheet: { properties: { title: TAB, gridProperties: { frozenRowCount: 1 } } } }]
+      requests: [{ addSheet: { properties: { title: TAB, gridProperties: { frozenRowCount: 1, columnCount: HEADERS.length } } } }]
     } }, TIMEOUT);
     tab = result.data.replies[0].addSheet.properties;
   }
-  if (tab.sheetType !== 'GRID' || tab.gridProperties.columnCount < HEADERS.length) {
-    throw fault(`Tab ${TAB} phải có tối thiểu 26 cột`);
+  if (tab.sheetType !== 'GRID') {
+    throw fault(`Tab ${TAB} phải là bảng tính dạng lưới`);
   }
   const result = await sheets.spreadsheets.values.get({
     spreadsheetId, range: RANGE, valueRenderOption: 'FORMULA'
   }, TIMEOUT);
   const rows = result.data.values || [];
   const initializing = rows.length === 0;
+  const currentHeader = HEADERS.every((value, i) => rows[0]?.[i] === value);
+  if (!initializing && !currentHeader) {
+    throw fault(`Tiêu đề A–${END_COLUMN} của tab ${TAB} không đúng bố cục 29 cột mới; không ghi đè`);
+  }
   const index = initializing ? new Map() : indexRows(rows);
-  const data = initializing ? [{ range: `${RANGE}!A1:Z1`, values: [HEADERS] }] : [];
+  const data = initializing ? [{ range: `${RANGE}!A1:${END_COLUMN}1`, values: [HEADERS] }] : [];
   let lastRow = Math.max(1, rows.length);
   for (const job of jobs) {
     const existing = index.get(job.code);
     if (!job.values && !existing) continue;
     const rowNr = existing || ++lastRow;
     index.set(job.code, rowNr);
-    data.push({ range: `${RANGE}!A${rowNr}:Z${rowNr}`, values: [job.values || HEADERS.map(() => '')] });
+    data.push({ range: `${RANGE}!A${rowNr}:${END_COLUMN}${rowNr}`, values: [job.values || HEADERS.map(() => '')] });
   }
   const requests = [];
+  if (tab.gridProperties.columnCount < HEADERS.length) requests.push({
+    appendDimension: { sheetId: tab.sheetId, dimension: 'COLUMNS', length: HEADERS.length - tab.gridProperties.columnCount }
+  });
   if (lastRow > tab.gridProperties.rowCount) requests.push({
     appendDimension: { sheetId: tab.sheetId, dimension: 'ROWS', length: lastRow - tab.gridProperties.rowCount }
   });
   if (initializing) requests.push({ repeatCell: {
-    range: { sheetId: tab.sheetId, startColumnIndex: 25, endColumnIndex: 26 },
+    range: { sheetId: tab.sheetId, startColumnIndex: HISTORY_COLUMN_INDEX, endColumnIndex: HISTORY_COLUMN_INDEX + 1 },
     cell: { userEnteredFormat: { wrapStrategy: 'WRAP' } }, fields: 'userEnteredFormat.wrapStrategy'
   } });
   if (requests.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } }, TIMEOUT);
@@ -257,7 +296,8 @@ async function processBatch() {
     if (!locked) return;
     const [jobs] = await db.query(`SELECT l.*, q.id, q.version, q.attempt_count,
       COALESCE(l.lead_code, q.lead_code) AS code, l.id AS live_id,
-      u.full_name AS assignee_name, u.custom_data AS assignee_data
+      u.full_name AS assignee_name, u.custom_data AS assignee_data,
+      l.first_tvbh_entry_at AS first_consultation_created_at
       FROM lead_sheet_sync_queue q LEFT JOIN leads l ON l.id = q.id
       LEFT JOIN users u ON u.id = l.assigned_user_id
       WHERE q.status = 'PENDING' AND q.next_attempt_at <= NOW()

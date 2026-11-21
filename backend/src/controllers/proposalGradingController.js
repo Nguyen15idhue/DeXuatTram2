@@ -113,6 +113,8 @@ exports.update = async (req, res) => {
       message = 'Đã cập nhật đánh giá — đề xuất bị hủy vì có điểm 0';
     } else if (result.transition && result.transition.status === 'DESIGNING') {
       message = 'Đã cập nhật đánh giá — đề xuất chuyển sang Đang vẽ Layout';
+    } else if (result.transition && result.transition.status === 'PROPOSAL_REPORT_CREATING') {
+      message = 'Đã cập nhật đánh giá — đề xuất chuyển sang Lập tờ trình BCĐX';
     } else if (result.transition && result.transition.status === 'GDTTKD_EVALUATING') {
       message = 'Đã cập nhật đánh giá — đề xuất chuyển sang GĐTTKD đánh giá';
     }

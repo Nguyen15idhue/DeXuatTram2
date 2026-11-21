@@ -9,6 +9,8 @@ const ReviewActionDialog = ({
   confirmClass = 'btn-primary',
   reasonLabel = 'Lý do',
   reasonPlaceholder = 'Nhập lý do...',
+  initialReason = '',
+  loadingReason = false,
   showDepartmentSelection = false,
   allowQH = false,
   allowPL = false,
@@ -23,14 +25,14 @@ const ReviewActionDialog = ({
 
   useEffect(() => {
     if (isOpen) {
-      setReason('');
+      setReason(initialReason);
       setDepartmentSelection('');
     }
-  }, [isOpen, allowQH, allowPL]);
+  }, [isOpen, allowQH, allowPL, initialReason]);
 
   if (!isOpen) return null;
 
-  const disabled = saving
+  const disabled = saving || loadingReason
     || (requireReason && !reason.trim())
     || (showDepartmentSelection && !(
       (departmentSelection === 'QH' && allowQH)
@@ -59,10 +61,12 @@ const ReviewActionDialog = ({
             className="textarea textarea-bordered w-full min-h-24"
             value={reason}
             placeholder={reasonPlaceholder}
+            disabled={loadingReason}
             onChange={(event) => setReason(event.target.value)}
             autoFocus
           />
         </label>
+        {loadingReason && <p className="mt-1 text-sm text-base-content/60">Đang tải lý do yêu cầu chấm lại...</p>}
 
         {showDepartmentSelection && (
           <label className="form-control w-full mt-3">

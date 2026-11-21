@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 
 for (const retry of [false, true]) {
-test(`contract modal defaults today, validates dates and uploads multiple files${retry ? ' with retry' : ''}`, async ({ page }) => {
+test(`contract modal calculates expiry from the term and uploads multiple files${retry ? ' with retry' : ''}`, async ({ page }) => {
   const errors = [];
   let uploaded = 0;
   let uploadFailed = false;
@@ -45,18 +45,23 @@ test(`contract modal defaults today, validates dates and uploads multiple files$
   const today = await page.evaluate(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
   await expect(page.getByRole('textbox', { name: 'Ghi chú', exact: true })).toBeVisible();
   await expect(page.getByLabel('Ngày hiệu lực hợp đồng', { exact: true })).toHaveValue(today);
+  await expect(page.getByLabel('Ngày hết hạn hợp đồng', { exact: true })).toHaveCount(0);
   await page.locator('#contract-files').setInputFiles([
     { name: 'contract.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') },
     { name: 'annex.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('mock docx') }
   ]);
-  await page.getByLabel('Ngày hiệu lực hợp đồng', { exact: true }).fill('2026-11-12');
+  await page.getByLabel('Ngày hiệu lực hợp đồng', { exact: true }).fill('2024-02-29');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
-  await expect(page.getByText('Vui lòng nhập ngày hiệu lực và ngày hết hạn hợp đồng')).toBeVisible();
-  await page.getByLabel('Ngày hết hạn hợp đồng', { exact: true }).fill('2026-11-12');
+  await expect(page.getByText('Vui lòng nhập ngày hiệu lực hợp lệ và thời hạn hợp đồng là số năm nguyên dương')).toBeVisible();
+  await page.getByLabel('Thời hạn hợp đồng (năm)', { exact: true }).fill('0');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
-  await expect(page.getByText('Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng')).toBeVisible();
+  await expect(page.getByText('Vui lòng nhập ngày hiệu lực hợp lệ và thời hạn hợp đồng là số năm nguyên dương')).toBeVisible();
+  await page.getByLabel('Thời hạn hợp đồng (năm)', { exact: true }).fill('1.5');
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('thời hạn hợp đồng là số năm nguyên dương');
   expect(uploaded).toBe(0);
-  await page.getByLabel('Ngày hết hạn hợp đồng', { exact: true }).fill('2027-11-12');
+  await page.getByLabel('Thời hạn hợp đồng (năm)', { exact: true }).fill('1');
+  await expect(page.getByText('Ngày hết hạn hợp đồng: 28/02/2025')).toBeVisible();
   await page.getByRole('textbox', { name: 'Ghi chú', exact: true }).fill('Hợp đồng và phụ lục');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   if (retry) {
@@ -67,12 +72,46 @@ test(`contract modal defaults today, validates dates and uploads multiple files$
   await expect(page.locator('#contract-files')).toHaveCount(0);
   expect(uploaded).toBe(2);
   expect(completed).toEqual([{
-    file_ids: [101, 102], contract_effective_date: '2026-11-12',
-    contract_expiry_date: '2027-11-12', contract_note: 'Hợp đồng và phụ lục', expected_status: 'DOING'
+    file_ids: [101, 102], contract_effective_date: '2024-02-29',
+    contract_expiry_date: '2025-02-28', contract_note: 'Hợp đồng và phụ lục', expected_status: 'DOING'
   }]);
   expect(errors).toEqual([]);
 });
 }
+
+test('preserves a non-whole-year legacy expiry unless a new term is entered', async ({ page }) => {
+  const completed = [];
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    let data = {};
+    if (pathname.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN' } };
+    else if (pathname.endsWith('/charging-stations')) data = [{
+      id: 501, ma_tram: 'ON-501', status: 'ONBOARDING', contract_status: 'DONE',
+      contract_effective_date: '2024-03-01', contract_expiry_date: '2025-09-01',
+      contract_file_id: 101
+    }];
+    else if (pathname.endsWith('/contract/complete')) completed.push(route.request().postDataJSON());
+    else if (pathname.endsWith('/activity')) data = [];
+    await route.fulfill({ json: { success: true, data, pagination: { page: 1, total: 1, totalPages: 1 } } });
+  });
+  await page.addInitScript(() => localStorage.setItem('token', 'contract-legacy-test'));
+  await page.goto('/admin/on-tram/khoi-tao-hop-dong');
+  await page.getByRole('button', { name: 'Hợp đồng: Đã ký xong' }).click();
+  await expect(page.getByText('Thời hạn cũ không tròn năm; giữ ngày hết hạn 2025-09-01 nếu để trống.')).toBeVisible();
+  await page.getByLabel('Ngày hiệu lực hợp đồng').fill('2024-03-02');
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('thời hạn hợp đồng là số năm nguyên dương');
+  expect(completed).toHaveLength(0);
+  await page.getByLabel('Ngày hiệu lực hợp đồng').fill('2024-03-01');
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect.poll(() => completed.length).toBe(1);
+  expect(completed[0].contract_expiry_date).toBe('2025-09-01');
+  await page.getByRole('button', { name: 'Hợp đồng: Đã ký xong' }).click();
+  await page.getByLabel('Thời hạn hợp đồng (năm)').fill('2');
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect.poll(() => completed.length).toBe(2);
+  expect(completed[1].contract_expiry_date).toBe('2026-03-01');
+});
 
 test('contract detail displays every attachment and saved dates and note', async ({ page }) => {
   const errors = [];

@@ -43,10 +43,13 @@ const assignInTransaction = async (leadId, targetUserId, actor, opts, conn) => {
     return { lead, assignment: null };
   }
   await conn.query('UPDATE lead_assignments SET ended_at = NOW() WHERE lead_id = ? AND ended_at IS NULL', [leadId]);
+  const actorRank = opts.systemAuto ? null : access.assignmentRank(await access.getContext(actor, conn));
   const [inserted] = await conn.query(
-    `INSERT INTO lead_assignments (lead_id, assignee_user_id, assigned_department, assignment_type, assigned_by, reason)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [leadId, targetId, targetCtx.department, opts.systemAuto ? 'auto' : 'manual', actor?.id || null, opts.reason || null]);
+    `INSERT INTO lead_assignments
+       (lead_id, assignee_user_id, assigned_department, assignment_type, assigned_by, reason, assigned_by_rank, assignee_rank)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [leadId, targetId, targetCtx.department, opts.systemAuto ? 'auto' : 'manual', actor?.id || null,
+      opts.reason || null, actorRank, targetCtx.isGdkv ? 'GDKV' : 'GDTTKD']);
   await conn.query(
     `UPDATE leads SET assigned_user_id = ?, assigned_department = ?, assigned_at = NOW(),
      stage = CASE WHEN stage = 'NEW' THEN 'ASSIGNED' ELSE stage END WHERE id = ?`,

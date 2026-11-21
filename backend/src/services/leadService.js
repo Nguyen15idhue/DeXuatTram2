@@ -660,10 +660,12 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
       [id]
     );
     if (after.assigned_user_id) {
+      const actorRank = leadAccess.assignmentRank(await leadAccess.getContext(user, conn));
       await conn.query(
-        `INSERT INTO lead_assignments (lead_id, assignee_user_id, assigned_department, assignment_type, assigned_by)
-         VALUES (?, ?, ?, 'manual', ?)`,
-        [id, after.assigned_user_id, after.assigned_department, user.id]
+        `INSERT INTO lead_assignments
+           (lead_id, assignee_user_id, assigned_department, assignment_type, assigned_by, assigned_by_rank, assignee_rank)
+         VALUES (?, ?, ?, 'manual', ?, ?, 'GDKV')`,
+        [id, after.assigned_user_id, after.assigned_department, user.id, actorRank]
       );
     }
     await journeyActivityService.log({

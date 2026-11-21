@@ -42,16 +42,25 @@ const AdminCmsReportsPage = () => {
   }, [load]);
   const run = data?.run;
   const busy = starting || run?.status === 'RUNNING';
+  const endDate = mode === 'day' ? from : to;
+  const maxDate = data?.raw?.enabled ? data.today || data.yesterday : data?.yesterday;
+  const includesToday = Boolean(data?.yesterday && endDate > data.yesterday);
   const start = async event => {
     event.preventDefault();
-    if (!from || (mode === 'range' && (!to || from > to))) {
+    const rawOnly = event.nativeEvent.submitter?.value === 'raw';
+    if (busy || !data?.configured || (rawOnly && !data.raw?.enabled)) return;
+    if (!from || (mode === 'range' && (!to || from > to)) || (maxDate && endDate > maxDate)) {
       setError('Vui lòng chọn ngày hoặc khoảng ngày hợp lệ');
+      return;
+    }
+    if (!rawOnly && includesToday) {
+      setError('Báo cáo tổng hợp chỉ lấy đến ngày hôm qua. Dùng nút chỉ lấy dữ liệu raw để xuất ngày hôm nay.');
       return;
     }
     setStarting(true);
     setError('');
     try {
-      const response = await cmsReportService.run(from, mode === 'day' ? from : to, token);
+      const response = await cmsReportService.run(from, endDate, token, { rawOnly });
       if (!response?.success) throw new Error(response?.message || 'Không bắt đầu được thống kê CMS');
       await load();
     } catch (cause) {
@@ -86,16 +95,21 @@ const AdminCmsReportsPage = () => {
             <label className="form-control">
               <span className="label-text mb-1">{mode === 'day' ? 'Ngày báo cáo' : 'Từ ngày'}</span>
               <input aria-label={mode === 'day' ? 'Ngày báo cáo' : 'Từ ngày'} type="date" className="input input-bordered" required
-                max={data?.yesterday} value={from} disabled={busy} onChange={event => setFrom(event.target.value)} />
+                max={maxDate} value={from} disabled={busy} onChange={event => setFrom(event.target.value)} />
             </label>
             {mode === 'range' && <label className="form-control">
               <span className="label-text mb-1">Đến ngày</span>
               <input aria-label="Đến ngày" type="date" className="input input-bordered" required
-                min={from} max={data?.yesterday} value={to} disabled={busy} onChange={event => setTo(event.target.value)} />
+                min={from} max={maxDate} value={to} disabled={busy} onChange={event => setTo(event.target.value)} />
             </label>}
             <button type="submit" className="btn btn-primary" disabled={busy || !data?.configured}>
               {busy ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
               Lấy dữ liệu và xuất Google Sheet
+            </button>
+            <button type="submit" value="raw" className="btn btn-outline btn-primary"
+              disabled={busy || !data?.configured || !data?.raw?.enabled}>
+              {busy && run?.rawOnly ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
+              Chỉ lấy raw data phiên sạc và xuất Google sheet
             </button>
           </form>
           <div className="text-sm text-base-content/70 space-y-1">
@@ -108,7 +122,7 @@ const AdminCmsReportsPage = () => {
                 : 'chưa bật đồng bộ raw.'}
             </p>}
             {data?.raw?.enabled && <p>
-              Không xuất mã khách hàng và biển số. Các cột chưa xác minh nguồn CMS: {data.raw.unmapped.join(', ')}.
+              Chỉ nút raw lấy được ngày hôm nay. Không xuất mã khách hàng, biển số, tên chủ xe, số điện thoại hoặc số hóa đơn.
             </p>}
             <p>Tiến độ và kết quả dưới đây chỉ giữ trong bộ nhớ của một backend. Khởi động lại sẽ mất tiến độ; có thể chạy lại ngày cần lấy.</p>
           </div>
@@ -119,6 +133,7 @@ const AdminCmsReportsPage = () => {
           <h2 className="text-lg font-semibold">Lượt gần nhất: {STATUS_LABELS[run.status] || run.status}</h2>
           <span>{run.processed}/{run.totalDays} ngày</span>
           <span className="text-sm">{run.from} → {run.to}</span>
+          {run.rawOnly && <span className="badge badge-outline">Chỉ dữ liệu raw</span>}
         </div>
         <p role="status">{run.phase}</p>
         <p className="text-sm text-base-content/60">Bắt đầu: {formatTime(run.startedAt)} · Kết thúc: {formatTime(run.finishedAt)}</p>

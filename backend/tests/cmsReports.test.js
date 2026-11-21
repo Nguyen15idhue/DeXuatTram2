@@ -423,29 +423,42 @@ test("raw rows use Vietnam start date, retain charging and zero-cost sessions, a
     { id: "fixture-next", startTime: "2026-11-16T17:00:00Z", status: "CHARGING" },
   ]);
   assert.deepEqual(rows, [
-    ["fixture-1", "2026-11-16", "11/2026", "16/11/2026 23:30", "17/11/2026 01:30", 2, "", "", "", "", "", "", "", "", "Đã kết thúc"],
-    ["fixture-2", "2026-11-16", "11/2026", "16/11/2026 00:00", "", "", "", "", "", "", "", "", "", "", "Đang sạc"],
+    ["fixture-1", "2026-11-16", "11/2026", "16/11/2026 23:30", "17/11/2026 01:30", 2, ...Array(7).fill(null), 0, "Đã kết thúc", ...Array(6).fill(null)],
+    ["fixture-2", "2026-11-16", "11/2026", "16/11/2026 00:00", "", "", ...Array(7).fill(null), 99, "Đang sạc", ...Array(6).fill(null)],
   ]);
 });
 
 test("raw writer upserts by ID and preserves existing unverified columns", async (t) => {
-  const { config, writes, reads, requests } = fakeSheets(t, [reports.RAW_HEADERS, ["fixture-old"]], {
+  const { config, writes, reads, requests } = fakeSheets(t, [[...reports.RAW_HEADERS, "So_tien_sac_VND"], ["fixture-old"]], {
     title: "Phien_sac_raw", rowCount: 2,
   });
   const writer = await reports.createRawSheetWriter(config);
   const transactions = ["fixture-old", "fixture-new"].map(id => ({
-    id, startTime: "2026-11-16T11:00:00Z", status: "CHARGING",
+    id, startTime: "2026-11-16T11:00:00Z", status: "CHARGING", totalCost: 7501,
   }));
   const rows = reports.buildRawRows("2026-11-16", transactions);
   await writer.write(rows);
   await writer.write(rows);
-  assert.equal(reads[0].range, "'Phien_sac_raw'!A:O");
+  assert.equal(reads[0].range, "'Phien_sac_raw'!A:U");
   assert.equal(requests[0].requestBody.requests[0].updateSheetProperties.properties.gridProperties.rowCount, 3);
   assert.deepEqual(writes.map(item => item.requestBody.data.map(entry => entry.range)), [
-    ["'Phien_sac_raw'!A2:F2", "'Phien_sac_raw'!O2", "'Phien_sac_raw'!A3:O3"],
-    ["'Phien_sac_raw'!A2:F2", "'Phien_sac_raw'!O2", "'Phien_sac_raw'!A3:F3", "'Phien_sac_raw'!O3"],
+    ["'Phien_sac_raw'!A2:J2", "'Phien_sac_raw'!M2:N2", "'Phien_sac_raw'!O2:U2", "'Phien_sac_raw'!A3:U3"],
+    ["'Phien_sac_raw'!A2:J2", "'Phien_sac_raw'!M2:N2", "'Phien_sac_raw'!O2:U2", "'Phien_sac_raw'!A3:J3", "'Phien_sac_raw'!M3:N3", "'Phien_sac_raw'!O3:U3"],
   ]);
-  assert.deepEqual(writes[0].requestBody.data[2].values, [rows[1]]);
+  assert.deepEqual(writes[0].requestBody.data[1].values, [[null, 7501]]);
+  assert.deepEqual(writes[0].requestBody.data[3].values, [rows[1].map(cell => cell ?? "")]);
+});
+
+test("legacy raw tab extends only a blank P:U and preserves its existing header", async (t) => {
+  const row = ["fixture-old"];
+  const { config, writes } = fakeSheets(t, [reports.RAW_HEADERS.slice(0, 15), row], { title: "Phien_sac_raw" });
+  row[15] = '=IF(TRUE,"","")';
+  await assert.rejects(reports.createRawSheetWriter(config), /P:U đã có dữ liệu/);
+  assert.equal(writes.length, 0);
+  row.length = 1;
+  await reports.createRawSheetWriter(config);
+  assert.equal(writes[0].range, "'Phien_sac_raw'!P1:U1");
+  assert.deepEqual(writes[0].requestBody.values, [reports.RAW_HEADERS.slice(15)]);
 });
 
 test("raw writer rejects duplicate and incompatible tabs without writing", async (t) => {
@@ -488,7 +501,13 @@ test("raw sync writes paginated CMS session API records into the configured spre
     assert.equal(url.searchParams.get("to"), "2026-11-17");
     return Response.json({ ...body, page, total: 3, limit: 1, chargeTransactions: [{
       transactionId: 1234 + page, startTime: `2026-11-${16 + page}T00:00:00Z`,
-      status: "CHARGING", totalCost: 0, driver: { licensePlate: "private-fixture" },
+      status: "CHARGING", totalCost: 0, transactionCode: `CT-TEST-${page}`,
+      energy: 16325, startSoc: 0, endSoc: 62, invoiceId: "9999999876543210", invoiceSerial: "123456789",
+      vehicle: { model: { name: "Dòng thử" }, plate: "private-fixture" },
+      chargeConnector: { name: "Súng thử", chargePoint: {
+        name: "Trụ thử", chargeStation: { stationCode: "E.TEST", name: "Trạm thử" }
+      } },
+      user: { userId: 987654321, phone: "private-fixture", fullname: "private-fixture" },
     }] });
   });
   const run = reports.startRun({ from: "2026-11-16", to: "2026-11-17" });
@@ -497,14 +516,58 @@ test("raw sync writes paginated CMS session API records into the configured spre
   assert.equal(run.status, "SUCCESS");
   assert.deepEqual(pages, [0, 1, 2]);
   assert.deepEqual(run.rawResults, [{ date: "2026-11-16", count: 1 }, { date: "2026-11-17", count: 1 }]);
-  assert.equal(writes[0].range, "'Phien_sac_raw'!A1:O1");
+  assert.equal(writes[0].range, "'Phien_sac_raw'!A1:U1");
   assert.deepEqual(writes[0].requestBody.values, [reports.RAW_HEADERS]);
   assert.equal(writes[1].spreadsheetId, "fixture-sheet");
   assert.deepEqual(writes.slice(1).flatMap(write => write.requestBody.data.map(({ range, values }) => [range, values[0][0], values[0][14]])), [
-    ["'Phien_sac_raw'!A2:O2", "1234", "Đang sạc"],
-    ["'Phien_sac_raw'!A3:O3", "1235", "Đang sạc"],
+    ["'Phien_sac_raw'!A2:U2", "1234", "Đang sạc"],
+    ["'Phien_sac_raw'!A3:U3", "1235", "Đang sạc"],
   ]);
-  assert.doesNotMatch(JSON.stringify(writes), /private-fixture/);
+  const first = writes[1].requestBody.data[0].values[0];
+  assert.deepEqual(first.slice(6, 14), ["E.TEST", "Trạm thử", "Trụ thử", "Súng thử", "", "", 16.325, 0]);
+  assert.deepEqual(first.slice(15), ["CT-TEST-0", "", "Dòng thử", 0, 62, "Đã xuất"]);
+  assert.doesNotMatch(JSON.stringify(writes), /private-fixture|9999999876543210|123456789|987654321/);
+});
+
+test("only raw permits today's date at Vietnam midnight", () => {
+  const now = new Date("2026-11-16T17:00:00Z");
+  assert.throws(() => reports.validateRange("2026-11-17", "2026-11-17", now), /ngày hôm qua/);
+  assert.equal(reports.validateRange("2026-11-17", "2026-11-17", now, true).totalDays, 1);
+  assert.throws(() => reports.validateRange("2026-11-17", "2026-11-18", now, true), /ngày hôm nay/);
+});
+
+test("raw-only uses the selected range and writes only the existing raw tab", async (t) => {
+  setEnv(t, {
+    CMS_API_KEY: "fixture-key", CMS_GOOGLE_SHEETS_SPREADSHEET_ID: "fixture-sheet",
+    GOOGLE_APPLICATION_CREDENTIALS: "fixture.json", CMS_RAW_SHEET_ENABLED: "true",
+  });
+  t.mock.method(fs, "existsSync", () => true);
+  const { writes } = fakeSheets(t, [reports.RAW_HEADERS], { title: "phien_sac_raw" });
+  const createSummary = t.mock.method(reports, "createSheetWriter", async () => assert.fail("summary writer called"));
+  const summaryRead = t.mock.fn(async () => assert.fail("summary endpoint called"));
+  const rawRead = t.mock.fn(async () => [{
+    id: "1234", startTime: "2026-11-16T00:00:00Z", status: "CHARGING",
+  }]);
+  t.mock.method(cmsApi, "createClient", () => ({
+    renewKey: async () => {}, getPoints: summaryRead, getCustomers: summaryRead,
+    getTransactions: summaryRead, getRawTransactions: rawRead,
+  }));
+  const range = { from: "2026-11-16", to: "2026-11-17", rawOnly: true };
+  const run = reports.startRun(range);
+  assert.throws(() => reports.startRun(range), { statusCode: 409 });
+  for (let i = 0; i < 50 && run.status === "RUNNING"; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.status, "SUCCESS");
+  assert.equal(run.processed, 2);
+  assert.deepEqual(run.rows, []);
+  assert.deepEqual(run.rawResults, [{ date: range.from, count: 1 }, { date: range.to, count: 0 }]);
+  assert.deepEqual(rawRead.mock.calls.map(call => call.arguments), [[range.from, range.to]]);
+  assert.equal(summaryRead.mock.callCount(), 0);
+  assert.equal(createSummary.mock.callCount(), 0);
+  assert.deepEqual(writes.flatMap(write => write.requestBody.data.map(item => item.range)), ["'phien_sac_raw'!A2:U2"]);
+  process.env.CMS_RAW_SHEET_ENABLED = "false";
+  assert.throws(() => reports.startRun(range), { statusCode: 503 });
+  assert.throws(() => reports.startRun({ ...range, rawOnly: "true" }), { statusCode: 400 });
 });
 
 test("raw init and per-day errors do not prevent summary writes, and status contains counts only", async (t) => {

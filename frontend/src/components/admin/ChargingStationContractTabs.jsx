@@ -6,6 +6,7 @@ import ChargingStationStepHistory from './ChargingStationStepHistory';
 import { api, chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { canOperateStation } from '../../utils/chargingFulfillment';
+import { calculateContractExpiry, getContractTermYears } from '../../utils/contractDates';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationExportButton from './ChargingStationExportButton';
@@ -56,7 +57,7 @@ const ChargingStationContractTabs = () => {
   const [contractFiles, setContractFiles] = useState([]);
   const [uploadedContractIds, setUploadedContractIds] = useState([]);
   const [contractEffectiveDate, setContractEffectiveDate] = useState('');
-  const [contractExpiryDate, setContractExpiryDate] = useState('');
+  const [contractTermYears, setContractTermYears] = useState('');
   const [contractNote, setContractNote] = useState('');
   const [contractStatus, setContractStatus] = useState('NOT');
   const [modalError, setModalError] = useState('');
@@ -65,6 +66,14 @@ const ChargingStationContractTabs = () => {
   const [extendReason, setExtendReason] = useState('');
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState({ message: '', type: 'success' });
+
+  const preserveLegacyExpiry = !contractTermYears && uploadStation?.contract_effective_date
+    && uploadStation.contract_expiry_date > uploadStation.contract_effective_date
+    && contractEffectiveDate === uploadStation.contract_effective_date
+    && !getContractTermYears(uploadStation.contract_effective_date, uploadStation.contract_expiry_date);
+  const contractExpiryDate = preserveLegacyExpiry
+    ? uploadStation.contract_expiry_date
+    : calculateContractExpiry(contractEffectiveDate, contractTermYears);
 
   const load = useCallback(async (targetPage) => {
     if (!token) return;
@@ -105,7 +114,7 @@ const ChargingStationContractTabs = () => {
     if (!row.contract_files?.length && row.contract_file_id) setUploadedContractIds([row.contract_file_id]);
     setContractStatus(row.contract_status || 'NOT');
     setContractEffectiveDate(row.contract_effective_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
-    setContractExpiryDate(row.contract_expiry_date || '');
+    setContractTermYears(getContractTermYears(row.contract_effective_date, row.contract_expiry_date));
     setContractNote(row.contract_note || '');
     setModalError('');
     setUploadStation(row);
@@ -235,12 +244,8 @@ const ChargingStationContractTabs = () => {
       setModalError('File hợp đồng không được vượt quá 10 MB');
       return;
     }
-    if (!contractEffectiveDate || !contractExpiryDate) {
-      setModalError('Vui lòng nhập ngày hiệu lực và ngày hết hạn hợp đồng');
-      return;
-    }
-    if (contractExpiryDate <= contractEffectiveDate) {
-      setModalError('Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng');
+    if (!contractExpiryDate) {
+      setModalError('Vui lòng nhập ngày hiệu lực hợp lệ và thời hạn hợp đồng là số năm nguyên dương');
       return;
     }
 
@@ -398,8 +403,12 @@ const ChargingStationContractTabs = () => {
           {!contractFiles.length && uploadedContractIds.length > 0 && <p className="text-sm">Giữ {uploadedContractIds.length} file hợp đồng đã lưu. Có thể chọn file mới để thay thế.</p>}
           <Input label="Ngày hiệu lực hợp đồng" aria-label="Ngày hiệu lực hợp đồng" type="date" required
             value={contractEffectiveDate} disabled={uploading} onChange={event => setContractEffectiveDate(event.target.value)} />
-          <Input label="Ngày hết hạn hợp đồng" aria-label="Ngày hết hạn hợp đồng" type="date" required
-            value={contractExpiryDate} disabled={uploading} onChange={event => setContractExpiryDate(event.target.value)} />
+          <Input label="Thời hạn hợp đồng (năm)" aria-label="Thời hạn hợp đồng (năm)" inputMode="numeric" required={!preserveLegacyExpiry}
+            value={contractTermYears} disabled={uploading} onChange={event => setContractTermYears(event.target.value)}
+            helperText={preserveLegacyExpiry
+              ? `Thời hạn cũ không tròn năm; giữ ngày hết hạn ${uploadStation.contract_expiry_date} nếu để trống.`
+              : 'Ngày hết hạn được tính tự động từ ngày hiệu lực và số năm.'} />
+          {contractExpiryDate && <p className="text-sm">Ngày hết hạn hợp đồng: {contractExpiryDate.split('-').reverse().join('/')}</p>}
           </>}
           <ChargingStationStepHistory stationId={uploadStation?.id} step="khoi-tao-hop-dong" />
           <div className="flex justify-end gap-2">

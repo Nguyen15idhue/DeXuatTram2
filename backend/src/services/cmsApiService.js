@@ -75,12 +75,33 @@ const createClient = () => {
     }
   };
 
-  const listTransactions = (params, limit) => list('/admin/ct', 'chargeTransactions', 'transactionId', {
+  const projectRaw = row => {
+    const point = row.chargeConnector?.chargePoint;
+    return {
+      code: row.transactionCode,
+      userId: row.userId == null ? null : row.userId,
+      plate: row.plate,
+      reservationEndTime: row.reservationEndTime,
+      pointName: point?.name,
+      connectorName: row.chargeConnector?.name,
+      stationCode: row.chargeStation?.stationCode ?? point?.chargeStation?.stationCode,
+      stationName: row.chargeStation?.name ?? point?.chargeStation?.name,
+      vehicleModel: row.vehicle?.model?.name,
+      energyWh: row.energy,
+      startSoc: row.startSoc,
+      endSoc: row.endSoc,
+      invoiced: Object.hasOwn(row, 'invoiceId') || Object.hasOwn(row, 'invoiceSerial')
+        ? [row.invoiceId, row.invoiceSerial].some(value => /^[0-9]*[1-9][0-9]*$/.test(String(value ?? '').trim()))
+        : null
+    };
+  };
+  const listTransactions = (params, limit, raw = false) => list('/admin/ct', 'chargeTransactions', 'transactionId', {
     ...params, isTestTransaction: 0, exclusionZeroCost: false
   }, row => ({
     id: String(row.transactionId),
     pointId: row.chargeConnector?.pointId == null ? null : String(row.chargeConnector.pointId),
-    status: row.status, startTime: row.startTime, endTime: row.endTime, totalCost: row.totalCost
+    status: row.status, startTime: row.startTime, endTime: row.endTime, totalCost: row.totalCost,
+    ...(raw && projectRaw(row))
   }), limit);
 
   return {
@@ -98,7 +119,7 @@ const createClient = () => {
     getCustomers: () => list('/admin/driver', 'drivers', 'userId', {},
       row => ({ createdAt: row.createdAt })),
     getTransactions: date => listTransactions({ from: date, to: date }),
-    getRawTransactions: (from, to) => listTransactions({ dateFilter: '30_NGAY_GAN_NHAT', from, to }, 10)
+    getRawTransactions: (from, to) => listTransactions({ dateFilter: '30_NGAY_GAN_NHAT', from, to }, 10, true)
   };
 };
 
