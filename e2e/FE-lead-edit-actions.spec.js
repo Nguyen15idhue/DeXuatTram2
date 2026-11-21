@@ -1,6 +1,13 @@
 const { test, expect } = require('@playwright/test');
 const base = process.env.E2E_BASE_URL || 'http://localhost:5173';
 
+const priorityDescriptions = [
+  ['1. Có sẵn hạ tầng triển khai được ngay', 'Khách hàng có mặt bằng, nguồn điện và các điều kiện cơ bản phù hợp để triển khai trạm sạc; sẵn sàng phối hợp khảo sát và đầu tư.'],
+  ['2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)', 'Khách hàng có quỹ đất hoặc mặt bằng tiềm năng để phát triển HUB trạm sạc quy mô lớn, có nhu cầu hợp tác đầu tư hoặc cho thuê.'],
+  ['3. Dừng không tư vấn', 'Khách hàng không có nhu cầu, từ chối hợp tác hoặc không đáp ứng các điều kiện cần thiết để triển khai trạm sạc.'],
+  ['4. Khác', 'Khách hàng chưa xác định rõ nhu cầu, cần thêm thông tin, đang cân nhắc hoặc hẹn liên hệ lại để tiếp tục tư vấn.']
+];
+
 const leadFields = [
   { key: 'full_name', label: 'Họ và tên', type: 'text', required: true },
   { key: 'phone', label: 'Số điện thoại', type: 'phone', required: true },
@@ -11,7 +18,7 @@ const leadFields = [
   { key: 'note', label: 'Ghi chú khách hàng', type: 'textarea' },
   { key: 'tvbh_history', label: 'Lịch sử tư vấn', type: 'table', source_config: {
     columns: [{ key: 'GDKV_phan_loai_KH', label: 'GĐKV phân loại KH', column_type: 'select',
-      options: ['ƯT1_Tiềm năng', 'ƯT2_Quan tâm', 'ƯT3_Theo dõi thêm', 'KƯT_Không chất lượng', 'KH không nghe máy', 'KH hẹn gọi lại sau'] },
+      options: ['1. Có sẵn hạ tầng triển khai được ngay', '2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)', '3. Dừng không tư vấn', '4. Khác', 'KH không nghe máy', 'KH hẹn gọi lại sau'] },
     { key: 'ghi_chu', label: 'Ghi chú', column_type: 'text' }]
   } }
 ];
@@ -184,15 +191,10 @@ test('shows draft classification and the priority explanations without changing 
   const priority = page.getByRole('button', { name: 'GĐKV phân loại KH: -- Chọn --' });
   await priority.click();
   const tooltip = page.getByRole('tooltip');
-  for (const [label, description] of [
-    ['ƯT1_Tiềm năng', 'có sẵn nguồn điện'],
-    ['ƯT2_Quan tâm', 'chưa có nguồn điện'],
-    ['ƯT3_Theo dõi thêm', 'chỉ muốn cho thuê mặt bằng'],
-    ['KƯT_Không chất lượng', 'thông tin không dùng được']
-  ]) {
+  for (const [label, description] of priorityDescriptions) {
     const option = page.getByRole('button', { name: label, exact: true });
     await option.hover();
-    await expect(tooltip).toContainText(description);
+    await expect(tooltip).toHaveText(description);
     const optionBox = await option.boundingBox();
     const tooltipBox = await tooltip.boundingBox();
     expect(tooltipBox.x >= optionBox.x + optionBox.width || tooltipBox.x + tooltipBox.width <= optionBox.x).toBe(true);
@@ -201,7 +203,7 @@ test('shows draft classification and the priority explanations without changing 
   await page.getByRole('button', { name: 'KH không nghe máy', exact: true }).hover();
   await expect(tooltip).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
-  await expect(tooltip).toContainText('có sẵn nguồn điện');
+  await expect(tooltip).toHaveText(priorityDescriptions[0][1]);
   await page.keyboard.press('Escape');
   await expect(priority).toBeVisible();
   await page.getByRole('button', { name: 'Hủy', exact: true }).click();
@@ -289,9 +291,9 @@ test('refreshes history classification after saving a lead', async ({ page }) =>
   await expect(leadRow.getByText('—', { exact: true })).toBeVisible();
   await leadRow.getByRole('button', { name: 'Cập nhật', exact: true }).click();
   await page.getByRole('button', { name: 'GĐKV phân loại KH: -- Chọn --' }).click();
-  await page.getByRole('button', { name: 'ƯT2_Quan tâm', exact: true }).click();
+  await page.getByRole('button', { name: '2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)', exact: true }).click();
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
-  await expect(leadRow.getByText('ƯT2_Quan tâm', { exact: true })).toHaveCount(1);
+  await expect(leadRow.getByText('2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)', { exact: true })).toHaveCount(1);
 });
 
 test.describe('touch device', () => {
@@ -300,12 +302,14 @@ test.describe('touch device', () => {
   test('shows inline priority descriptions and saves the original option value', async ({ page }) => {
     const state = await openLead(page);
     await page.getByRole('button', { name: 'GĐKV phân loại KH: -- Chọn --' }).tap();
-    const option = page.getByRole('button', { name: 'ƯT2_Quan tâm', exact: true });
-    await expect(option.getByText(/chưa có nguồn điện/)).toBeInViewport();
+    for (const [label, description] of priorityDescriptions) {
+      await expect(page.getByRole('button', { name: label, exact: true }).getByText(description)).toBeVisible();
+    }
+    const option = page.getByRole('button', { name: '2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)', exact: true });
     await option.tap();
-    await expect(page.getByRole('button', { name: 'GĐKV phân loại KH: ƯT2_Quan tâm' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'GĐKV phân loại KH: 2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)' })).toBeVisible();
     await page.getByRole('button', { name: 'Lưu', exact: true }).tap();
     await expect(page).toHaveURL(/\/view=17(?:\?|$)/);
-    expect(state.updates[0].tvbh_history).toEqual([{ GDKV_phan_loai_KH: 'ƯT2_Quan tâm' }]);
+    expect(state.updates[0].tvbh_history).toEqual([{ GDKV_phan_loai_KH: '2. Có thể triển khai làm HUB (hoặc có đất cho thuê làm HUB)' }]);
   });
 });
