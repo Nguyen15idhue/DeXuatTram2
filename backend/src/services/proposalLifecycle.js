@@ -24,7 +24,7 @@ const ALLOWED_TRANSITIONS = {
   REJECTED: ['PENDING', 'CANCELLED'],
   CANCELLED: [],
   GRADING: ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'GDTTKD_EVALUATING', 'CANCELLED'],
-  GDTTKD_EVALUATING: ['DESIGNING', 'RE_GRADING', 'TGD_REVIEW', 'CANCELLED'],
+  GDTTKD_EVALUATING: ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'RE_GRADING', 'TGD_REVIEW', 'CANCELLED'],
   RE_GRADING: ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING', 'CANCELLED'],
   RE_GDTTKD_EVALUATING: ['TGD_REVIEW', 'CANCELLED'],
   TGD_REVIEW: ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'CANCELLED'],
@@ -257,6 +257,7 @@ exports.transition = async (id, to, opts = {}) => {
   const isPausedCancellation = from === 'PAUSED' && to === 'CANCELLED';
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
   const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
+  const isDirectReportFromReview = from === 'GDTTKD_EVALUATING' && to === 'PROPOSAL_REPORT_CREATING';
   const isDirectOnStation = directOnStation === true
     && to === 'DEPLOYING'
     && source === 'user'
@@ -319,6 +320,14 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Đề xuất đã được Chủ tịch phê duyệt; không thể thay đổi trạng thái', 400);
   }
   if (!forceOverride && !isDirectOnStation) {
+    if (isDirectReportFromReview && (source !== 'system_auto'
+      || !require('./proposalGradingService').isNqDirectPayment(proposal.custom_data))) {
+      await exports.logActivity({
+        proposalId: id, action: 'status_change_denied',
+        fromStatus: from, toStatus: to, actorId, actorRole, source, ip
+      });
+      throw err(`Không thể chuyển trạng thái từ "${from}" sang "${to}"`, 400);
+    }
     if (!isPauseTransition && !isResumeTransition && !isPausedCancellation
       && !(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen && !isSignatureWithdrawal) {
       await exports.logActivity({

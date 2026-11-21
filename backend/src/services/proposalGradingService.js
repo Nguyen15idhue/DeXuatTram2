@@ -868,7 +868,7 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
           : 'Điểm Pháp lý bằng 0';
     } else if (!hasOpenRegrade && nextQH !== null && nextPL !== null) {
       const total = nextQH + nextPL;
-      if (total >= 5) {
+      if (total >= 5 || (nextQH === 2 && nextPL === 2)) {
         target = isNqDirectPayment(current.custom_data)
           ? 'PROPOSAL_REPORT_CREATING'
           : 'DESIGNING';

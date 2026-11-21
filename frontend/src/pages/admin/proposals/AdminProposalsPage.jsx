@@ -1,0 +1,3805 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
+import { useAuth } from "../../../contexts/AuthContext";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import {
+  adminProposalService,
+  proposalService,
+  excelService,
+  formService,
+  documentService,
+  adminUserService,
+  leadService,
+  proposalSheetSyncService,
+  chargingStationService,
+} from "../../../services/api";
+import DynamicTable from "../../../components/dynamic/DynamicTable";
+import DynamicForm from "../../../components/dynamic/DynamicForm";
+import LocationMapModal, {
+  PREVIEW_STATUS_FILTER,
+} from "../../../components/LocationMapModal";
+import DuplicateCheckPanel from "../../../components/DuplicateCheckPanel";
+import DeadlineCountdown from "../../../components/DeadlineCountdown";
+import RecordDetailPopup from "../../../components/admin/RecordDetailPopup";
+import ProposalActivityPopup from "../../../components/admin/ProposalActivityPopup";
+import ProposalRequestsTab from "../../../components/admin/ProposalRequestsTab";
+import ProposalCompletedTab from "../../../components/admin/ProposalCompletedTab";
+import {
+  ProposalCodeLink,
+  ProposalPersonLink,
+} from "../../../components/admin/ProposalLinkCells";
+import ProposalFlowInfo from "../../../components/admin/ProposalFlowInfo";
+import HistoricalOnImportModal from "../../../components/admin/HistoricalOnImportModal";
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_HIDDEN_COLUMN_KEYS,
+  PROPOSAL_HIDDEN_COLUMN_LABELS,
+  PROPOSAL_MONEY_COLUMN_KEYS,
+  PROPOSAL_SCALE_COLUMN,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell,
+} from "../../../components/admin/ProposalTableCells";
+import { formatProposalScale } from "../../../utils/proposalGrading";
+import Toast from "../../../components/Toast";
+import ConfirmDialog from "../../../components/ConfirmDialog";
+import ErrorMessage from "../../../components/ErrorMessage";
+import ImportErrorList from "../../../components/admin/ImportErrorList";
+import { ImportSheetsSummary } from "../../../components/admin/ImportViewPanel";
+import Pagination from "../../../components/Pagination";
+import useFieldOptions from "../../../hooks/useFieldOptions";
+import useDefaultViewId from "../../../hooks/useDefaultViewId";
+import useDebouncedValue from "../../../hooks/useDebouncedValue";
+import useMediaQuery from "../../../hooks/useMediaQuery";
+import { FilterToggle, FilterBody } from "../../../components/ui/FilterPanel";
+import { PRIORITY_OPTIONS } from "../../../utils/mapStatuses";
+import { CS_STATUS_LABELS } from "../../../utils/chargingStation";
+import { getProposalStatusFilterOptions } from "../../../utils/proposalStatus";
+import { ProposalStatusContext } from "../../../contexts/ProposalStatusContext";
+import { canOwnerEditProposal } from "../../../utils/proposalOwnerLock";
+import {
+  getReviewLevelLabel,
+  resolveReviewRole,
+  REVIEW_ROLE,
+} from "../../../utils/proposalReview";
+import {
+  COUNTDOWN_CONFIG_EVENT,
+  getCountdownFlags,
+  loadCountdownConfig,
+} from "../../../utils/countdownConfig";
+import {
+  parseGoogleMapsLink,
+  resolveGoogleMapsShortUrl,
+} from "../../../utils/mapHelpers";
+import { getProposalMinDistanceM } from "../../../utils/proposalZone";
+import {
+  ClipboardList,
+  Download,
+  Eye,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  Plus,
+  X,
+  Upload,
+  MoreVertical,
+  ChevronDown,
+  AlertTriangle,
+  FileSpreadsheet,
+  Zap,
+  MapPinned,
+  MapPin,
+  Link2,
+  Ban,
+  Lock,
+  History,
+  GitBranch,
+  Search,
+  Repeat,
+  Info,
+  RefreshCw,
+  Pause,
+  Play,
+  CheckCircle2,
+} from "lucide-react";
+import { notifyBellRefresh } from "../../../components/layout/NotificationBell";
+
+const PROPOSALS_VIEW_ID = 8;
+const PROPOSALS_CREATE_FORM_ID = 13;
+const HOURS_24 = 24 * 60 * 60 * 1000;
+
+const getProposalDeadlineRowStyle = (row, countdownFlags, now) => {
+  const flags = countdownFlags?.[row?.status];
+  if (!flags) return undefined;
+
+  const deadlines = [];
+  if (
+    flags.supplement &&
+    !row.info_completed_at &&
+    row.supplement_deadline_at
+  ) {
+    deadlines.push(new Date(row.supplement_deadline_at).getTime());
+  }
+  if (flags.transition && row.transition_deadline_at) {
+    deadlines.push(new Date(row.transition_deadline_at).getTime());
+  }
+
+  const validDeadlines = deadlines.filter(Number.isFinite);
+  if (validDeadlines.length === 0) return undefined;
+
+  const remaining = Math.min(...validDeadlines) - now;
+  if (remaining > 0 && remaining <= HOURS_24)
+    return { backgroundColor: "#fecaca" };
+  return undefined;
+};
+
+const AdminProposalsPage = () => {
+  const { token, user, isSales, isAdmin, isSuperAdmin } = useAuth();
+  const reviewRole = resolveReviewRole(user).roleKey;
+  const canPauseProposals =
+    isSuperAdmin || [REVIEW_ROLE.GDTTKD, REVIEW_ROLE.TGD].includes(reviewRole);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = ["all", "requests", "completed"].includes(
+    searchParams.get("tab"),
+  )
+    ? searchParams.get("tab")
+    : "all";
+  const changeTab = (tab) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === "all") next.delete("tab");
+    else next.set("tab", tab);
+    setSearchParams(next, { replace: true });
+  };
+  const proposalsViewId = useDefaultViewId(
+    "station_proposals",
+    PROPOSALS_VIEW_ID,
+  );
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const { getSelectOptions, getFieldLabel } = useFieldOptions(
+    "station_proposals",
+    ["status", "province", "vung_mien"],
+  );
+  const statusOptions = getProposalStatusFilterOptions(
+    getSelectOptions("status"),
+  );
+  const provinceOptions = getSelectOptions("province");
+  const regionOptions = getSelectOptions("vung_mien");
+  const [proposals, setProposals] = useState([]);
+  const [countdownFlags, setCountdownFlags] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [filterUuTien, setFilterUuTien] = useState("");
+  const [filterProvince, setFilterProvince] = useState("");
+  const [filterRegion, setFilterRegion] = useState("");
+  const [filterDepartment, setFilterDepartment] = useState("");
+  const [filterOwner, setFilterOwner] = useState("");
+  const [filterLeadLink, setFilterLeadLink] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [dateField, setDateField] = useState("created_at");
+  const [showFilter, setShowFilter] = useState(false);
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [ownerOptions, setOwnerOptions] = useState([]);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 400);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState({ message: "", type: "success" });
+  const [proposalSheetSyncStatus, setProposalSheetSyncStatus] = useState(null);
+  const [proposalSheetSyncLoading, setProposalSheetSyncLoading] =
+    useState(false);
+  const [proposalSheetSyncError, setProposalSheetSyncError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState({
+    isOpen: false,
+    id: null,
+  });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+  });
+  const [pageSize, setPageSize] = useState(20);
+  const [popup, setPopup] = useState({
+    open: false,
+    record: null,
+    mode: "view",
+    recordId: null,
+  });
+  const [logProposalId, setLogProposalId] = useState(null);
+  const [rowMenu, setRowMenu] = useState(null);
+  const [flowInfoOpen, setFlowInfoOpen] = useState(false);
+  const [stationModal, setStationModal] = useState({
+    open: false,
+    id: null,
+    name: "",
+    saving: false,
+  });
+  const stationRow = stationModal.id
+    ? proposals.find((p) => p.id === stationModal.id)
+    : null;
+  const [directOnStationModal, setDirectOnStationModal] = useState({
+    open: false,
+    id: null,
+    reason: "",
+    ack: false,
+    saving: false,
+  });
+  const directOnStationRow = directOnStationModal.id
+    ? proposals.find((p) => p.id === directOnStationModal.id)
+    : null;
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [dupMode, setDupMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const handleExportReports = async (ids) => {
+    const list = (ids || []).filter((x) => Number.isInteger(Number(x)));
+    if (list.length === 0) return;
+    try {
+      setExportLoading(true);
+      const res = await documentService.exportReports(list, null, token);
+      const extra = [
+        res.skipped ? `bỏ qua: ${res.skipped}` : "",
+        res.warnings || "",
+      ]
+        .filter(Boolean)
+        .join(" — ");
+      setToast({
+        message: `Đã xuất ${res.filename}${extra ? ` (${extra})` : ""}`,
+        type: extra ? "warning" : "success",
+      });
+    } catch (e) {
+      setError(e.message || "Lỗi xuất báo cáo");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showHistoricalImport, setShowHistoricalImport] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [confirmInfoBatchOpen, setConfirmInfoBatchOpen] = useState(false);
+  const [batchConfirmLoading, setBatchConfirmLoading] = useState(false);
+  const [rejectModal, setRejectModal] = useState({
+    open: false,
+    id: null,
+    reason: "",
+    saving: false,
+  });
+  const [cancelModal, setCancelModal] = useState({
+    open: false,
+    id: null,
+    reason: "",
+    saving: false,
+  });
+  const [reopenModal, setReopenModal] = useState({
+    open: false,
+    id: null,
+    reason: "",
+    saving: false,
+  });
+  const [pauseModal, setPauseModal] = useState({
+    open: false,
+    id: null,
+    action: "pause",
+    reason: "",
+    saving: false,
+  });
+  const [forceModal, setForceModal] = useState({
+    open: false,
+    id: null,
+    status: "",
+    reason: "",
+    ack: false,
+    saving: false,
+  });
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStep, setImportStep] = useState("upload");
+  const [importFailures, setImportFailures] = useState([]);
+  const [excelViews, setExcelViews] = useState([]);
+  const [createFormId, setCreateFormId] = useState(PROPOSALS_CREATE_FORM_ID);
+  const [quickFormId, setQuickFormId] = useState(null);
+  const [formCoords, setFormCoords] = useState({ latitude: "", longitude: "" });
+  const [mapCoords, setMapCoords] = useState({ latitude: "", longitude: "" });
+  const [mapLink, setMapLink] = useState("");
+  const [linkError, setLinkError] = useState("");
+  const [resolvingLink, setResolvingLink] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewSnapshot, setPreviewSnapshot] = useState(null);
+  const [importViewId, setImportViewId] = useState("");
+  const [importCheckDuplicate, setImportCheckDuplicate] = useState(true);
+  const [importCheckIntraFile, setImportCheckIntraFile] = useState(true);
+  const [importGeocode, setImportGeocode] = useState(true);
+  const [importProgress, setImportProgress] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const importPollRef = useRef(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const moreBtnRef = useRef(null);
+  const exportBtnRef = useRef(null);
+  const templateBtnRef = useRef(null);
+  const [moreTop, setMoreTop] = useState(null);
+  const [exportTop, setExportTop] = useState(null);
+  const [templateTop, setTemplateTop] = useState(null);
+  const placeBelow = (btnRef, setTop) => {
+    if (btnRef.current && window.innerWidth < 768) {
+      const r = btnRef.current.getBoundingClientRect();
+      setTop(Math.max(8, Math.min(r.bottom + 4, window.innerHeight - 160)));
+    } else {
+      setTop(null);
+    }
+  };
+  const dupRef = useRef(null);
+  const tableRef = useRef(null);
+
+  useEffect(() => {
+    if (!token) {
+      setCountdownFlags(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const applyConfig = (config) => {
+      if (!cancelled)
+        setCountdownFlags(config ? getCountdownFlags(config) : null);
+    };
+    const refreshConfig = () => loadCountdownConfig(true).then(applyConfig);
+
+    loadCountdownConfig().then(applyConfig);
+    window.addEventListener(COUNTDOWN_CONFIG_EVENT, refreshConfig);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refreshConfig);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    excelService
+      .getViews("station_proposals", token)
+      .then((res) => {
+        if (cancelled || !res || !res.success) return;
+        setExcelViews(res.data || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    formService
+      .getQuickCreate("station_proposals", token)
+      .then((res) => {
+        if (cancelled || !res || !res.success) return;
+        setQuickFormId(res.data ? res.data.id : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const usageLabel = (usage) => {
+    if (usage === "excel_basic") return "Excel Tạo nhanh";
+    if (usage === "excel_full") return "Excel đầy đủ";
+    if (usage === "by_model") return "Theo mô hình";
+    if (usage === "table") return "Bảng danh sách";
+    return usage;
+  };
+  const usageBadge = (usage) => {
+    if (usage === "excel_basic") return "badge-info";
+    if (usage === "excel_full") return "badge-success";
+    if (usage === "by_model") return "badge-accent";
+    return "badge-primary";
+  };
+
+  useEffect(() => {
+    const match = location.pathname.match(
+      /\/admin\/proposals\/(view|edit)=(\d+)/,
+    );
+    if (match) {
+      const mode = match[1];
+      const id = parseInt(match[2]);
+      const existing = proposals.find((p) => p.id === id);
+      setPopup({ open: true, record: existing || null, mode });
+      if (!existing && id) loadProposalById(id);
+    } else {
+      setPopup({ open: false, record: null, mode: "view" });
+    }
+  }, [location.pathname, proposals.length]);
+
+  const loadProposalById = async (id) => {
+    try {
+      const res = await adminProposalService.getById(id, token);
+      if (res.success) {
+        setPopup((prev) => ({ ...prev, record: res.data }));
+      }
+    } catch {
+      /* silent */
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    leadService
+      .getGdkvOptions(token)
+      .then((res) => {
+        if (!cancelled && res && res.success)
+          setDepartmentOptions(
+            Array.from(
+              new Set(
+                (res.data || []).map((o) => o.department).filter(Boolean),
+              ),
+            ).sort(),
+          );
+      })
+      .catch(() => {});
+    adminUserService
+      .getOptions(token)
+      .then((res) => {
+        if (!cancelled && res && res.success) setOwnerOptions(res.data || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const loadProposals = useCallback(
+    async (page = 1, overrides = {}) => {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams({
+          page,
+          limit: pageSize,
+          prioritize_workflow: "1",
+        });
+        const f = overrides.filter !== undefined ? overrides.filter : filter;
+        const ut =
+          overrides.filterUuTien !== undefined
+            ? overrides.filterUuTien
+            : filterUuTien;
+        const s =
+          overrides.search !== undefined ? overrides.search : debouncedSearch;
+        const pr =
+          overrides.filterProvince !== undefined
+            ? overrides.filterProvince
+            : filterProvince;
+        const rg =
+          overrides.filterRegion !== undefined
+            ? overrides.filterRegion
+            : filterRegion;
+        const dp =
+          overrides.filterDepartment !== undefined
+            ? overrides.filterDepartment
+            : filterDepartment;
+        const ow =
+          overrides.filterOwner !== undefined
+            ? overrides.filterOwner
+            : filterOwner;
+        const ll =
+          overrides.filterLeadLink !== undefined
+            ? overrides.filterLeadLink
+            : filterLeadLink;
+        const df =
+          overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
+        const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
+        const dfield =
+          overrides.dateField !== undefined ? overrides.dateField : dateField;
+        const cf =
+          overrides.columnFilters !== undefined
+            ? overrides.columnFilters
+            : columnFilters;
+        if (f) params.append("status", f);
+        if (cf?.status) params.append("statuses", cf.status);
+        if (ut) params.append("uu_tien", ut);
+        if (s) params.append("search", s);
+        if (pr) params.append("province", pr);
+        if (rg) params.append("region", rg);
+        if (dp) params.append("department", dp);
+        if (ow) params.append("owner_user_id", ow);
+        if (ll) params.append("lead_link", ll);
+        if (df || dt) {
+          params.append("date_field", dfield);
+          if (df) params.append("date_from", df);
+          if (dt) params.append("date_to", dt);
+        }
+        if (cf && Object.keys(cf).some((k) => String(cf[k] ?? "").trim())) {
+          const active = Object.fromEntries(
+            Object.entries(cf).filter(
+              ([key, v]) => key !== "status" && String(v ?? "").trim(),
+            ),
+          );
+          if (Object.keys(active).length)
+            params.append("filters", JSON.stringify(active));
+        }
+        const res = await adminProposalService.getAllWithParams(
+          params.toString(),
+          token,
+        );
+        if (res.success) {
+          setProposals(res.data);
+          setPagination(
+            res.pagination || {
+              page: 1,
+              limit: pageSize,
+              total: 0,
+              totalPages: 1,
+            },
+          );
+        }
+      } catch {
+        setError("Lỗi tải danh sách đề xuất");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      filter,
+      filterUuTien,
+      filterProvince,
+      filterRegion,
+      filterDepartment,
+      filterOwner,
+      filterLeadLink,
+      dateFrom,
+      dateTo,
+      dateField,
+      debouncedSearch,
+      columnFilters,
+      token,
+      pageSize,
+    ],
+  );
+
+  const loadProposalSheetSyncStatus = useCallback(async () => {
+    if (!token || !isAdmin) return;
+    try {
+      const res = await proposalSheetSyncService.getStatus(token);
+      if (!res?.success)
+        throw new Error(res?.message || "Không thể tải trạng thái đồng bộ");
+      setProposalSheetSyncStatus(res.data || null);
+      setProposalSheetSyncError("");
+    } catch (syncError) {
+      setProposalSheetSyncError(
+        syncError?.message || "Không thể tải trạng thái đồng bộ Google Sheets",
+      );
+    }
+  }, [token, isAdmin]);
+
+  const startProposalSheetDailySync = async () => {
+    if (proposalSheetSyncLoading) return;
+    setProposalSheetSyncLoading(true);
+    try {
+      const res = await proposalSheetSyncService.syncDaily(token);
+      if (!res?.success)
+        throw new Error(
+          res?.message || "Không thể bắt đầu đồng bộ Google Sheets",
+        );
+      if (res.data) {
+        setProposalSheetSyncStatus((current) => ({
+          ...(current || {}),
+          configured: true,
+          activeRun: ["QUEUED", "RUNNING"].includes(res.data.status)
+            ? res.data
+            : null,
+          recentRuns: [
+            res.data,
+            ...(current?.recentRuns || []).filter(
+              (run) => Number(run.id) !== Number(res.data.id),
+            ),
+          ].slice(0, 5),
+        }));
+      }
+      setToast({
+        message: res.message || "Đã xếp đồng bộ Google Sheets vào hàng đợi",
+        type: "success",
+      });
+      await loadProposalSheetSyncStatus();
+    } catch (syncError) {
+      setToast({
+        message: syncError?.message || "Không thể đồng bộ Google Sheets",
+        type: "error",
+      });
+    } finally {
+      setProposalSheetSyncLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    loadProposalSheetSyncStatus();
+    return undefined;
+  }, [isAdmin, loadProposalSheetSyncStatus]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    const timer = setInterval(
+      loadProposalSheetSyncStatus,
+      proposalSheetSyncStatus?.activeRun ? 3000 : 30000,
+    );
+    return () => clearInterval(timer);
+  }, [
+    isAdmin,
+    proposalSheetSyncStatus?.activeRun?.id,
+    loadProposalSheetSyncStatus,
+  ]);
+
+  const handleColumnFiltersChange = useCallback((next) => {
+    setColumnFilters((prev) =>
+      JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : next || {},
+    );
+  }, []);
+
+  useEffect(() => {
+    loadProposals(1);
+  }, [loadProposals]);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setShowMoreMenu(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showMoreMenu]);
+
+  const handleStatusChange = async (id, newStatus) => {
+    if (newStatus === "REJECTED") {
+      setRejectModal({ open: true, id, reason: "", saving: false });
+      return;
+    }
+    if (newStatus === "CANCELLED") {
+      setCancelModal({ open: true, id, reason: "", saving: false });
+      return;
+    }
+    try {
+      const res = await adminProposalService.updateStatus(id, newStatus, token);
+      if (res.success) {
+        setToast({
+          message: "Cập nhật trạng thái thành công",
+          type: "success",
+        });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Cập nhật thất bại");
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectModal.reason.trim()) return;
+    setRejectModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(
+        rejectModal.id,
+        "REJECTED",
+        token,
+        rejectModal.reason.trim(),
+      );
+      if (res.success) {
+        setToast({
+          message: "Đã từ chối và thông báo cho người tạo",
+          type: "success",
+        });
+        setRejectModal({ open: false, id: null, reason: "", saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Từ chối thất bại");
+        setRejectModal((prev) => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+      setRejectModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelModal.reason.trim()) return;
+    setCancelModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(
+        cancelModal.id,
+        "CANCELLED",
+        token,
+        cancelModal.reason.trim(),
+      );
+      if (res.success) {
+        setToast({
+          message: "Đã hủy đề xuất — trạng thái cuối, không thể mở lại",
+          type: "warning",
+        });
+        setCancelModal({ open: false, id: null, reason: "", saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Hủy thất bại");
+        setCancelModal((prev) => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+      setCancelModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmReopen = async () => {
+    if (!reopenModal.reason.trim()) return;
+    setReopenModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(
+        reopenModal.id,
+        "PENDING",
+        token,
+        reopenModal.reason.trim(),
+      );
+      if (res.success) {
+        setToast({
+          message: "Đã mở lại đề xuất (ghi log khẩn cấp)",
+          type: "warning",
+        });
+        setReopenModal({ open: false, id: null, reason: "", saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Mở lại thất bại");
+        setReopenModal((prev) => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+      setReopenModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmPauseAction = async () => {
+    if (pauseModal.action === "pause" && !pauseModal.reason.trim()) return;
+    setPauseModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res =
+        pauseModal.action === "pause"
+          ? await adminProposalService.pauseProposal(
+              pauseModal.id,
+              pauseModal.reason.trim(),
+              token,
+            )
+          : await adminProposalService.resumeProposal(pauseModal.id, token);
+      if (res.success) {
+        setToast({
+          message:
+            pauseModal.action === "pause"
+              ? "Đã tạm dừng đề xuất"
+              : "Đã tiếp tục đề xuất",
+          type: "success",
+        });
+        setPauseModal({
+          open: false,
+          id: null,
+          action: "pause",
+          reason: "",
+          saving: false,
+        });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Không thể cập nhật trạng thái tạm dừng");
+        setPauseModal((prev) => ({ ...prev, saving: false }));
+      }
+    } catch (e) {
+      setError(e?.message || "Lỗi kết nối server");
+      setPauseModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmForce = async () => {
+    if (!forceModal.status || !forceModal.reason.trim() || !forceModal.ack)
+      return;
+    setForceModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(
+        forceModal.id,
+        forceModal.status,
+        token,
+        forceModal.reason.trim(),
+        true,
+      );
+      if (res.success) {
+        setToast({
+          message: "Đã ghi đè trạng thái (log admin)",
+          type: "warning",
+        });
+        setForceModal({
+          open: false,
+          id: null,
+          status: "",
+          reason: "",
+          ack: false,
+          saving: false,
+        });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Đổi trạng thái thất bại");
+        setForceModal((prev) => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+      setForceModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const openStationModal = (row) => {
+    const code = row.ma_de_xuat || row.tracking_code || `#${row.id}`;
+    setStationModal({
+      open: true,
+      id: row.id,
+      name: `Trạm ${code}`,
+      saving: false,
+    });
+  };
+
+  const stationPreviewRows = (row) => {
+    if (!row) return [];
+    const custom = row.custom_data || {};
+    return [
+      { label: "Vĩ độ / Kinh độ", value: `${row.latitude}, ${row.longitude}` },
+      { label: "Địa chỉ", value: row.address || "(tự fill khi tạo)" },
+      {
+        label: "Tỉnh / Vùng miền",
+        value:
+          [custom.province, custom.vung_mien].filter(Boolean).join(" — ") ||
+          "(tự fill khi tạo)",
+      },
+      { label: "Mô hình trạm", value: custom.mo_hinh_dau_tu || "—" },
+      { label: "Trạng thái trạm", value: "Triển khai" },
+    ];
+  };
+
+  const handleConfirmStation = async () => {
+    if (!stationModal.name.trim()) return;
+    setStationModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.convertToStation(
+        stationModal.id,
+        { name: stationModal.name.trim() },
+        token,
+      );
+      if (res.success) {
+        const st = res.data || {};
+        setToast({
+          message: res.created
+            ? `Đã tạo trạm #${st.id} "${st.name}" ở trạng thái Triển khai`
+            : `Đề xuất đã có trạm #${st.id}`,
+          type: "success",
+        });
+        setStationModal({ open: false, id: null, name: "", saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Tạo trạm thất bại");
+        setStationModal((prev) => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+      setStationModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleDirectOnStation = async () => {
+    const reason = directOnStationModal.reason.trim();
+    if (
+      !directOnStationModal.id ||
+      reason.length < 3 ||
+      !directOnStationModal.ack
+    )
+      return;
+    setDirectOnStationModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await chargingStationService.createDirectFromProposal(
+        directOnStationModal.id,
+        reason,
+        token,
+      );
+      if (!res?.success)
+        throw new Error(
+          res?.message || "Không thể chuyển đề xuất sang ON trạm",
+        );
+      const chargingStationId = res.data?.id;
+      setDirectOnStationModal({
+        open: false,
+        id: null,
+        reason: "",
+        ack: false,
+        saving: false,
+      });
+      setToast({
+        message: res.message || "Đã chuyển đề xuất sang ON trạm",
+        type: "success",
+        action: chargingStationId
+          ? {
+              label: "Xem ON trạm",
+              onClick: () =>
+                navigate(`/admin/on-tram/thong-tin-chung/${chargingStationId}`),
+            }
+          : null,
+      });
+      notifyBellRefresh();
+      loadProposals(pagination.page);
+    } catch (err) {
+      setError(err?.message || "Không thể chuyển đề xuất sang ON trạm");
+      setDirectOnStationModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleDeleteClick = (id) => {
+    setConfirmDelete({ isOpen: true, id });
+  };
+
+  const handleConfirmDelete = async () => {
+    const { id } = confirmDelete;
+    setConfirmDelete({ isOpen: false, id: null });
+    try {
+      const res = await adminProposalService.delete(id, token);
+      if (res.success) {
+        setToast({ message: "Xóa đề xuất thành công", type: "success" });
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || "Xóa thất bại");
+      }
+    } catch {
+      setError("Lỗi kết nối server");
+    }
+  };
+
+  const handleReset = () => {
+    setSearch("");
+    setFilter("");
+    setFilterUuTien("");
+    setFilterProvince("");
+    setFilterRegion("");
+    setFilterDepartment("");
+    setFilterOwner("");
+    setFilterLeadLink("");
+    setDateFrom("");
+    setDateTo("");
+    setDateField("created_at");
+    setColumnFilters({});
+    if (dupRef.current) dupRef.current.reset();
+    setDupMode(false);
+    if (tableRef.current) tableRef.current.clearFilters();
+    setError("");
+    loadProposals(1, {
+      filter: "",
+      filterUuTien: "",
+      search: "",
+      filterProvince: "",
+      filterRegion: "",
+      filterDepartment: "",
+      filterOwner: "",
+      filterLeadLink: "",
+      dateFrom: "",
+      dateTo: "",
+      dateField: "created_at",
+      columnFilters: {},
+    });
+  };
+
+  const handleExportProposals = async (viewIds) => {
+    setExportMenuOpen(false);
+    try {
+      await excelService.exportData("station_proposals", token, {
+        search,
+        status: filter,
+        viewIds: viewIds || undefined,
+      });
+      setToast({ message: "Export proposals thành công", type: "success" });
+    } catch {
+      setError("Lỗi export proposals");
+    }
+  };
+
+  const handleExportProposalsByForm = async () => {
+    setExportMenuOpen(false);
+    try {
+      await excelService.exportData("station_proposals", token, {
+        search,
+        status: filter,
+        layout: "form",
+      });
+      setToast({ message: "Export theo form thành công", type: "success" });
+    } catch {
+      setError("Lỗi export theo form");
+    }
+  };
+
+  const handleExportProposalsByModel = async () => {
+    setExportMenuOpen(false);
+    try {
+      await excelService.exportDataByModel("station_proposals", token, {
+        search,
+        status: filter,
+      });
+      setToast({ message: "Export theo mô hình thành công", type: "success" });
+    } catch {
+      setError("Lỗi export theo mô hình");
+    }
+  };
+
+  const handleDownloadTemplate = async (viewIds) => {
+    setTemplateMenuOpen(false);
+    try {
+      await excelService.downloadTemplate("station_proposals", token, {
+        viewIds: viewIds || undefined,
+      });
+    } catch {
+      setError("Lỗi download template");
+    }
+  };
+
+  const handleDownloadTemplateByModel = async () => {
+    setTemplateMenuOpen(false);
+    try {
+      await excelService.downloadTemplateByModel("station_proposals", token);
+    } catch {
+      setError("Lỗi download template theo mô hình");
+    }
+  };
+
+  const openImport = () => {
+    setShowImport(true);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportStep("upload");
+    setImportViewId("");
+    setError("");
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImportFile(file);
+      setImportPreview(null);
+      setImportStep("upload");
+    }
+  };
+
+  const handlePreviewImport = async (overrideViewId) => {
+    if (!importFile) {
+      setError("Vui lòng chọn file Excel");
+      return;
+    }
+    if (importFile.size > 8 * 1024 * 1024) {
+      setError(
+        "File quá lớn (>8MB). Hãy chia file <200 dòng rồi import từng phần để tránh mất kết nối trên VPS chậm.",
+      );
+      return;
+    }
+    const viewIdToUse =
+      overrideViewId !== undefined ? overrideViewId : importViewId;
+    try {
+      setImportLoading(true);
+      setError("");
+      const res = await excelService.previewImport(
+        "station_proposals",
+        importFile,
+        token,
+        {
+          viewId:
+            viewIdToUse && viewIdToUse !== "by_model" ? viewIdToUse : undefined,
+          usage: viewIdToUse === "by_model" ? "by_model" : undefined,
+          checkDuplicate: importCheckDuplicate,
+          checkIntraFile: importCheckIntraFile,
+        },
+      );
+      if (res.success) {
+        setImportFailures([]);
+        setImportResult(null);
+        setImportPreview(res.data);
+        setImportStep("preview");
+      } else {
+        if (res.data && res.data.detection) {
+          setImportPreview({
+            detection: res.data.detection,
+            rows: [],
+            errors: [],
+            validRows: 0,
+            totalRows: 0,
+            errorRows: 0,
+          });
+          setImportStep("preview");
+        }
+        setError(res.message || "Lỗi đọc file Excel");
+      }
+    } catch {
+      setError("Lỗi đọc file Excel. Vui lòng kiểm tra lại định dạng file.");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleChangeImportView = (value) => {
+    setImportViewId(value);
+    if (importFile) handlePreviewImport(value);
+  };
+
+  useEffect(() => {
+    if (
+      importStep === "preview" &&
+      importFile &&
+      importPreview &&
+      !importLoading
+    ) {
+      handlePreviewImport();
+    }
+  }, [importCheckDuplicate, importCheckIntraFile]);
+
+  const handleConfirmImport = async () => {
+    if (!importPreview || importPreview.rows.length === 0) {
+      setError("Không có dữ liệu hợp lệ để import");
+      return;
+    }
+    const jobId =
+      window.crypto && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setImportProgress({ done: 0, total: importPreview.rows.length });
+    setImportResult(null);
+    const stopPoll = () => {
+      if (importPollRef.current) {
+        clearInterval(importPollRef.current);
+        importPollRef.current = null;
+      }
+    };
+    stopPoll();
+    const finishJob = (data) => {
+      stopPoll();
+      setImportProgress(null);
+      setImportLoading(false);
+      setImportResult(data);
+      if (data.status === "done") {
+        setToast({
+          message: `Import thành công: ${data.imported} bản ghi`,
+          type: "success",
+        });
+        loadProposals(1);
+      } else if (data.status === "partial") {
+        setToast({
+          message: `Import một phần: ${data.imported}/${data.total} thành công, ${data.failed} lỗi — xem tab Excel`,
+          type: "warning",
+        });
+        loadProposals(1);
+      } else if (data.status === "cancelled") {
+        setToast({
+          message: `Đã hủy import: ${data.imported} đã tạo, ${data.failed} lỗi, ${data.pending} chưa xử lý — xem tab Excel`,
+          type: "warning",
+        });
+        loadProposals(1);
+      } else {
+        setError(data.error || "Import thất bại");
+      }
+    };
+    importPollRef.current = setInterval(async () => {
+      try {
+        const p = await excelService.getImportProgress(jobId, token);
+        if (p && p.success && p.data && p.data.status !== "not_found") {
+          const d = p.data;
+          setImportProgress({ done: d.done, total: d.total, status: d.status });
+          if (["done", "partial", "failed", "cancelled"].includes(d.status))
+            finishJob(d);
+        }
+      } catch {}
+    }, 2000);
+    try {
+      setImportLoading(true);
+      setError("");
+      const res = await excelService.confirmImport(
+        "station_proposals",
+        importPreview.rows,
+        token,
+        {
+          viewId: importPreview.viewId,
+          jobId,
+          geocode: importGeocode,
+          checkDuplicate: importCheckDuplicate,
+          checkIntraFile: importCheckIntraFile,
+          fileName: (importFile && importFile.name) || null,
+          columns: importPreview.columns || null,
+        },
+      );
+      if (!res.success) {
+        stopPoll();
+        setImportProgress(null);
+        setImportLoading(false);
+        setImportFailures((res.data && res.data.failDetails) || []);
+        setError(res.message || "Lỗi import");
+      } else {
+        setShowImport(false);
+        setImportLoading(false);
+        setImportProgress(null);
+        setToast({
+          message: `Đang xử lý import ${importPreview.rows.length} dòng — xong sẽ báo tại đây.`,
+          type: "info",
+          duration: 5000,
+          action: {
+            label: "Xem tiến độ",
+            onClick: () =>
+              navigate("/admin/audit-log", { state: { tab: "excel", jobId } }),
+          },
+        });
+      }
+    } catch (err) {
+      stopPoll();
+      setImportProgress(null);
+      setImportLoading(false);
+      setError((err && err.message) || "Lỗi kết nối server");
+    }
+  };
+
+  const handleConfirmInfoBatch = async () => {
+    setBatchConfirmLoading(true);
+    try {
+      const res = await adminProposalService.confirmInfoBatch(token, 500);
+      const d = (res && res.data) || {};
+      const parts = [
+        `Đã tự xác nhận ${d.confirmed || 0}/${d.checked || 0} đề xuất`,
+      ];
+      if (d.incomplete) parts.push(`${d.incomplete} chưa đủ trường`);
+      if (d.failed) parts.push(`${d.failed} lỗi`);
+      if (d.hasMore) parts.push("còn lại — bấm Cập nhật lần nữa");
+      setToast({
+        message: parts.join(" · "),
+        type: d.failed ? "warning" : "success",
+      });
+      loadProposals(pagination.page);
+    } catch {
+      setToast({
+        message: "Lỗi khi quét xác nhận đủ thông tin",
+        type: "error",
+      });
+    } finally {
+      setBatchConfirmLoading(false);
+      setConfirmInfoBatchOpen(false);
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setConfirmBulkDelete(false);
+    setBatchLoading(true);
+    let ok = 0;
+    const failed = [];
+    for (const id of selectedIds) {
+      try {
+        const res = await adminProposalService.delete(id, token);
+        if (res.success) ok++;
+        else failed.push(`#${id}: ${res.message || "Xóa thất bại"}`);
+      } catch {
+        failed.push(`#${id}: Lỗi kết nối server`);
+      }
+    }
+    setBatchLoading(false);
+    setSelectedIds([]);
+    loadProposals(pagination.page);
+    if (ok > 0) {
+      setToast({
+        message: `Đã xóa ${ok} đề xuất${failed.length > 0 ? `, ${failed.length} không xóa được: ${failed.join("; ")}` : ""}`,
+        type: failed.length > 0 ? "warning" : "success",
+      });
+    } else {
+      setError(`Không xóa được: ${failed.join("; ")}`);
+    }
+  };
+
+  const handleCreateSubmit = async (formData) => {
+    const submitData = { ...formData };
+    if (!submitData.latitude && mapCoords.latitude)
+      submitData.latitude = mapCoords.latitude;
+    if (!submitData.longitude && mapCoords.longitude)
+      submitData.longitude = mapCoords.longitude;
+    if (
+      !submitData.owner_name ||
+      !submitData.address ||
+      !submitData.latitude ||
+      !submitData.longitude
+    ) {
+      throw new Error("Vui lòng nhập đầy đủ thông tin bắt buộc");
+    }
+    const radiusM = getProposalMinDistanceM(submitData.province);
+    const check = await proposalService.checkNearby(
+      {
+        latitude: submitData.latitude,
+        longitude: submitData.longitude,
+        radius_m: radiusM,
+      },
+      token,
+    );
+    if (check?.data?.is_duplicate) {
+      throw new Error(
+        `Vị trí này nằm trong vùng không thể tạo đề xuất (cách ${check.data.nearest.distance_m}m < ${radiusM}m). Vui lòng chọn vị trí khác.`,
+      );
+    }
+    const res = await proposalService.create(submitData, token, createFormId);
+    if (res.success) {
+      const transitionError = res.infoCompleted?.error;
+      const movedToGrading = res.infoCompleted?.movedTo === "GRADING";
+      setToast({
+        message: transitionError
+          ? `Đã tạo đề xuất nhưng chưa tự chuyển sang chấm điểm: ${transitionError}`
+          : `Tạo đề xuất thành công${movedToGrading ? " và đã chuyển sang chấm điểm" : ""}`,
+        type: transitionError ? "warning" : "success",
+      });
+      setShowCreateForm(false);
+      loadProposals(1);
+    } else {
+      throw new Error(res.message || "Tạo đề xuất thất bại");
+    }
+  };
+
+  const openCreateForm = (formId) => {
+    setCreateFormId(formId || PROPOSALS_CREATE_FORM_ID);
+    setFormCoords({ latitude: "", longitude: "" });
+    setMapCoords({ latitude: "", longitude: "" });
+    setMapLink("");
+    setLinkError("");
+    setShowPreview(false);
+    setPreviewSnapshot(null);
+    setShowCreateForm(true);
+  };
+
+  const closeCreateForm = () => {
+    setShowCreateForm(false);
+    setShowPreview(false);
+    setPreviewSnapshot(null);
+    setMapLink("");
+    setLinkError("");
+  };
+
+  const handleGoogleMapLink = async () => {
+    const url = mapLink.trim();
+    if (!url) return;
+    setLinkError("");
+    setResolvingLink(true);
+    try {
+      let coords = parseGoogleMapsLink(url);
+      if (coords && coords.needResolve) {
+        coords = await resolveGoogleMapsShortUrl(coords.url);
+      }
+      if (coords && coords.lat != null && coords.lng != null) {
+        setMapCoords({
+          latitude: Number(coords.lat).toFixed(6),
+          longitude: Number(coords.lng).toFixed(6),
+        });
+        setMapLink("");
+      } else {
+        setLinkError("Không đọc được tọa độ từ link Google Maps");
+      }
+    } catch {
+      setLinkError("Không đọc được tọa độ từ link Google Maps");
+    } finally {
+      setResolvingLink(false);
+    }
+  };
+
+  const createInitialData = useMemo(
+    () => ({
+      latitude: mapCoords.latitude,
+      longitude: mapCoords.longitude,
+    }),
+    [mapCoords.latitude, mapCoords.longitude],
+  );
+
+  const parsePreviewCoords = (c) => {
+    const lat = parseFloat(c.latitude);
+    const lng = parseFloat(c.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { latitude: lat, longitude: lng };
+  };
+
+  const effCreateCoords =
+    formCoords.latitude !== "" && formCoords.latitude != null
+      ? formCoords
+      : mapCoords;
+
+  const validPreviewCoords = parsePreviewCoords({
+    latitude: effCreateCoords.latitude ?? "",
+    longitude: effCreateCoords.longitude ?? "",
+  });
+
+  const openPreview = () => {
+    if (!validPreviewCoords) return;
+    setPreviewSnapshot(validPreviewCoords);
+    setShowPreview(true);
+  };
+
+  const renderPrimaryAction = (row) => {
+    const go = (s) => handleStatusChange(row.id, s);
+    switch (row.status) {
+      case "PENDING":
+        return null;
+      case "REVIEWING":
+        return null;
+      case "CONTRACT_SIGNED":
+        if (row.station_id) {
+          return (
+            <button
+              className="btn btn-info btn-outline btn-xs gap-1 shrink-0"
+              onClick={() => navigate(`/admin/stations/view=${row.station_id}`)}
+              title={`Đề xuất đã thành trạm #${row.station_id}`}
+            >
+              <Eye size={12} />
+              Xem trạm #{row.station_id}
+            </button>
+          );
+        }
+        if (isAdmin) {
+          return (
+            <button
+              className="btn btn-primary btn-xs gap-1 shrink-0"
+              onClick={() => openStationModal(row)}
+              title="Tạo trạm bản đồ (stations) từ đề xuất"
+            >
+              <MapPinned size={12} />
+              Tạo trạm bản đồ
+            </button>
+          );
+        }
+        return null;
+      default:
+        return null;
+    }
+  };
+
+  const renderRowMenuItems = (row) => {
+    const go = (s) => handleStatusChange(row.id, s);
+    const items = [];
+    const item = (key, icon, label, onClick, danger) => (
+      <button
+        key={key}
+        className={`w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 ${danger ? "text-error" : ""}`}
+        onClick={() => {
+          setRowMenu(null);
+          onClick();
+        }}
+      >
+        {icon}
+        {label}
+      </button>
+    );
+    if (isAdmin || isSales || user?.role === "NPP") {
+      const canEditProposalInfo = row.permissions?.canEdit === true;
+      if (canEditProposalInfo) {
+        items.push(
+          item("edit", <Pencil size={14} />, "Sửa", () =>
+            navigate(`/admin/proposals/edit=${row.id}`),
+          ),
+        );
+      }
+      if (
+        row.permissions?.canManageOwner &&
+        row.status === "PENDING" &&
+        row.owner_role === "CTV"
+      ) {
+        items.push(
+          item(
+            "approve",
+            <CheckCircle2 size={14} />,
+            "Duyệt (chuyển sang chấm điểm)",
+            () => handleStatusChange(row.id, "GRADING"),
+          ),
+        );
+      }
+    }
+    if (isSuperAdmin) {
+      items.push(
+        item("force", <Repeat size={14} />, "Đổi trạng thái", () =>
+          setForceModal({
+            open: true,
+            id: row.id,
+            status: row.status,
+            reason: "",
+            ack: false,
+            saving: false,
+          }),
+        ),
+      );
+    }
+    items.push(
+      item("log", <History size={14} />, "Xem log", () =>
+        setLogProposalId(row.id),
+      ),
+    );
+    items.push(
+      item("report", <Download size={14} />, "Xuất báo cáo đề xuất", () =>
+        handleExportReports([row.id]),
+      ),
+    );
+    if (row.status === "CANCELLED" && isSuperAdmin) {
+      items.push(
+        item("reopen", <RotateCcw size={14} />, "Mở lại (khẩn cấp)", () =>
+          setReopenModal({ open: true, id: row.id, reason: "", saving: false }),
+        ),
+      );
+    }
+    const dangerItems = [];
+    if (row.permissions?.canManageOwner && row.status === "PENDING") {
+      dangerItems.push(
+        item("reject", <X size={14} />, "Từ chối", () => go("REJECTED"), true),
+      );
+    }
+    if (row.permissions?.canManageOwner && row.status !== "CANCELLED") {
+      dangerItems.push(
+        item(
+          "cancel",
+          <Ban size={14} />,
+          "Hủy đề xuất",
+          () => go("CANCELLED"),
+          true,
+        ),
+      );
+    }
+    if (row.permissions?.canDelete)
+      dangerItems.push(
+        item(
+          "delete",
+          <Trash2 size={14} />,
+          "Xóa",
+          () => handleDeleteClick(row.id),
+          true,
+        ),
+      );
+    return (
+      <>
+        {items}
+        {dangerItems.length > 0 && (
+          <div className="border-t border-base-200 my-1" />
+        )}
+        {dangerItems}
+      </>
+    );
+  };
+
+  const openRowMenu = (e, id) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const w = 224;
+    let left = Math.min(rect.right - w, window.innerWidth - w - 8);
+    left = Math.max(8, left);
+    let top = rect.bottom + 4;
+    if (top + 320 > window.innerHeight) top = Math.max(8, rect.top - 320);
+    setRowMenu({ id, top, left });
+  };
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setRowMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [rowMenu]);
+
+  const renderStatusActions = (row) => {
+    const go = (s) => handleStatusChange(row.id, s);
+    switch (row.status) {
+      case "REJECTED":
+        return (
+          <span className="text-xs text-base-content/60 shrink-0">
+            Chờ gửi lại
+          </span>
+        );
+      case "CANCELLED":
+        return (
+          <span className="badge badge-ghost badge-sm gap-1 shrink-0">
+            <Lock size={12} />
+            Đã hủy
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const menuRow = rowMenu ? proposals.find((p) => p.id === rowMenu.id) : null;
+  const pauseProposalRow = pauseModal.id
+    ? proposals.find(
+        (proposal) => Number(proposal.id) === Number(pauseModal.id),
+      )
+    : null;
+  const resumeStatusLabel = pauseProposalRow
+    ? statusOptions.find(
+        (option) => option.value === pauseProposalRow.paused_from_status,
+      )?.label ||
+      pauseProposalRow.paused_from_status ||
+      "trước khi tạm dừng"
+    : "trước khi tạm dừng";
+
+  const renderActions = (row) => {
+    const showOnStationLink =
+      Boolean(row.charging_station_id) &&
+      ["DEPLOYING", "ACTIVE", "CANCELLED", "ARCHIVED", "PAUSED"].includes(
+        row.status,
+      );
+    const canDirectToOnStation =
+      isSuperAdmin &&
+      activeTab === "all" &&
+      !["CANCELLED", "ARCHIVED", "PAUSED", "ACTIVE"].includes(row.status);
+    return (
+      <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
+        <>
+          {isSuperAdmin && activeTab === "all" && showOnStationLink ? (
+            <button
+              type="button"
+              className="btn btn-info btn-outline btn-xs gap-1 shrink-0"
+              onClick={() =>
+                navigate(
+                  `/admin/on-tram/thong-tin-chung/${row.charging_station_id}`,
+                )
+              }
+              title={`Xem ON trạm #${row.charging_station_id}`}
+            >
+              <Eye size={12} />
+              Xem ON trạm
+            </button>
+          ) : canDirectToOnStation ? (
+            <button
+              type="button"
+              className="btn btn-accent btn-xs gap-1 shrink-0"
+              onClick={() =>
+                setDirectOnStationModal({
+                  open: true,
+                  id: row.id,
+                  reason: "",
+                  ack: false,
+                  saving: false,
+                })
+              }
+              title="Bỏ qua luồng đề xuất và tạo ON trạm trực tiếp"
+            >
+              <MapPinned size={12} />
+              Chuyển ON trạm
+            </button>
+          ) : null}
+          {canPauseProposals &&
+            row.status &&
+            row.status !== "CANCELLED" &&
+            !(row.status === "APPROVED" && row.signed_file_id) && (
+              <button
+                type="button"
+                className={`btn btn-xs gap-1 shrink-0 ${row.status === "PAUSED" ? "btn-success" : "btn-warning"}`}
+                onClick={() =>
+                  setPauseModal({
+                    open: true,
+                    id: row.id,
+                    action: row.status === "PAUSED" ? "resume" : "pause",
+                    reason: "",
+                    saving: false,
+                  })
+                }
+                title={
+                  row.status === "PAUSED"
+                    ? "Tiếp tục về trạng thái trước khi dừng"
+                    : "Tạm dừng đề xuất"
+                }
+              >
+                {row.status === "PAUSED" ? (
+                  <Play size={12} />
+                ) : (
+                  <Pause size={12} />
+                )}
+                {row.status === "PAUSED" ? "Tiếp tục" : "Tạm dừng"}
+              </button>
+            )}
+          {renderPrimaryAction(row)}
+          {renderStatusActions(row)}
+          <button
+            className="btn btn-ghost btn-xs btn-square shrink-0"
+            onClick={(e) => openRowMenu(e, row.id)}
+            title="Thao tác khác"
+          >
+            <MoreVertical size={14} />
+          </button>
+        </>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        duration={toast.duration}
+        action={toast.action}
+        onClose={() => setToast({ message: "", type: "success" })}
+      />
+      {showHistoricalImport && (
+        <HistoricalOnImportModal
+          isOpen
+          onClose={() => setShowHistoricalImport(false)}
+          token={token}
+          onImported={() => loadProposals(1)}
+        />
+      )}
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3">
+          <ClipboardList size={24} className="text-primary shrink-0" />
+          <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {activeTab === "all" && (
+            <>
+              <button
+                className="btn btn-primary btn-sm gap-1"
+                onClick={() => openCreateForm(PROPOSALS_CREATE_FORM_ID)}
+              >
+                <Plus size={14} /> Tạo đề xuất
+              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm gap-1"
+                  onClick={startProposalSheetDailySync}
+                  disabled={
+                    !proposalSheetSyncStatus?.configured ||
+                    Boolean(proposalSheetSyncError) ||
+                    proposalSheetSyncLoading ||
+                    Boolean(proposalSheetSyncStatus?.activeRun)
+                  }
+                  title={
+                    proposalSheetSyncError ||
+                    (!proposalSheetSyncStatus?.configured
+                      ? proposalSheetSyncStatus?.message ||
+                        "Google Sheets chưa được cấu hình"
+                      : "Đối soát toàn bộ đề xuất, hàng chờ và các mục đồng bộ lỗi")
+                  }
+                >
+                  <RefreshCw
+                    size={14}
+                    className={
+                      proposalSheetSyncStatus?.activeRun ? "animate-spin" : ""
+                    }
+                  />
+                  {proposalSheetSyncStatus?.activeRun
+                    ? `Đang đồng bộ ${proposalSheetSyncStatus.activeRun.synced_count || 0}/${proposalSheetSyncStatus.activeRun.total_count || 0}`
+                    : proposalSheetSyncLoading
+                      ? "Đang xếp hàng..."
+                      : "Đồng bộ cuối ngày"}
+                </button>
+              )}
+              {quickFormId && (
+                <button
+                  className="btn btn-outline btn-primary btn-sm gap-1"
+                  onClick={() => openCreateForm(quickFormId)}
+                  title="Chỉ nhập tọa độ + thông tin cơ bản"
+                >
+                  <Zap size={14} /> Tạo nhanh
+                </button>
+              )}
+
+              <div className="relative">
+                <button
+                  ref={moreBtnRef}
+                  className="btn btn-ghost btn-sm btn-circle"
+                  onClick={() => {
+                    if (!showMoreMenu) placeBelow(moreBtnRef, setMoreTop);
+                    setShowMoreMenu(!showMoreMenu);
+                  }}
+                  title="Thao tác"
+                >
+                  <MoreVertical size={18} />
+                </button>
+                {showMoreMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowMoreMenu(false)}
+                    />
+                    <div
+                      className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52 dropdown-center-mobile"
+                      style={moreTop != null ? { top: moreTop } : undefined}
+                    >
+                      {isSuperAdmin && (
+                        <button
+                          className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
+                          onClick={() => {
+                            setShowMoreMenu(false);
+                            setShowHistoricalImport(true);
+                          }}
+                        >
+                          <Upload size={14} className="text-primary" /> Import
+                          dữ liệu trạm cũ
+                        </button>
+                      )}
+                      <button
+                        className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          handleExportReports(selectedIds);
+                        }}
+                        disabled={
+                          selectedIds.length === 0 ||
+                          batchLoading ||
+                          exportLoading
+                        }
+                      >
+                        <Download size={14} className="text-primary" />
+                        Xuất báo cáo đề xuất
+                        {selectedIds.length > 0 && (
+                          <span className="badge badge-success badge-sm ml-auto">
+                            {selectedIds.length}
+                          </span>
+                        )}
+                      </button>
+                      <div className="border-t border-base-200 my-1" />
+                      <button
+                        className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          setFlowInfoOpen(true);
+                        }}
+                      >
+                        <GitBranch size={14} className="text-primary" />
+                        Mô tả luồng
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="relative">
+                <button
+                  ref={exportBtnRef}
+                  className="btn btn-ghost btn-sm gap-1"
+                  onClick={() => {
+                    if (!exportMenuOpen) placeBelow(exportBtnRef, setExportTop);
+                    setExportMenuOpen((v) => !v);
+                    setTemplateMenuOpen(false);
+                  }}
+                >
+                  <Download size={14} />
+                  Export
+                  <ChevronDown size={12} />
+                </button>
+                {exportMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setExportMenuOpen(false)}
+                    />
+                    <ul
+                      className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-80 max-w-[90vw] z-50 p-2 dropdown-center-mobile"
+                      style={exportTop != null ? { top: exportTop } : undefined}
+                    >
+                      <li className="menu-title text-xs">
+                        Chọn bộ cột để export
+                      </li>
+                      <li>
+                        <button onClick={handleExportProposalsByForm}>
+                          <span className="badge badge-xs badge-accent">
+                            Form
+                          </span>
+                          <span>Theo form (section/tab, 3 hàng header)</span>
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          onClick={handleExportProposalsByModel}
+                          title="File nhiều sheet: HDSD + 4 sheet NQ/TDT/LK/NQ_LK lọc đúng mô hình + Chưa rõ mô hình"
+                          className="items-start text-left"
+                        >
+                          <span className="badge badge-xs badge-accent shrink-0 mt-0.5">
+                            4 sheet
+                          </span>
+                          <span className="flex-1 whitespace-normal break-words">
+                            Theo mô hình đầu tư (lọc NQ/TDT/LK/NQ_LK + Chưa rõ)
+                          </span>
+                        </button>
+                      </li>
+                      {excelViews.map((v) => (
+                        <li key={v.id}>
+                          <button
+                            onClick={() => handleExportProposals([v.id])}
+                            title={v.name}
+                            className="items-start text-left"
+                          >
+                            <span
+                              className={`badge badge-xs shrink-0 mt-0.5 ${usageBadge(v.usage)}`}
+                            >
+                              {usageLabel(v.usage)}
+                            </span>
+                            <span className="flex-1 whitespace-normal break-words">
+                              {v.name}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                      {excelViews.length > 1 && (
+                        <li>
+                          <button
+                            onClick={() =>
+                              handleExportProposals(excelViews.map((v) => v.id))
+                            }
+                          >
+                            <span className="badge badge-xs badge-ghost">
+                              {excelViews.length} sheet
+                            </span>
+                            <span>Tất cả bộ cột (1 file, nhiều sheet)</span>
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <>
+                <div className="relative">
+                  <button
+                    ref={templateBtnRef}
+                    className="btn btn-ghost btn-sm gap-1"
+                    onClick={() => {
+                      if (!templateMenuOpen)
+                        placeBelow(templateBtnRef, setTemplateTop);
+                      setTemplateMenuOpen((v) => !v);
+                      setExportMenuOpen(false);
+                    }}
+                  >
+                    <Download size={14} />
+                    Template
+                    <ChevronDown size={12} />
+                  </button>
+                  {templateMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setTemplateMenuOpen(false)}
+                      />
+                      <ul
+                        className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-80 max-w-[90vw] z-50 p-2 dropdown-center-mobile"
+                        style={
+                          templateTop != null ? { top: templateTop } : undefined
+                        }
+                      >
+                        <li className="menu-title text-xs">
+                          Chọn bộ cột cho file mẫu
+                        </li>
+                        <li>
+                          <button
+                            onClick={handleDownloadTemplateByModel}
+                            title="File 5 sheet: HDSD + 4 sheet NQ/TDT/LK/NQ_LK — copy 1 sheet sang file mới để import"
+                            className="items-start text-left"
+                          >
+                            <span className="badge badge-xs badge-accent shrink-0 mt-0.5">
+                              4 sheet
+                            </span>
+                            <span className="flex-1 whitespace-normal break-words">
+                              Theo mô hình đầu tư (HDSD + NQ/TDT/LK/NQ_LK)
+                            </span>
+                          </button>
+                        </li>
+                        {excelViews.map((v) => (
+                          <li key={v.id}>
+                            <button
+                              onClick={() => handleDownloadTemplate([v.id])}
+                              title={v.name}
+                              className="items-start text-left"
+                            >
+                              <span
+                                className={`badge badge-xs shrink-0 mt-0.5 ${usageBadge(v.usage)}`}
+                              >
+                                {usageLabel(v.usage)}
+                              </span>
+                              <span className="flex-1 whitespace-normal break-words">
+                                {v.name}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                        {excelViews.length > 1 && (
+                          <li>
+                            <button
+                              onClick={() =>
+                                handleDownloadTemplate(
+                                  excelViews.map((v) => v.id),
+                                )
+                              }
+                            >
+                              <span className="badge badge-xs badge-ghost">
+                                {excelViews.length} sheet
+                              </span>
+                              <span>Tất cả bộ cột (1 file, nhiều sheet)</span>
+                            </button>
+                          </li>
+                        )}
+                      </ul>
+                    </>
+                  )}
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm gap-1"
+                  onClick={openImport}
+                >
+                  <Upload size={14} />
+                  Import
+                </button>
+              </>
+              {isSuperAdmin && (
+                <button
+                  className="btn btn-ghost btn-sm gap-1"
+                  onClick={() => setConfirmInfoBatchOpen(true)}
+                  title="Quét và tự xác nhận đủ thông tin cho đề xuất hiện có"
+                >
+                  <RefreshCw size={14} />
+                  <span className="hidden sm:inline">Cập nhật</span>
+                </button>
+              )}
+              <button
+                className="btn btn-ghost btn-sm gap-1"
+                onClick={handleReset}
+                title="Đặt lại bộ lọc"
+              >
+                <RotateCcw size={14} />
+                <span className="hidden sm:inline">Đặt lại</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {isAdmin && activeTab === "all" && (
+        <div className="mb-4 text-sm" role="status">
+          {proposalSheetSyncError ? (
+            <span className="text-error">{proposalSheetSyncError}</span>
+          ) : proposalSheetSyncStatus ? (
+            <>
+              <span>
+                Google Sheets:{" "}
+                {proposalSheetSyncStatus.configured
+                  ? "Đã cấu hình"
+                  : proposalSheetSyncStatus.message || "Chưa cấu hình"}
+                {" · "}Đang chờ: {proposalSheetSyncStatus.pendingCount || 0}
+                {" · "}Thất bại: {proposalSheetSyncStatus.failedCount || 0}
+              </span>
+              {proposalSheetSyncStatus.recentRuns?.[0] && (
+                <span>
+                  {" · "}Lượt gần nhất:{" "}
+                  {{
+                    QUEUED: "Đang chờ",
+                    RUNNING: "Đang chạy",
+                    SUCCESS: "Thành công",
+                    FAILED: "Thất bại",
+                  }[proposalSheetSyncStatus.recentRuns[0].status] ||
+                    proposalSheetSyncStatus.recentRuns[0].status}{" "}
+                  ({proposalSheetSyncStatus.recentRuns[0].synced_count || 0}/
+                  {proposalSheetSyncStatus.recentRuns[0].total_count || 0})
+                </span>
+              )}
+              {(proposalSheetSyncStatus.lastError ||
+                proposalSheetSyncStatus.recentRuns?.[0]?.error_message) && (
+                <div className="text-error">
+                  Lỗi đồng bộ:{" "}
+                  {proposalSheetSyncStatus.lastError ||
+                    proposalSheetSyncStatus.recentRuns[0].error_message}
+                </div>
+              )}
+            </>
+          ) : (
+            "Đang tải trạng thái Google Sheets..."
+          )}
+        </div>
+      )}
+
+      <div role="tablist" className="proposal-workflow-tabs mb-4">
+        <button
+          type="button"
+          role="tab"
+          className={`proposal-workflow-tab ${activeTab === "all" ? "is-active" : ""}`}
+          onClick={() => changeTab("all")}
+          title="Tất cả đề xuất trong phạm vi được phép xem"
+        >
+          Tất cả đề xuất
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`proposal-workflow-tab ${activeTab === "requests" ? "is-active" : ""}`}
+          onClick={() => changeTab("requests")}
+          title="Các đề xuất đang có yêu cầu cần thực hiện"
+        >
+          Các đề xuất cần thực hiện
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`proposal-workflow-tab ${activeTab === "completed" ? "is-active" : ""}`}
+          onClick={() => changeTab("completed")}
+          title="Các đề xuất đã hoàn thành hoặc đã hủy"
+        >
+          Các đề xuất đã hoàn thành
+        </button>
+      </div>
+
+      {activeTab === "requests" && <ProposalRequestsTab token={token} />}
+
+      {activeTab === "completed" && <ProposalCompletedTab token={token} />}
+
+      {activeTab === "all" && (
+        <>
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="text"
+              className="input input-bordered input-sm flex-1 min-w-0"
+              placeholder="Tìm theo tên, địa chỉ, SĐT, mã đề xuất..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && loadProposals(1)}
+            />
+            <button
+              className="btn btn-primary btn-sm gap-1 shrink-0"
+              onClick={() => loadProposals(1)}
+            >
+              <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+            </button>
+            <FilterToggle
+              open={showFilter}
+              onToggle={() => setShowFilter((v) => !v)}
+              count={
+                [
+                  filter,
+                  filterUuTien,
+                  filterProvince,
+                  filterRegion,
+                  filterDepartment,
+                  filterOwner,
+                  filterLeadLink,
+                  dateFrom,
+                  dateTo,
+                ].filter(Boolean).length
+              }
+            />
+          </div>
+
+          <FilterBody
+            open={showFilter}
+            isDesktop={isDesktop}
+            onClose={() => setShowFilter(false)}
+            onApply={() => loadProposals(1)}
+            onReset={handleReset}
+            title="Bộ lọc đề xuất"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                <option value="">Tất cả trạng thái</option>
+                {statusOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filterUuTien}
+                onChange={(e) => setFilterUuTien(e.target.value)}
+              >
+                <option value="">Tất cả loại ưu tiên</option>
+                {PRIORITY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filterProvince}
+                onChange={(e) => setFilterProvince(e.target.value)}
+              >
+                <option value="">Tất cả tỉnh/thành</option>
+                {provinceOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filterRegion}
+                onChange={(e) => setFilterRegion(e.target.value)}
+              >
+                <option value="">Tất cả vùng miền</option>
+                {regionOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filterDepartment}
+                onChange={(e) => setFilterDepartment(e.target.value)}
+              >
+                <option value="">Tất cả phòng ban</option>
+                {departmentOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filterOwner}
+                onChange={(e) => setFilterOwner(e.target.value)}
+              >
+                <option value="">Tất cả người tạo</option>
+                {ownerOptions.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={filterLeadLink}
+                onChange={(e) => setFilterLeadLink(e.target.value)}
+              >
+                <option value="">Tất cả (Lead)</option>
+                <option value="yes">Có gắn Lead</option>
+                <option value="no">Không gắn Lead</option>
+              </select>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-base-content/60 whitespace-nowrap">
+                  Thời gian
+                </span>
+                <select
+                  className="select select-bordered select-sm flex-1"
+                  value={dateField}
+                  onChange={(e) => setDateField(e.target.value)}
+                >
+                  <option value="created_at">Tạo</option>
+                  <option value="updated_at">Cập nhật</option>
+                </select>
+              </div>
+              <input
+                type="date"
+                className="input input-bordered input-sm w-full"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+              <input
+                type="date"
+                className="input input-bordered input-sm w-full"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+              <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
+                <button
+                  className="btn btn-primary btn-sm flex-1 gap-1"
+                  onClick={() => loadProposals(1)}
+                >
+                  <Search size={14} /> Áp dụng
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm flex-1 gap-1"
+                  onClick={handleReset}
+                >
+                  <RotateCcw size={14} /> Xóa lọc
+                </button>
+              </div>
+            </div>
+          </FilterBody>
+
+          <DuplicateCheckPanel
+            ref={dupRef}
+            fetchDuplicates={(minM, maxM) =>
+              adminProposalService.duplicates(minM, maxM, token)
+            }
+            getProposalViewUrl={(id) => `/admin/proposals/chi-tiet/${id}`}
+            getStationViewUrl={(id) => `/admin/stations/view=${id}`}
+            onModeChange={setDupMode}
+            onViewItem={(kind, id) => {
+              if (kind === "proposal")
+                setPopup({
+                  open: true,
+                  record: null,
+                  mode: "view",
+                  recordId: id,
+                });
+              else if (kind === "station")
+                navigate(`/admin/stations/view=${id}`);
+            }}
+            exportDuplicatesUrl="/admin/excel/export/duplicates"
+            exportToken={token}
+          />
+
+          {error && (
+            <ErrorMessage
+              message={error}
+              onRetry={() => {
+                setError("");
+                loadProposals(1);
+              }}
+            />
+          )}
+        </>
+      )}
+
+      <ConfirmDialog
+        isOpen={confirmDelete.isOpen}
+        title="Xóa đề xuất"
+        message="Bạn có chắc chắn muốn xóa đề xuất này?"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null })}
+        confirmText="Xóa"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmBulkDelete}
+        title="Xóa nhiều đề xuất"
+        message={`Bạn có chắc chắn muốn xóa ${selectedIds.length} đề xuất đã chọn?`}
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+        confirmText="Xóa"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmInfoBatchOpen}
+        title="Cập nhật xác nhận đủ thông tin?"
+        message="Hệ thống sẽ quét các đề xuất đủ trường và tự chuyển sang 'Đã xác nhận đủ thông tin'? Chạy tối đa 500 đề xuất/lần."
+        onConfirm={handleConfirmInfoBatch}
+        onCancel={() => setConfirmInfoBatchOpen(false)}
+        confirmText={batchConfirmLoading ? "Đang quét..." : "Chạy"}
+      />
+
+      {cancelModal.open && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-error">Hủy đề xuất</h3>
+              <button
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() =>
+                  setCancelModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-error py-2 px-3 text-xs mb-3">
+              <Ban size={14} />
+              <span>
+                Đã hủy là <b>trạng thái cuối — không thể mở lại</b>, kể cả
+                admin. Hãy chắc chắn trước khi xác nhận.
+              </span>
+            </div>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Lý do hủy *</span>
+              </label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={4}
+                value={cancelModal.reason}
+                onChange={(e) =>
+                  setCancelModal((prev) => ({
+                    ...prev,
+                    reason: e.target.value,
+                  }))
+                }
+                placeholder="Nhập lý do hủy đề xuất..."
+              />
+            </div>
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setCancelModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                Hủy bỏ
+              </button>
+              <button
+                className="btn btn-error btn-sm"
+                disabled={!cancelModal.reason.trim() || cancelModal.saving}
+                onClick={handleConfirmCancel}
+              >
+                {cancelModal.saving ? "Đang hủy..." : "Xác nhận hủy"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
+      {forceModal.open &&
+        (() => {
+          const forceRow = proposals.find((p) => p.id === forceModal.id);
+          const curLabel = forceRow
+            ? statusOptions.find((s) => s.value === forceRow.status)?.label ||
+              forceRow.status
+            : "";
+          return (
+            <dialog
+              className="modal modal-open"
+              onCancel={(e) => e.preventDefault()}
+            >
+              <div className="modal-box max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-lg">
+                    Đổi trạng thái (ghi đè) #{forceModal.id}
+                  </h3>
+                  <button
+                    className="btn btn-ghost btn-sm btn-circle"
+                    onClick={() =>
+                      setForceModal({
+                        open: false,
+                        id: null,
+                        status: "",
+                        reason: "",
+                        ack: false,
+                        saving: false,
+                      })
+                    }
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="alert alert-warning py-2 px-3 text-xs mb-3">
+                  <AlertTriangle size={14} />
+                  <span>
+                    SUPER_ADMIN bỏ qua ma trận luồng. Đang ở <b>{curLabel}</b>.
+                    Mọi lần ghi đè đều lưu log.
+                  </span>
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Trạng thái mới *</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={forceModal.status}
+                    onChange={(e) =>
+                      setForceModal((prev) => ({
+                        ...prev,
+                        status: e.target.value,
+                      }))
+                    }
+                  >
+                    {statusOptions.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {forceModal.status === "CONTRACT_SIGNED" && (
+                  <div className="alert alert-info py-2 px-3 text-xs mt-3">
+                    <Info size={14} />
+                    <span>
+                      Đổi sang "Ký thành công" sẽ <b>tạo trạm ngay</b> (mã trạm
+                      chờ, trạng thái Đang triển khai) nếu đề xuất chưa liên kết
+                      trạm nào.
+                    </span>
+                  </div>
+                )}
+                <div className="form-control mt-3">
+                  <label className="label">
+                    <span className="label-text">Lý do ghi đè *</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered"
+                    rows={3}
+                    value={forceModal.reason}
+                    onChange={(e) =>
+                      setForceModal((prev) => ({
+                        ...prev,
+                        reason: e.target.value,
+                      }))
+                    }
+                    placeholder="Nhập lý do ghi đè trạng thái..."
+                  />
+                </div>
+                <label className="label cursor-pointer gap-3 mt-2 justify-start">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-warning"
+                    checked={forceModal.ack}
+                    onChange={(e) =>
+                      setForceModal((prev) => ({
+                        ...prev,
+                        ack: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span className="label-text text-xs">
+                    Tôi hiểu đây là thao tác ghi đè ngoài luồng
+                  </span>
+                </label>
+                <div className="modal-action">
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() =>
+                      setForceModal({
+                        open: false,
+                        id: null,
+                        status: "",
+                        reason: "",
+                        ack: false,
+                        saving: false,
+                      })
+                    }
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    className="btn btn-warning btn-sm"
+                    disabled={
+                      !forceModal.status ||
+                      !forceModal.reason.trim() ||
+                      !forceModal.ack ||
+                      forceModal.saving
+                    }
+                    onClick={handleConfirmForce}
+                  >
+                    {forceModal.saving ? "Đang đổi..." : "Xác nhận ghi đè"}
+                  </button>
+                </div>
+              </div>
+              <div className="modal-backdrop bg-black/50" />
+            </dialog>
+          );
+        })()}
+
+      {directOnStationModal.open && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box max-w-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Chuyển ON trạm</h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() =>
+                  setDirectOnStationModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    ack: false,
+                    saving: false,
+                  })
+                }
+                disabled={directOnStationModal.saving}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-warning py-2 px-3 text-sm">
+              <AlertTriangle size={16} />
+              <span>
+                Thao tác SUPER_ADMIN bỏ qua các bước của luồng đề xuất, chuyển
+                đề xuất sang <b>Đang triển khai</b> và tạo bản ghi ON trạm ở
+                bước <b>{CS_STATUS_LABELS.ONBOARDING}</b>.
+              </span>
+            </div>
+            <div className="mt-3 rounded-lg bg-base-200 p-3 text-sm">
+              <div>
+                <b>Mã đề xuất:</b>{" "}
+                {directOnStationRow?.ma_de_xuat ||
+                  `#${directOnStationModal.id}`}
+              </div>
+              <div>
+                <b>Trạng thái hiện tại:</b>{" "}
+                {statusOptions.find(
+                  (status) => status.value === directOnStationRow?.status,
+                )?.label ||
+                  directOnStationRow?.status ||
+                  "—"}
+              </div>
+            </div>
+            <div className="form-control mt-3">
+              <label className="label">
+                <span className="label-text">Lý do chuyển trực tiếp *</span>
+              </label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={3}
+                value={directOnStationModal.reason}
+                onChange={(event) =>
+                  setDirectOnStationModal((prev) => ({
+                    ...prev,
+                    reason: event.target.value,
+                  }))
+                }
+                placeholder="Nhập lý do bỏ qua luồng đề xuất..."
+                disabled={directOnStationModal.saving}
+              />
+            </div>
+            <label className="label cursor-pointer gap-3 mt-2 justify-start">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm checkbox-warning"
+                checked={directOnStationModal.ack}
+                onChange={(event) =>
+                  setDirectOnStationModal((prev) => ({
+                    ...prev,
+                    ack: event.target.checked,
+                  }))
+                }
+                disabled={directOnStationModal.saving}
+              />
+              <span className="label-text text-xs">
+                Tôi xác nhận đây là thao tác bỏ qua quy trình đề xuất và đã kiểm
+                tra thông tin.
+              </span>
+            </label>
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setDirectOnStationModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    ack: false,
+                    saving: false,
+                  })
+                }
+                disabled={directOnStationModal.saving}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning btn-sm gap-1"
+                onClick={handleDirectOnStation}
+                disabled={
+                  directOnStationModal.reason.trim().length < 3 ||
+                  !directOnStationModal.ack ||
+                  directOnStationModal.saving
+                }
+              >
+                {directOnStationModal.saving ? (
+                  <span className="loading loading-spinner loading-xs" />
+                ) : (
+                  <MapPinned size={14} />
+                )}
+                {directOnStationModal.saving
+                  ? "Đang chuyển..."
+                  : "Xác nhận chuyển ON trạm"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
+      {rejectModal.open && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Từ chối đề xuất</h3>
+              <button
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() =>
+                  setRejectModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Lý do từ chối *</span>
+              </label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={4}
+                value={rejectModal.reason}
+                onChange={(e) =>
+                  setRejectModal((prev) => ({
+                    ...prev,
+                    reason: e.target.value,
+                  }))
+                }
+                placeholder="Nhập lý do và nội dung cần chỉnh sửa..."
+              />
+            </div>
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setRejectModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                Hủy
+              </button>
+              <button
+                className="btn btn-error btn-sm"
+                disabled={!rejectModal.reason.trim() || rejectModal.saving}
+                onClick={handleConfirmReject}
+              >
+                {rejectModal.saving ? "Đang gửi..." : "Từ chối & thông báo"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
+      {showCreateForm && (
+        <div className="modal-overlay">
+          <div className="legacy-modal legacy-modal-lg popup-detail">
+            <div className="popup-header">
+              <h2>Tạo đề xuất mới</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-primary gap-1"
+                  onClick={openPreview}
+                  disabled={!validPreviewCoords}
+                  title={
+                    validPreviewCoords
+                      ? "Xem trạm lân cận"
+                      : "Nhập tọa độ hợp lệ để xem trước"
+                  }
+                >
+                  <MapPinned size={14} />
+                  Preview lân cận
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm btn-circle"
+                  onClick={closeCreateForm}
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="popup-body">
+              <div className="border border-base-300 rounded-lg p-3 mb-4">
+                <label className="text-sm font-medium block mb-2">
+                  Lấy tọa độ từ link Google Maps
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Dán link Google Maps vào đây..."
+                    className="input input-bordered input-sm flex-1"
+                    value={mapLink}
+                    onChange={(e) => {
+                      setMapLink(e.target.value);
+                      if (linkError) setLinkError("");
+                    }}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && handleGoogleMapLink()
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm gap-1"
+                    onClick={handleGoogleMapLink}
+                    disabled={resolvingLink || !mapLink.trim()}
+                  >
+                    <Link2 size={14} />
+                    {resolvingLink ? "..." : "Lấy tọa độ"}
+                  </button>
+                </div>
+                {linkError && (
+                  <div className="alert alert-error text-sm mt-2">
+                    {linkError}
+                  </div>
+                )}
+                {mapCoords.latitude && mapCoords.longitude && (
+                  <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+                    <MapPin size={14} />
+                    Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
+                  </div>
+                )}
+              </div>
+              <DynamicForm
+                entity="station_proposals"
+                purpose="create"
+                formId={createFormId}
+                onSubmit={handleCreateSubmit}
+                initialData={createInitialData}
+                onValuesChange={setFormCoords}
+                hideActions
+                htmlId="admin-proposal-create-form"
+              />
+            </div>
+            <div className="popup-footer">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeCreateForm}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                form="admin-proposal-create-form"
+                className="btn btn-primary"
+              >
+                Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPreview && previewSnapshot && (
+        <LocationMapModal
+          open
+          lat={previewSnapshot.latitude}
+          lng={previewSnapshot.longitude}
+          title="Preview vị trí đề xuất"
+          statusFilter={PREVIEW_STATUS_FILTER}
+          onClose={() => {
+            setShowPreview(false);
+            setPreviewSnapshot(null);
+          }}
+          onMarkerClick={(item, type) => {
+            if (type !== "proposal") return;
+            setShowPreview(false);
+            setPreviewSnapshot(null);
+            setPopup({
+              open: true,
+              record: null,
+              mode: "view",
+              recordId: item.id,
+            });
+          }}
+        />
+      )}
+
+      {popup.open && (
+        <RecordDetailPopup
+          entity="station_proposals"
+          record={popup.record}
+          recordId={
+            popup.record
+              ? undefined
+              : popup.recordId ||
+                parseInt(location.pathname.match(/=(\d+)/)?.[1])
+          }
+          viewId={proposalsViewId}
+          mode={popup.mode}
+          allowEdit={isAdmin || isSales || user?.role === "NPP"}
+          canEditRecord={(rec) => rec.permissions?.canEdit === true}
+          onClose={() => {
+            setPopup({
+              open: false,
+              record: null,
+              mode: "view",
+              recordId: null,
+            });
+            navigate(
+              activeTab === "all"
+                ? "/admin/proposals"
+                : `/admin/proposals?tab=${activeTab}`,
+            );
+          }}
+          onSaved={() => loadProposals(pagination.page)}
+          onSwitchMode={(newMode) => {
+            const id = popup.recordId || location.pathname.match(/=(\d+)/)?.[1];
+            if (id)
+              navigate(
+                `/admin/proposals/${newMode}=${id}${activeTab === "all" ? "" : `?tab=${activeTab}`}`,
+                { replace: true },
+              );
+          }}
+        />
+      )}
+
+      {logProposalId && (
+        <ProposalActivityPopup
+          proposalId={logProposalId}
+          onClose={() => setLogProposalId(null)}
+        />
+      )}
+
+      {flowInfoOpen && (
+        <ProposalFlowInfo onClose={() => setFlowInfoOpen(false)} />
+      )}
+
+      {reopenModal.open && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-warning">
+                Mở lại đề xuất đã hủy
+              </h3>
+              <button
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() =>
+                  setReopenModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-warning py-2 px-3 text-xs mb-3">
+              <AlertTriangle size={14} />
+              <span>
+                Chỉ <b>SUPER_ADMIN</b> dùng trong trường hợp <b>khẩn cấp</b>.
+                Hành động được <b>ghi log</b> (nguồn admin_override).
+              </span>
+            </div>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Lý do mở lại *</span>
+              </label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={4}
+                value={reopenModal.reason}
+                onChange={(e) =>
+                  setReopenModal((prev) => ({
+                    ...prev,
+                    reason: e.target.value,
+                  }))
+                }
+                placeholder="Nhập lý do mở lại đề xuất..."
+              />
+            </div>
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setReopenModal({
+                    open: false,
+                    id: null,
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                Hủy bỏ
+              </button>
+              <button
+                className="btn btn-warning btn-sm"
+                disabled={!reopenModal.reason.trim() || reopenModal.saving}
+                onClick={handleConfirmReopen}
+              >
+                {reopenModal.saving ? "Đang mở..." : "Xác nhận mở lại"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
+      {pauseModal.open && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3
+                className={`font-bold text-lg ${pauseModal.action === "pause" ? "text-warning" : "text-success"}`}
+              >
+                {pauseModal.action === "pause"
+                  ? "Tạm dừng đề xuất"
+                  : "Tiếp tục đề xuất"}
+              </h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                disabled={pauseModal.saving}
+                onClick={() =>
+                  setPauseModal({
+                    open: false,
+                    id: null,
+                    action: "pause",
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {pauseModal.action === "pause" ? (
+              <>
+                <p className="text-sm text-base-content/70 mb-3">
+                  Đề xuất sẽ dừng tại trạng thái hiện tại. Countdown được đóng
+                  băng và tiếp tục khi đề xuất được mở lại.
+                </p>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Lý do tạm dừng *</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered"
+                    rows={4}
+                    value={pauseModal.reason}
+                    onChange={(e) =>
+                      setPauseModal((prev) => ({
+                        ...prev,
+                        reason: e.target.value,
+                      }))
+                    }
+                    placeholder="Nhập lý do tạm dừng đề xuất..."
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-base-content/70">
+                Đề xuất sẽ tiếp tục từ trạng thái <b>{resumeStatusLabel}</b>.
+                Countdown sẽ tiếp tục từ thời gian còn lại.
+              </p>
+            )}
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={pauseModal.saving}
+                onClick={() =>
+                  setPauseModal({
+                    open: false,
+                    id: null,
+                    action: "pause",
+                    reason: "",
+                    saving: false,
+                  })
+                }
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${pauseModal.action === "pause" ? "btn-warning" : "btn-success"}`}
+                disabled={
+                  pauseModal.saving ||
+                  (pauseModal.action === "pause" && !pauseModal.reason.trim())
+                }
+                onClick={handleConfirmPauseAction}
+              >
+                {pauseModal.saving
+                  ? "Đang xử lý..."
+                  : pauseModal.action === "pause"
+                    ? "Xác nhận tạm dừng"
+                    : "Tiếp tục đề xuất"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
+      {rowMenu &&
+        menuRow &&
+        createPortal(
+          <>
+            <div
+              data-testid="rowmenu-backdrop"
+              className="fixed inset-0 z-[60]"
+              onClick={() => setRowMenu(null)}
+            />
+            <div
+              className="fixed z-[61] bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-56 max-h-80 overflow-y-auto"
+              style={{ top: rowMenu.top, left: rowMenu.left }}
+            >
+              <div className="px-3 py-1.5 text-xs font-bold text-base-content/50 uppercase">
+                Đề xuất #{menuRow.id}
+              </div>
+              {renderRowMenuItems(menuRow)}
+            </div>
+          </>,
+          document.body,
+        )}
+
+      {stationModal.open && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">
+                Tạo trạm từ đề xuất #{stationModal.id}
+              </h3>
+              <button
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() =>
+                  setStationModal({
+                    open: false,
+                    id: null,
+                    name: "",
+                    saving: false,
+                  })
+                }
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-base-content/70 mb-3">
+              Thông tin tự sinh từ đề xuất (chỉ tên trạm được sửa):
+            </p>
+            <div className="form-control mb-3">
+              <label className="label">
+                <span className="label-text">Tên trạm *</span>
+              </label>
+              <input
+                type="text"
+                className="input input-bordered input-sm"
+                value={stationModal.name}
+                onChange={(e) =>
+                  setStationModal((prev) => ({ ...prev, name: e.target.value }))
+                }
+              />
+            </div>
+            <div className="border border-base-300 rounded-lg p-3">
+              {stationPreviewRows(stationRow).map((r) => (
+                <div
+                  key={r.label}
+                  className="flex justify-between gap-2 text-sm py-0.5"
+                >
+                  <span className="text-base-content/70">{r.label}</span>
+                  <span className="font-medium text-right">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setStationModal({
+                    open: false,
+                    id: null,
+                    name: "",
+                    saving: false,
+                  })
+                }
+              >
+                Hủy bỏ
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!stationModal.name.trim() || stationModal.saving}
+                onClick={handleConfirmStation}
+              >
+                {stationModal.saving ? "Đang tạo..." : "Xác nhận tạo trạm"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
+      {activeTab === "all" && !dupMode && (
+        <>
+          {user?.role !== "NPP" && selectedIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
+              <span className="text-sm font-medium">
+                Đã chọn: {selectedIds.length} đề xuất
+              </span>
+              <button
+                className="btn btn-ghost btn-sm gap-1"
+                onClick={() => setLogProposalId(selectedIds[0])}
+                title="Xem lịch sử hoạt động"
+              >
+                <History size={14} /> Xem log
+              </button>
+              <button
+                className="btn btn-error btn-sm gap-1"
+                onClick={() => setConfirmBulkDelete(true)}
+                disabled={batchLoading}
+              >
+                <Trash2 size={14} /> Xóa ({selectedIds.length})
+              </button>
+              <button
+                className="btn btn-ghost btn-sm gap-1"
+                onClick={() => setSelectedIds([])}
+              >
+                <X size={14} /> Bỏ chọn
+              </button>
+            </div>
+          )}
+          <DynamicTable
+            ref={tableRef}
+            entity="station_proposals"
+            viewId={proposalsViewId}
+            columnLabelOverrides={{
+              status: "Trạng thái Quy trình",
+              manager_name: "Người phụ trách",
+              vung_mien: "Miền đề xuất",
+              province: "Tỉnh/Thành phố",
+              address: "Địa chỉ chi tiết",
+            }}
+            additionalColumns={[
+              ...PROPOSAL_CONTEXT_COLUMNS,
+              {
+                key: "nguoi_phu_trach",
+                field_key: "nguoi_phu_trach",
+                label: "Người phụ trách",
+                width: 180,
+                type: "user",
+                visible: true,
+                sortable: false,
+                filterable: false,
+              },
+              PROPOSAL_SCALE_COLUMN,
+            ]}
+            columnsAfter={{
+              anchorKey: "nguoi_de_xuat",
+              keys: ["owner_department", "nguoi_phu_trach", "vung_mien"],
+            }}
+            hiddenColumnKeys={[
+              ...PROPOSAL_MONEY_COLUMN_KEYS,
+              ...PROPOSAL_HIDDEN_COLUMN_KEYS,
+            ]}
+            hiddenColumnLabels={[
+              "ID 1Office",
+              ...PROPOSAL_HIDDEN_COLUMN_LABELS.filter(
+                (label) => label !== "Người phụ trách",
+              ),
+            ]}
+            getRowStyle={(row, now) =>
+              getProposalDeadlineRowStyle(row, countdownFlags, now)
+            }
+            density="compact"
+            data={proposals}
+            frozenColumns={3}
+            actions={renderActions}
+            cellRenderers={{
+              ma_de_xuat: (row, value) => (
+                <ProposalCodeLink id={row.id} code={value} />
+              ),
+              nguoi_de_xuat: (row, value) =>
+                row.user_id ? (
+                  <ProposalPersonLink
+                    id={row.user_id}
+                    name={row.user_name || value}
+                  />
+                ) : (
+                  <span>{value || "Khách"}</span>
+                ),
+              manager_name: (row) => <ProposalManagerCell row={row} />,
+              vung_mien: (row, value) => (
+                <ProposalRegionCell value={value || row.vung_mien} />
+              ),
+              province: (row, value) => (
+                <ProposalProvinceCell value={value || row.province} />
+              ),
+              address: (row, value) => (
+                <ProposalAddressCell row={row} value={value || row.address} />
+              ),
+              scale: (row) => formatProposalScale(row),
+              review_level: (row) => (
+                <span className="badge badge-ghost badge-sm">
+                  {getReviewLevelLabel(row.review_level)}
+                </span>
+              ),
+            }}
+            startIndex={(pagination.page - 1) * pagination.limit}
+            selectedIds={user?.role === "NPP" ? undefined : selectedIds}
+            onSelectionChange={
+              user?.role === "NPP" ? undefined : setSelectedIds
+            }
+            onColumnFiltersChange={handleColumnFiltersChange}
+            cellFooter={(row, colKey) =>
+              colKey === "status" ? (
+                <DeadlineCountdown
+                  deadline={row.supplement_deadline_at}
+                  transitionDeadline={row.transition_deadline_at}
+                  status={row.status}
+                  completedAt={row.info_completed_at}
+                  compact
+                />
+              ) : null
+            }
+          />
+
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            total={pagination.total}
+            onPageChange={loadProposals}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
+          />
+        </>
+      )}
+
+      {showImport && (
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Import Đề xuất từ Excel</h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() => setShowImport(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {importStep === "upload" && (
+              <div className="space-y-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Chọn file Excel (.xlsx)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="file-input file-input-bordered w-full"
+                    onChange={handleFileSelect}
+                  />
+                </div>
+                {importFile && (
+                  <div className="alert alert-info">
+                    <span>
+                      File: <strong>{importFile.name}</strong> (
+                      {(importFile.size / 1024).toFixed(1)} KB)
+                    </span>
+                  </div>
+                )}
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Bộ cột</span>
+                  </label>
+                  <select
+                    className="select select-bordered w-full"
+                    value={importViewId}
+                    onChange={(e) => setImportViewId(e.target.value)}
+                  >
+                    <option value="">
+                      Tự nhận diện theo file (khuyến nghị)
+                    </option>
+                    <option value="by_model">
+                      Theo mô hình đầu tư (HDSD + NQ/TDT/LK/NQ_LK)
+                    </option>
+                    {excelViews.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {usageLabel(v.usage)} – {v.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="divider text-xs opacity-60 my-1">
+                  Tùy chọn kiểm tra
+                </div>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckDuplicate}
+                    onChange={(e) => setImportCheckDuplicate(e.target.checked)}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ với hệ thống
+                    <span className="block text-xs opacity-70">
+                      So sánh với trạm/đề xuất đã có trên hệ thống (bán kính
+                      200m)
+                    </span>
+                  </span>
+                </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckIntraFile}
+                    onChange={(e) => setImportCheckIntraFile(e.target.checked)}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ nội bộ file Excel
+                    <span className="block text-xs opacity-70">
+                      Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính
+                      200m)
+                    </span>
+                  </span>
+                </label>
+                <div className="modal-action">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => setShowImport(false)}
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handlePreviewImport()}
+                    disabled={!importFile || importLoading}
+                  >
+                    {importLoading ? (
+                      <span className="loading loading-spinner loading-xs"></span>
+                    ) : null}
+                    {importLoading ? "Đang đọc..." : "Xem trước"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {importStep === "preview" && importPreview && (
+              <div className="space-y-4">
+                <div className="stats shadow w-full">
+                  <div className="stat">
+                    <div className="stat-title">Tổng dòng</div>
+                    <div className="stat-value text-lg">
+                      {importPreview.totalRows}
+                    </div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title text-success">Hợp lệ</div>
+                    <div className="stat-value text-lg text-success">
+                      {importPreview.validRows}
+                    </div>
+                  </div>
+                  {importPreview.errorRows > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-error">Lỗi</div>
+                      <div className="stat-value text-lg text-error">
+                        {importPreview.errorRows}
+                      </div>
+                    </div>
+                  )}
+                  {(importPreview.warningRows || 0) > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-warning">
+                        Cảnh báo trùng
+                      </div>
+                      <div className="stat-value text-lg text-warning">
+                        {importPreview.warningRows}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {importPreview.detection && (
+                  <div
+                    className={`alert ${!importPreview.detection.confident ? "alert-error" : (importPreview.detection.unmatchedFileColumns || []).length > 0 || (importPreview.detection.omittedFields || []).length > 0 ? "alert-warning" : "alert-success"}`}
+                  >
+                    <div className="w-full">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {importPreview.detection.confident ? (
+                          <CheckCircle2 size={16} />
+                        ) : (
+                          <AlertTriangle size={16} />
+                        )}
+                        <span className="font-medium">
+                          {importPreview.detection.source === "override"
+                            ? "Bộ cột đã chọn:"
+                            : "Nhận diện tự động:"}
+                        </span>
+                        <span
+                          className={`badge badge-sm ${usageBadge(importPreview.detection.detectedUsage)}`}
+                        >
+                          {usageLabel(importPreview.detection.detectedUsage)}
+                        </span>
+                        <span>{importPreview.detection.detectedViewName}</span>
+                        <span className="text-xs opacity-70">
+                          (khớp{" "}
+                          {Math.round(
+                            (importPreview.detection.score || 0) * 100,
+                          )}
+                          %)
+                        </span>
+                      </div>
+
+                      {!importPreview.detection.confident && (
+                        <p className="text-sm mt-1">
+                          Không nhận diện được bộ cột — chọn thủ công bên dưới.
+                        </p>
+                      )}
+                      {importPreview.detection.omittedFields &&
+                        importPreview.detection.omittedFields.length > 0 && (
+                          <p className="text-sm mt-1">
+                            File thiếu{" "}
+                            {importPreview.detection.omittedFields.length}{" "}
+                            trường — sẽ để trống:{" "}
+                            {importPreview.detection.omittedFields
+                              .slice(0, 5)
+                              .map((f) => f.label)
+                              .join(", ")}
+                            {importPreview.detection.omittedFields.length > 5
+                              ? "…"
+                              : ""}
+                            {importPreview.detection.omittedFields.filter(
+                              (f) => f.required,
+                            ).length > 0 && (
+                              <>
+                                {" "}
+                                (
+                                <b>
+                                  {
+                                    importPreview.detection.omittedFields.filter(
+                                      (f) => f.required,
+                                    ).length
+                                  }{" "}
+                                  trường bắt buộc
+                                </b>
+                                :{" "}
+                                {importPreview.detection.omittedFields
+                                  .filter((f) => f.required)
+                                  .slice(0, 3)
+                                  .map((f) => f.label)
+                                  .join(", ")}
+                                )
+                              </>
+                            )}
+                            . Bổ sung sau bằng cách sửa đề xuất.
+                          </p>
+                        )}
+                      {importPreview.detection.unmatchedFileColumns &&
+                        importPreview.detection.unmatchedFileColumns.length >
+                          0 && (
+                          <p className="text-sm mt-1">
+                            {
+                              importPreview.detection.unmatchedFileColumns
+                                .length
+                            }{" "}
+                            cột trong file không thuộc bộ đã chọn — sẽ bị bỏ
+                            qua:{" "}
+                            {importPreview.detection.unmatchedFileColumns
+                              .slice(0, 5)
+                              .join(", ")}
+                            {importPreview.detection.unmatchedFileColumns
+                              .length > 5
+                              ? "…"
+                              : ""}
+                          </p>
+                        )}
+
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs">Đổi bộ cột:</span>
+                        <select
+                          className="select select-bordered select-xs"
+                          value={importViewId}
+                          onChange={(e) =>
+                            handleChangeImportView(e.target.value)
+                          }
+                          disabled={
+                            importLoading ||
+                            importPreview.detection.detectedUsage === "by_model"
+                          }
+                          title={
+                            importPreview.detection.detectedUsage === "by_model"
+                              ? "File theo mô hình dùng bộ cột cố định theo tên sheet"
+                              : undefined
+                          }
+                        >
+                          <option value="">Tự nhận diện theo file</option>
+                          <option value="by_model">Theo mô hình đầu tư</option>
+                          {excelViews.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {usageLabel(v.usage)} – {v.name}
+                            </option>
+                          ))}
+                        </select>
+                        {importLoading && (
+                          <span className="loading loading-spinner loading-xs"></span>
+                        )}
+                      </div>
+                      <ImportSheetsSummary sheets={importPreview.sheets} />
+                    </div>
+                  </div>
+                )}
+
+                <ImportErrorList
+                  errors={importPreview.errors}
+                  failures={importFailures}
+                  warnings={importPreview.warnings}
+                />
+                <div className="divider text-xs opacity-60 my-1">
+                  Tùy chọn kiểm tra
+                </div>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckDuplicate}
+                    onChange={(e) => {
+                      setImportCheckDuplicate(e.target.checked);
+                    }}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ với hệ thống
+                    <span className="block text-xs opacity-70">
+                      So sánh với trạm/đề xuất đã có trên hệ thống (bán kính
+                      200m) — chỉ cảnh báo, vẫn cho import
+                    </span>
+                  </span>
+                </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckIntraFile}
+                    onChange={(e) => {
+                      setImportCheckIntraFile(e.target.checked);
+                    }}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ nội bộ file Excel
+                    <span className="block text-xs opacity-70">
+                      Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính
+                      200m) — chỉ cảnh báo, vẫn cho import
+                    </span>
+                  </span>
+                </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary toggle-sm"
+                    checked={importGeocode}
+                    onChange={(e) => setImportGeocode(e.target.checked)}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Tự suy Địa chỉ / Xã phường từ tọa độ (reverse geocode)
+                    <span className="block text-xs opacity-70">
+                      Tắt sẽ import nhanh hơn nhiều (bỏ ~1 giây/dòng) — nên tắt
+                      khi file &gt;100 dòng trên VPS chậm
+                    </span>
+                  </span>
+                </label>
+                {(importPreview.validRows || 0) > 100 &&
+                  (importCheckDuplicate || importGeocode) && (
+                    <div className="alert alert-warning text-sm">
+                      <span>
+                        File {importPreview.validRows} dòng + đang bật check
+                        trùng/geocode nên import lâu, dễ mất kết nối trên VPS
+                        chậm. Nên tắt bớt tùy chọn trên hoặc chia file &lt;200
+                        dòng.
+                      </span>
+                    </div>
+                  )}
+                {importLoading && importProgress && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Đang import...</span>
+                      <span>
+                        {importProgress.done}/{importProgress.total} dòng
+                      </span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={importProgress.done}
+                      max={Math.max(importProgress.total, 1)}
+                    ></progress>
+                  </div>
+                )}
+                {importResult && (
+                  <div
+                    className={`alert ${importResult.status === "done" ? "alert-success" : importResult.status === "partial" ? "alert-warning" : importResult.status === "cancelled" ? "alert-warning" : "alert-error"} text-sm`}
+                  >
+                    <span>
+                      {importResult.status === "done" &&
+                        `Import thành công: ${importResult.imported} bản ghi.`}
+                      {importResult.status === "partial" &&
+                        `Import một phần: ${importResult.imported}/${importResult.total} thành công, ${importResult.failed} lỗi.`}
+                      {importResult.status === "cancelled" &&
+                        `Đã hủy import: ${importResult.imported} đã tạo, ${importResult.failed} lỗi, ${importResult.pending} chưa xử lý.`}
+                      {importResult.status === "failed" &&
+                        `Import thất bại${importResult.error ? `: ${importResult.error}` : "."}`}{" "}
+                      Chi tiết trong tab Excel của Audit Log.
+                    </span>
+                  </div>
+                )}
+                <div className="modal-action">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => setImportStep("upload")}
+                  >
+                    Quay lại
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setShowImport(false);
+                      setImportResult(null);
+                    }}
+                  >
+                    Hủy
+                  </button>
+                  {importResult &&
+                    ["partial", "cancelled", "failed"].includes(
+                      importResult.status,
+                    ) && (
+                      <button
+                        className="btn btn-info"
+                        onClick={() => {
+                          setShowImport(false);
+                          setImportResult(null);
+                          navigate("/admin/audit-log");
+                        }}
+                      >
+                        Xem trong tab Excel
+                      </button>
+                    )}
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleConfirmImport}
+                    disabled={importPreview.rows.length === 0 || importLoading}
+                  >
+                    {importLoading ? (
+                      <span className="loading loading-spinner loading-xs"></span>
+                    ) : null}
+                    {importLoading
+                      ? "Đang import..."
+                      : `Import ${importPreview.validRows} đề xuất`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="modal-backdrop" />
+        </dialog>
+      )}
+    </div>
+  );
+};
+
+const AdminProposalsWithNumberedStatuses = () => (
+  <ProposalStatusContext.Provider value={true}>
+    <AdminProposalsPage />
+  </ProposalStatusContext.Provider>
+);
+
+export default AdminProposalsWithNumberedStatuses;

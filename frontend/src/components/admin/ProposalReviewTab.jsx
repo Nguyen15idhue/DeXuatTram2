@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { proposalRequestService, proposalReviewService } from "../../services/api";
 import useFieldOptions from "../../hooks/useFieldOptions";
 import useMediaQuery from "../../hooks/useMediaQuery";
+import { getLatestReviewReason } from "../../utils/proposalReview";
 import DynamicTable from "../dynamic/DynamicTable";
 import Pagination from "../Pagination";
 import ReviewActionDialog from "./ReviewActionDialog";
@@ -181,6 +182,9 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
     error: "",
     saving: false,
   });
+  const actionRequestId = useRef(0);
+
+  useEffect(() => () => { actionRequestId.current += 1; }, []);
 
   const loadItems = useCallback(
     async (
@@ -274,11 +278,34 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
 
   const activeFilterCount = Object.values(appliedFilters).filter(Boolean).length;
 
-  const openAction = (row, type) => {
-    setActionDialog({ open: true, type, row, error: "", saving: false });
+  const openAction = async (row, type) => {
+    const requestId = ++actionRequestId.current;
+    setActionDialog({ open: true, type, row, error: "", saving: false,
+      initialReason: "", loadingReason: type === "toTgd" });
+    if (type !== "toTgd") return;
+    try {
+      const response = await proposalReviewService.getDetail(row.id, token);
+      if (!response?.success || !response.data) {
+        throw new Error(response?.message || "Không có dữ liệu chi tiết đề xuất");
+      }
+      if (requestId !== actionRequestId.current) return;
+      setActionDialog((prev) => ({
+        ...prev,
+        loadingReason: false,
+        initialReason: getLatestReviewReason(response?.data, "RE_GRADE", "review_regrade_requested"),
+      }));
+    } catch (loadError) {
+      if (requestId !== actionRequestId.current) return;
+      setActionDialog((prev) => ({
+        ...prev,
+        loadingReason: false,
+        error: `Không tải được lý do yêu cầu chấm lại: ${loadError?.message || "Lỗi server"}. Vui lòng nhập lý do thủ công.`,
+      }));
+    }
   };
 
   const closeAction = () => {
+    actionRequestId.current += 1;
     setActionDialog({
       open: false,
       type: null,
@@ -517,6 +544,8 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
           ACTION_CONFIG[actionDialog.type]?.reasonPlaceholder || "Nhập lý do..."
         }
         showDepartmentSelection={actionDialog.type === "regrade"}
+        initialReason={actionDialog.initialReason || ""}
+        loadingReason={actionDialog.loadingReason || false}
         allowQH={actionDialog.row?.quy_hoach_score !== null && actionDialog.row?.quy_hoach_score !== undefined}
         allowPL={actionDialog.row?.phap_ly_score !== null && actionDialog.row?.phap_ly_score !== undefined}
         requireReason

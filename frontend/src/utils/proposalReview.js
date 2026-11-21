@@ -91,3 +91,19 @@ export const getReviewLevelLabel = (level) => {
   if (!value) return '-';
   return REVIEW_LEVEL_LABELS[value] || `Mức ${value}`;
 };
+
+export const getLatestReviewReason = (detail, type, action) => {
+  const request = [...(detail?.requests || [])].reverse().find((item) =>
+    item.request_type === type
+    && (type !== 'RE_GRADE' || item.current_status === 'RE_GRADING')
+    && item.description?.trim()
+  );
+  const activity = [...(detail?.progress?.activity || [])].reverse().find((item) =>
+    item.action === action && item.reject_reason?.trim()
+  );
+  if (!request) return activity?.reject_reason || '';
+  if (activity && Date.parse(activity.created_at) > Date.parse(request.created_at)) {
+    return activity.reject_reason;
+  }
+  return request.description;
+};
