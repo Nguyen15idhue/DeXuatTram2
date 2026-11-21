@@ -1552,6 +1552,9 @@ exports.importPreviewDynamic = async (req, res) => {
       const previewOptionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
       for (const vr of validRows) {
         const rowErrors = [];
+        if (vr.fixedData.sales_outcome === 'SUCCESS') {
+          rowErrors.push('Khách hàng chưa có đề xuất. Vui lòng lưu và tạo đề xuất trong hệ thống.');
+        }
         const phoneDigits = String(vr.fixedData.phone || '').replace(/[^\d]/g, '');
         if (!/^\d{10}$/.test(phoneDigits)) rowErrors.push('Số điện thoại phải có đúng 10 chữ số');
         const province = String(vr.fixedData.province || '').trim();

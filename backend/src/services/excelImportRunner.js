@@ -203,6 +203,9 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
         const leadService = require('./leadService');
         const crypto = require('crypto');
         const fullName = String(fixedData.full_name || '').trim();
+        if (fixedData.sales_outcome === 'SUCCESS') {
+          throw new Error('Khách hàng chưa có đề xuất. Vui lòng lưu và tạo đề xuất trong hệ thống.');
+        }
         if (!fullName) throw new Error('Họ tên là bắt buộc');
         const phone = String(fixedData.phone || '').replace(/[^\d]/g, '');
         if (!/^\d{10}$/.test(phone)) throw new Error('Số điện thoại phải có đúng 10 chữ số');

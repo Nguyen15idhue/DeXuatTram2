@@ -17,7 +17,8 @@ const leadFields = [
 ];
 const proposalFields = [
   { key: 'owner_name', label: 'Họ và tên', type: 'text' },
-  { key: 'owner_phone', label: 'Số điện thoại', type: 'phone' }
+  { key: 'owner_phone', label: 'Số điện thoại', type: 'phone' },
+  { key: 'description', label: 'Mô tả', type: 'text' }
 ];
 
 function formConfig(id, definitions) {
@@ -31,7 +32,7 @@ function formConfig(id, definitions) {
 async function openLead(page, { canConsult = true, mode = 'edit', notes = {}, classifications = [], authUser = {} } = {}) {
   const user = { id: 501, role: 'SUPER_ADMIN', full_name: 'Quản trị thử nghiệm', ...authUser };
   let lead = {
-    id: 17, lead_code: 'LD-000017', full_name: 'Khách mẫu', phone: '0900000000',
+    id: 17, lead_code: 'LD-000017', full_name: 'Khách mẫu', phone: '0900000000', has_proposal: false, edit_version: 'fixture-version',
     customer_classification: null, sales_outcome: null, consultation_status: 'CONSULTING',
     tvbh_history: [{ GDKV_phan_loai_KH: '' }], custom_data: {},
     permissions: { can_view: true, can_consult: canConsult, can_assign: true, can_write_general: true },
@@ -71,6 +72,13 @@ async function openLead(page, { canConsult = true, mode = 'edit', notes = {}, cl
     }
     if (pathname === '/api/admin/leads/17/create-proposal') {
       state.proposals.push(req.postDataJSON());
+      data = { id: 29 };
+    }
+    if (pathname === '/api/admin/leads/17/save-and-create-proposal') {
+      const request = req.postDataJSON();
+      state.proposals.push(request);
+      if (state.failSave) return route.fulfill({ status: 422, json: { success: false, message: 'Không lưu được hồ sơ mẫu' } });
+      lead = { ...lead, ...request.lead, has_proposal: true, consultation_status: 'SUCCESS' };
       data = { id: 29 };
     }
     await route.fulfill({ json: { success: true, data, pagination: { total: 1, totalPages: 1, page: 1 } } });
@@ -123,7 +131,7 @@ async function choose(page, index, label) {
   await field.locator('.dynamic-select-dropdown').getByText(label, { exact: true }).click();
 }
 
-test('switches CTA, keeps the draft on failure, and prefills from the saved Lead without creating on open', async ({ page }) => {
+test('keeps both drafts until Lead and proposal are saved together', async ({ page }) => {
   const state = await openLead(page);
   const normalSave = page.getByRole('button', { name: 'Lưu', exact: true });
   await expect(normalSave).toBeVisible();
@@ -138,24 +146,30 @@ test('switches CTA, keeps the draft on failure, and prefills from the saved Lead
   const inputs = page.locator('#lead-edit-form input');
   await inputs.nth(0).fill('Khách vừa cập nhật');
   await inputs.nth(1).fill('0912345678');
-  state.failSave = true;
   await saveAndCreate.click();
   const modal = page.locator('dialog').filter({ hasText: 'Tạo nhanh đề xuất từ Lead #17' });
-  await expect(page.getByText('Không lưu được hồ sơ mẫu').first()).toBeVisible();
-  await expect(modal).toHaveCount(0);
-  await expect(inputs.nth(0)).toHaveValue('Khách vừa cập nhật');
-
-  state.failSave = false;
-  await saveAndCreate.click();
   await expect(modal).toBeVisible();
   await expect(modal.locator('form input').nth(0)).toHaveValue('Khách vừa cập nhật');
   await expect(modal.locator('form input').nth(1)).toHaveValue('0912345678');
-  expect(state.updates).toHaveLength(2);
-  expect(state.updates[1].sales_outcome).toBe('SUCCESS');
+  await modal.locator('form input').nth(2).fill('Nội dung nháp');
+  expect(state.updates).toHaveLength(0);
   await modal.getByRole('button', { name: 'Hủy' }).click();
-  await expect(modal).toHaveCount(0);
+  await expect(modal).toBeHidden();
+  await expect(inputs.nth(0)).toHaveValue('Khách vừa cập nhật');
   expect(state.proposals).toHaveLength(0);
-  await expect(page).toHaveURL(/\/view=17(?:\?|$)/);
+  await saveAndCreate.click();
+  await expect(modal.locator('form input').nth(2)).toHaveValue('Nội dung nháp');
+  state.failSave = true;
+  await modal.locator('form button[type=submit]').click();
+  await expect(page.getByText('Không lưu được hồ sơ mẫu').first()).toBeVisible();
+  await expect(modal.locator('form input').nth(2)).toHaveValue('Nội dung nháp');
+  state.failSave = false;
+  await modal.locator('form input').nth(2).fill('Đã sửa nháp');
+  await modal.locator('form button[type=submit]').click();
+  await expect(page).toHaveURL(/\/admin\/proposals\/chi-tiet\/29/);
+  expect(state.updates).toHaveLength(0);
+  expect(state.proposals[1].lead.sales_outcome).toBe('SUCCESS');
+  expect(state.proposals[1].proposal.description).toBe('Đã sửa nháp');
 });
 
 test('shows draft classification and the priority explanations without changing the selection on hover', async ({ page }) => {
@@ -206,6 +220,29 @@ test('keeps the normal save action without consultation permission', async ({ pa
   await choose(page, 1, '1. Gửi vị trí đề xuất');
   await expect(page.getByRole('button', { name: 'Lưu', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Lưu và tạo đề xuất' })).toHaveCount(0);
+});
+
+test('allows an existing successful Lead with a proposal to save without another proposal', async ({ page }) => {
+  const state = await openLead(page, { notes: { sales_outcome: 'SUCCESS', consultation_status: 'SUCCESS', has_proposal: true } });
+  await expect(page.getByRole('button', { name: 'Lưu', exact: true })).toBeVisible();
+  await page.locator('#lead-edit-form input').first().fill('Tên đã cập nhật');
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(page).toHaveURL(/\/view=17(?:\?|$)/);
+  expect(state.proposals).toHaveLength(0);
+  expect(state.updates).toHaveLength(1);
+});
+
+test('confirms before discarding the Lead draft', async ({ page }) => {
+  await openLead(page);
+  const input = page.locator('#lead-edit-form input').first();
+  await input.fill('Chưa lưu');
+  await page.locator('.popup-detail').getByRole('button', { name: 'Đóng', exact: true }).last().click();
+  await expect(page.getByText('Bỏ dữ liệu chưa lưu?')).toBeVisible();
+  await page.getByRole('button', { name: 'Tiếp tục chỉnh sửa' }).click();
+  await expect(input).toHaveValue('Chưa lưu');
+  await page.locator('.popup-detail').getByRole('button', { name: 'Đóng', exact: true }).last().click();
+  await page.getByRole('button', { name: 'Bỏ nháp' }).click();
+  await expect(page).toHaveURL(/\/admin\/leads(?:\?|$)/);
 });
 
 test('shows complete multiline notes and history notes in the Lead detail', async ({ page }) => {

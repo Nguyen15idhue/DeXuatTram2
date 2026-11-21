@@ -344,6 +344,18 @@ export const leadService = {
   createProposal(id, data, token, idempotencyKey) {
     const body = idempotencyKey ? { ...data, idempotency_key: idempotencyKey } : data;
     return api.postWithAuth(`/admin/leads/${id}/create-proposal`, body, token);
+  },
+  saveAndCreateProposal(id, data, token, idempotencyKey) {
+    return runLeadTaskMutation(async () => {
+      const response = await fetch(`${API_URL}/admin/leads/${id}/save-and-create-proposal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ...data, idempotency_key: idempotencyKey })
+      });
+      handleUnauthorized(response);
+      const result = await parseJsonSafe(response);
+      return { ...result, httpStatus: response.status };
+    });
   }
 };
 
