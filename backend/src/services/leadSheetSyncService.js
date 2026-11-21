@@ -1,8 +1,9 @@
 const fs = require('node:fs');
 const pool = require('../utils/db');
 const { createSheetsClient } = require('./proposalSheetSyncService');
+const leadAccess = require('./leadAccessService');
 
-const TAB = 'QL_khach_hang';
+const DEFAULT_TAB = 'QL_khach_hang';
 const LOCK = 'lead_google_sheet_sync';
 const MANUAL_LOCK = 'lead_google_sheet_sync_manual';
 const HEADERS = [
@@ -21,19 +22,21 @@ const STATUS_LABELS = {
   WAITING_ALLOCATION: 'Chờ GĐTTKD phân bổ', WAITING_FIRST_CONTACT: 'Chờ GĐKV tư vấn lần đầu',
   CONSULTING: 'GĐKV đang tư vấn', SUCCESS: 'Đã tư vấn thành công', FAILED: 'Đã tư vấn thất bại'
 };
-const RANGE = `'${TAB}'`;
 const TIMEOUT = { timeout: 8000, retry: false };
 const fault = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode, safeMessage: message });
 const getConfig = () => {
   const spreadsheetId = process.env.PROPOSAL_GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
   const credentialsFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const enabled = process.env.LEAD_SHEET_SYNC_ENABLED === 'true';
+  const tabName = process.env.LEAD_GOOGLE_SHEETS_TAB_NAME === undefined
+    ? DEFAULT_TAB : process.env.LEAD_GOOGLE_SHEETS_TAB_NAME.trim();
   const message = !enabled ? 'Đồng bộ khách hàng đang tắt'
-    : process.env.PROPOSAL_GOOGLE_SHEETS_TAB_NAME?.trim().toLowerCase() === TAB.toLowerCase()
+    : !tabName ? 'Tên tab Google Sheet khách hàng chưa cấu hình'
+    : process.env.PROPOSAL_GOOGLE_SHEETS_TAB_NAME?.trim().toLowerCase() === tabName.toLowerCase()
       ? 'Tab khách hàng không được trùng tab Đề xuất'
       : !spreadsheetId || !credentialsFile || !fs.existsSync(credentialsFile)
         ? 'Thiếu cấu hình Google Sheets hoặc service account' : '';
-  return { enabled, configured: !message, message, spreadsheetId, credentialsFile };
+  return { enabled, configured: !message, message, spreadsheetId, credentialsFile, tabName };
 };
 const json = (value) => typeof value === 'string' ? JSON.parse(value) : value;
 const text = (value) => {
@@ -57,12 +60,13 @@ const displayDate = (value) => {
   const ms = localTime(value);
   return Number.isFinite(ms) ? dateFormat.format(ms).replace(',', '') : text(value);
 };
-const latestHistory = (data) => {
+const latestHistory = (data, include = () => true) => {
   const rows = json(data.tvbh_history) ?? [];
   if (!Array.isArray(rows)) throw fault('Bảng lịch sử khách hàng không đúng định dạng');
   let latest;
   let max = -Infinity;
   for (const row of rows) {
+    if (!include(row)) continue;
     const time = row?.thoi_gian;
     if (typeof time !== 'string'
       || !/^\d{4}-\d{2}-\d{2}[T ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(time)) continue;
@@ -128,18 +132,26 @@ function mapLeadToRow(lead, label = (key, value) => key === GDKV_CLASSIFICATION 
   const data = json(lead.custom_data) || {};
   const assignee = json(lead.assignee_data) || {};
   const latest = latestHistory(data);
+  const latestNote = latestHistory(data, row => text(row?.ghi_chu));
+  const isCurrentGdkv = lead.assigned_user_id && leadAccess.context({ custom_data: assignee }).isGdkv;
+  const assignmentTime = isCurrentGdkv
+    ? lead.assigned_at || (Number(lead.assignment_log_matches) === 1 ? lead.assignment_log_at : null)
+    : null;
+  const outcomeTime = ['SUCCESS', 'FAILED'].includes(lead.sales_outcome)
+    ? lead.sales_outcome_at || (lead.outcome_log_to === lead.sales_outcome ? lead.outcome_log_at : null)
+    : null;
   const row = [
     lead.lead_code, lead.full_name, lead.phone, lead.email, lead.address, lead.ward, lead.province,
     label('region', lead.region), label('source', lead.source), lead.note,
     label('stage', lead.stage), label('customer_classification', lead.customer_classification),
     STATUS_LABELS[lead.consultation_status] || lead.consultation_status, label('sales_outcome', lead.sales_outcome),
     displayDate(lead.created_at), displayDate(lead.updated_at), lead.assigned_user_id, lead.assignee_name,
-    assignee.chuc_vu, assignee.department, lead.assigned_department, displayDate(lead.assigned_at),
+    assignee.chuc_vu, assignee.department, lead.assigned_department, displayDate(assignmentTime),
     data.tvbh_note,
     label(GDKV_CLASSIFICATION, latest?.[GDKV_CLASSIFICATION]), displayDate(latest?.thoi_gian),
-    text(latest?.ghi_chu) ? 'Có ghi chú trong hồ sơ' : '',
-    displayDate(lead.first_consultation_created_at),
-    displayDate(lead.sales_outcome_at), formatHistory(data, label)
+    latestNote?.ghi_chu,
+    displayDate(lead.first_contact_at),
+    displayDate(outcomeTime), formatHistory(data, label)
   ].map(text);
   if (row.some(value => value.length > 50000)) throw fault('Có ô vượt giới hạn 50.000 ký tự của Google Sheets');
   return row;
@@ -157,39 +169,40 @@ function indexRows(rows) {
   return index;
 }
 
-async function writeRows(sheets, spreadsheetId, jobs) {
+async function writeRows(sheets, spreadsheetId, jobs, tabName = DEFAULT_TAB) {
+  const range = `'${tabName.replace(/'/g, "''")}'`;
   const document = await sheets.spreadsheets.get({
     spreadsheetId, fields: 'sheets(properties(sheetId,title,sheetType,gridProperties(rowCount,columnCount)))'
   }, TIMEOUT);
-  let tab = document.data.sheets?.find(sheet => sheet.properties.title === TAB)?.properties;
+  let tab = document.data.sheets?.find(sheet => sheet.properties.title === tabName)?.properties;
   if (!tab && jobs.every(job => !job.values)) return;
   if (!tab) {
     const result = await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: {
-      requests: [{ addSheet: { properties: { title: TAB, gridProperties: { frozenRowCount: 1, columnCount: HEADERS.length } } } }]
+      requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1, columnCount: HEADERS.length } } } }]
     } }, TIMEOUT);
     tab = result.data.replies[0].addSheet.properties;
   }
   if (tab.sheetType !== 'GRID') {
-    throw fault(`Tab ${TAB} phải là bảng tính dạng lưới`);
+    throw fault(`Tab ${tabName} phải là bảng tính dạng lưới`);
   }
   const result = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: RANGE, valueRenderOption: 'FORMULA'
+    spreadsheetId, range, valueRenderOption: 'FORMULA'
   }, TIMEOUT);
   const rows = result.data.values || [];
   const initializing = rows.length === 0;
   const currentHeader = HEADERS.every((value, i) => rows[0]?.[i] === value);
   if (!initializing && !currentHeader) {
-    throw fault(`Tiêu đề A–${END_COLUMN} của tab ${TAB} không đúng bố cục 29 cột mới; không ghi đè`);
+    throw fault(`Tiêu đề A–${END_COLUMN} của tab ${tabName} không đúng bố cục 29 cột mới; không ghi đè`);
   }
   const index = initializing ? new Map() : indexRows(rows);
-  const data = initializing ? [{ range: `${RANGE}!A1:${END_COLUMN}1`, values: [HEADERS] }] : [];
+  const data = initializing ? [{ range: `${range}!A1:${END_COLUMN}1`, values: [HEADERS] }] : [];
   let lastRow = Math.max(1, rows.length);
   for (const job of jobs) {
     const existing = index.get(job.code);
     if (!job.values && !existing) continue;
     const rowNr = existing || ++lastRow;
     index.set(job.code, rowNr);
-    data.push({ range: `${RANGE}!A${rowNr}:${END_COLUMN}${rowNr}`, values: [job.values || HEADERS.map(() => '')] });
+    data.push({ range: `${range}!A${rowNr}:${END_COLUMN}${rowNr}`, values: [job.values || HEADERS.map(() => '')] });
   }
   const requests = [];
   if (tab.gridProperties.columnCount < HEADERS.length) requests.push({
@@ -285,6 +298,40 @@ async function recordOutcome(db, job, failure) {
   [failure.retry && attempt < 5 ? 'PENDING' : 'FAILED', attempt, failure.message, delay, job.id, job.version]);
 }
 
+async function loadJobs(db) {
+  const [jobs] = await db.query(`SELECT l.*, q.id, q.version, q.attempt_count,
+      COALESCE(l.lead_code, q.lead_code) AS code, l.id AS live_id,
+      u.full_name AS assignee_name, u.custom_data AS assignee_data,
+      assignment_log.created_at AS assignment_log_at,
+      CASE
+        WHEN JSON_CONTAINS_PATH(assignment_log.changed_fields, 'one', '$.assigned_user_id.to')
+          THEN JSON_UNQUOTE(JSON_EXTRACT(assignment_log.changed_fields, '$.assigned_user_id.to')) = CAST(l.assigned_user_id AS CHAR)
+        ELSE EXISTS (SELECT 1 FROM lead_assignments a WHERE a.lead_id = l.id
+          AND a.assignee_user_id = l.assigned_user_id AND a.ended_at IS NULL
+          AND a.started_at = assignment_log.created_at)
+      END AS assignment_log_matches,
+      outcome_log.created_at AS outcome_log_at,
+      JSON_UNQUOTE(JSON_EXTRACT(outcome_log.changed_fields, '$.sales_outcome.to')) AS outcome_log_to
+      FROM lead_sheet_sync_queue q LEFT JOIN leads l ON l.id = q.id
+      LEFT JOIN users u ON u.id = l.assigned_user_id
+      LEFT JOIN journey_activity_logs assignment_log ON assignment_log.id = (
+        SELECT j.id FROM journey_activity_logs j
+        WHERE j.entity_type = 'lead' AND j.entity_id = l.id AND j.journey_id = l.journey_id
+          AND j.action = 'assigned'
+        ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+      )
+      LEFT JOIN journey_activity_logs outcome_log ON outcome_log.id = (
+        SELECT j.id FROM journey_activity_logs j
+        WHERE j.entity_type = 'lead' AND j.entity_id = l.id AND j.journey_id = l.journey_id
+          AND JSON_CONTAINS_PATH(j.changed_fields, 'all', '$.sales_outcome.from', '$.sales_outcome.to')
+          AND NOT (JSON_EXTRACT(j.changed_fields, '$.sales_outcome.from') <=> JSON_EXTRACT(j.changed_fields, '$.sales_outcome.to'))
+        ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+      )
+      WHERE q.status = 'PENDING' AND q.next_attempt_at <= NOW()
+      ORDER BY q.next_attempt_at, q.id LIMIT 30`);
+  return jobs;
+}
+
 async function processBatch() {
   const config = getConfig();
   if (!config.configured) return;
@@ -294,14 +341,7 @@ async function processBatch() {
     const [[lock]] = await db.query('SELECT GET_LOCK(?, 0) AS acquired', [LOCK]);
     locked = lock.acquired === 1;
     if (!locked) return;
-    const [jobs] = await db.query(`SELECT l.*, q.id, q.version, q.attempt_count,
-      COALESCE(l.lead_code, q.lead_code) AS code, l.id AS live_id,
-      u.full_name AS assignee_name, u.custom_data AS assignee_data,
-      l.first_tvbh_entry_at AS first_consultation_created_at
-      FROM lead_sheet_sync_queue q LEFT JOIN leads l ON l.id = q.id
-      LEFT JOIN users u ON u.id = l.assigned_user_id
-      WHERE q.status = 'PENDING' AND q.next_attempt_at <= NOW()
-      ORDER BY q.next_attempt_at, q.id LIMIT 30`);
+    const jobs = await loadJobs(db);
     if (!jobs.length) return;
     const label = await loadLabels(db);
     const ready = [];
@@ -320,7 +360,7 @@ async function processBatch() {
     let failure;
     try {
       const sheets = await createSheetsClient(config);
-      await writeRows(sheets, config.spreadsheetId, ready);
+      await writeRows(sheets, config.spreadsheetId, ready, config.tabName);
     } catch (error) {
       failure = classifyError(error);
       console.warn('[LeadSheetSync] Batch failed:', failure.message);
