@@ -32,6 +32,7 @@ services:
       - PROPOSAL_GOOGLE_SHEETS_TAB_NAME=${PROPOSAL_GOOGLE_SHEETS_TAB_NAME:-Đề xuất}
       - PROPOSAL_SHEET_SYNC_POLL_MS=${PROPOSAL_SHEET_SYNC_POLL_MS:-3000}
       - LEAD_SHEET_SYNC_ENABLED=${LEAD_SHEET_SYNC_ENABLED:-false}
+      - LEAD_GOOGLE_SHEETS_TAB_NAME=${LEAD_GOOGLE_SHEETS_TAB_NAME:-QL_khach_hang}
     volumes:
       - uploads_data:/app/storage/uploads
       - type: bind

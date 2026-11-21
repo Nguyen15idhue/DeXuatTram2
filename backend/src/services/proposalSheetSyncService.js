@@ -449,8 +449,10 @@ const getExportFields = (definitions) => {
     .map((field) => ({ key: field.key, label: field.label || field.key, type: field.type, options: field.options }));
 };
 
+const isDataQt1Tab = (tabName) => tabName === 'Data_QT1' || tabName === 'TEST_Data_QT1';
+
 const buildColumns = (fields, tabName) => {
-  if (tabName === 'Data_QT1') {
+  if (isDataQt1Tab(tabName)) {
     return [
       ...BASE_COLUMNS.map((column) => column.key.startsWith('__proposed_') && column.kind === 'poleCount'
         ? { ...column, header: `ĐX_${column.header}` }
@@ -720,10 +722,23 @@ const compactSheetSerials = async (sheets, config, rowById) => {
   }
 };
 
-const loadProposals = async (proposalIds) => {
+const loadProposals = async (proposalIds, tabName) => {
   if (!proposalIds.length) return [];
+  const useStatusLog = isDataQt1Tab(tabName);
+  const statusTime = useStatusLog
+    ? 'CASE WHEN status_log.id IS NULL THEN pst.changed_at ELSE status_log.created_at END'
+    : 'pst.changed_at';
+  const statusLogJoin = useStatusLog
+    ? `LEFT JOIN proposal_activity_logs status_log ON status_log.id = (
+         SELECT l.id FROM proposal_activity_logs l
+          WHERE l.proposal_id = p.id AND l.action = 'status_change'
+            AND NOT (l.from_status <=> l.to_status)
+          ORDER BY l.created_at DESC, l.id DESC LIMIT 1
+       )`
+    : '';
   const [rows] = await pool.query(
-    `SELECT p.*, cs.on_date AS actual_on_date, pst.changed_at AS status_changed_at,
+    `SELECT p.*, cs.on_date AS actual_on_date, ${statusTime} AS status_changed_at,
+            ${useStatusLog ? 'status_log.id' : 'NULL'} AS status_log_id,
             u.full_name AS submitter_name,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS submitter_department,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.chuc_vu')) AS submitter_chuc_vu,
@@ -746,12 +761,18 @@ const loadProposals = async (proposalIds) => {
         FROM station_proposals p
         LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
         LEFT JOIN proposal_status_change_times pst ON pst.proposal_id = p.id
+        ${statusLogJoin}
         LEFT JOIN users u ON u.id = p.user_id
         LEFT JOIN users parent ON parent.id = u.parent_id
         LEFT JOIN users grandparent ON grandparent.id = parent.parent_id
         WHERE p.id IN (${proposalIds.map(() => '?').join(',')})`,
     proposalIds
   );
+  for (const row of rows) {
+    if (row.status_log_id != null && !row.status_changed_at) {
+      throw new Error(`Đề xuất ${row.id}: nhật ký đổi trạng thái không có thời gian`);
+    }
+  }
   return rows;
 };
 
@@ -919,11 +940,13 @@ const updateFailedJob = async (job, error) => {
   const delaySeconds = Math.min(3600, 5 * (2 ** Math.max(0, Number(job.attempt_number) - 1)));
   await pool.query(
     `UPDATE proposal_sheet_sync_queue
-        SET status = ?,
-            next_attempt_at = IF(? = 1, NULL, DATE_ADD(NOW(), INTERVAL ? SECOND)),
+        SET status = IF(requested_version > ?, 'PENDING', ?),
+            attempt_count = IF(requested_version > ?, 0, attempt_count),
+            next_attempt_at = IF(requested_version > ?, NOW(), IF(? = 1, NULL, DATE_ADD(NOW(), INTERVAL ? SECOND))),
             last_error = ?, updated_at = NOW()
       WHERE proposal_id = ? AND status = 'PROCESSING'`,
-    [maxed ? 'FAILED' : 'PENDING', maxed ? 1 : 0, delaySeconds, String(error?.message || 'Lỗi đồng bộ').slice(0, 2000), job.proposal_id]
+    [job.requested_version, maxed ? 'FAILED' : 'PENDING', job.requested_version, job.requested_version,
+      maxed ? 1 : 0, delaySeconds, String(error?.message || 'Lỗi đồng bộ').slice(0, 2000), job.proposal_id]
   );
 };
 
@@ -991,7 +1014,7 @@ const processBatch = async (limit = BATCH_SIZE) => {
 
     const upsertIds = claimedJobs.filter((job) => job.operation === 'UPSERT').map((job) => Number(job.proposal_id));
     const [proposalRows, definitions] = await Promise.all([
-      loadProposals(upsertIds),
+      loadProposals(upsertIds, config.tabName),
       getAllFieldDefinitions()
     ]);
     const fields = getExportFields(definitions);
