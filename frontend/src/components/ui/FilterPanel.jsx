@@ -1,7 +1,7 @@
 import { SlidersHorizontal, X } from 'lucide-react';
 
 export const FilterToggle = ({ open, onToggle, count = 0 }) => (
-  <button type="button" className={`btn btn-sm gap-1 shrink-0 ${open ? 'btn-primary' : 'btn-outline'}`} onClick={onToggle}>
+  <button type="button" aria-label="Bộ lọc" className={`btn btn-sm gap-1 shrink-0 ${open ? 'btn-primary' : 'btn-outline'}`} onClick={onToggle}>
     <SlidersHorizontal size={14} />
     <span className="hidden sm:inline">Bộ lọc</span>
     <span className="inline-flex items-center justify-center" style={{ width: 18 }}>

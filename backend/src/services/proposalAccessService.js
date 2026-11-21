@@ -143,16 +143,14 @@ exports.canActAsProposalOwner = canActAsProposalOwner;
 exports.buildOwnerScopeSql = buildOwnerScopeSql;
 exports.buildOwnerMatcher = buildOwnerMatcher;
 
-exports.buildReportTaskScopeSql = async (user, alias = 'p') => {
-  const scope = await proposalReportService.resolveScope(user);
+exports.buildReportTaskScopeSql = async (user, alias = 'p', resolvedScope = null) => {
+  const scope = resolvedScope || await proposalReportService.resolveScope(user);
   if (scope.role === 'SUPER_ADMIN') return { sql: '1 = 1', params: [] };
   if (scope.roleKey === 'TGD') return { sql: '1 = 0', params: [] };
   if (scope.roleKey === 'GDTTKD') {
-    if (!scope.region) return { sql: '1 = 0', params: [] };
-    return {
-      sql: `LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(${alias}.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?`,
-      params: [{ Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' }[scope.region]]
-    };
+    const params = [];
+    const sql = require('./proposalReviewScope').sql(await proposalReportService.getManagementScope(scope), params, alias);
+    return { sql, params };
   }
   return buildOwnerScopeSql(user, alias);
 };

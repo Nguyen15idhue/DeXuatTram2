@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const { values, addInFilter } = require('../utils/multiValueFilter');
 
 const REQUEST_TYPES = ['UPDATE_INFO', 'SUPPLEMENT', 'LAYOUT_SUPPLEMENT', 'RE_GRADE', 'REVISE_BCDX', 'TGD_REVIEW', 'OTHER'];
 
@@ -162,46 +163,34 @@ const scopeClause = async (scope, params, workScope = 'all', user = null) => {
   return sql;
 };
 
-const addProposalFilters = (where, params, filters = {}, dateField = 'p.created_at') => {
-  if (filters.proposalStatus) {
-    where.push('p.status = ?');
-    params.push(filters.proposalStatus);
+const addProposalFilters = async (where, params, filters = {}, dateField = 'p.created_at') => {
+  addInFilter(where, params, 'p.status', filters.proposalStatus);
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu'))", filters.model);
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province'))", filters.province);
+  const regions = values(filters.region);
+  if (regions.length) {
+    const clauses = regions.map((region) => {
+      const pattern = regionPattern(region);
+      params.push(pattern || region);
+      return pattern
+        ? "LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?"
+        : "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?";
+    });
+    where.push(`(${clauses.join(' OR ')})`);
   }
-  if (filters.model) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?");
-    params.push(filters.model);
-  }
-  if (filters.province) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?");
-    params.push(filters.province);
-  }
-  if (filters.region) {
-    const pattern = regionPattern(filters.region);
-    if (pattern) {
-      where.push("LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?");
-      params.push(pattern);
-    } else {
-      where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?");
-      params.push(filters.region);
+  addInFilter(where, params, 'p.user_id', filters.ownerUserId);
+  const managers = values(filters.managerUserId);
+  if (managers.length) {
+    const adminUserService = require('./adminUserService');
+    const branches = await Promise.all(managers.map((id) => adminUserService.getBranchIds(Number(id))));
+    const branchIds = [...new Set(branches.flat())];
+    if (branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
+      params.push(...branchIds.map(Number));
     }
   }
-  if (filters.ownerUserId) {
-    where.push('p.user_id = ?');
-    params.push(Number(filters.ownerUserId));
-  }
-  if (filters.managerUserId) {
-    const adminUserService = require('./adminUserService');
-    return adminUserService.getBranchIds(Number(filters.managerUserId)).then((branchIds) => {
-      if (branchIds.length === 0) where.push('1 = 0');
-      else {
-        where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
-        params.push(...branchIds.map(Number));
-      }
-      addDateFilters(where, params, filters, dateField);
-    });
-  }
   addDateFilters(where, params, filters, dateField);
-  return Promise.resolve();
 };
 
 const addDateFilters = (where, params, filters, dateField) => {
@@ -241,10 +230,8 @@ exports.listRequests = async ({
   if (managerUser && managerUser.role !== 'SUPER_ADMIN' && reviewProfile.roleKey === 'TGD') {
     where.push("r.request_type <> 'RE_GRADE'");
   }
-  if (type && REQUEST_TYPES.includes(type)) {
-    where.push('r.request_type = ?');
-    params.push(type);
-  }
+  const requestTypes = values(type).filter((value) => REQUEST_TYPES.includes(value));
+  addInFilter(where, params, 'r.request_type', requestTypes);
   if (search) {
     const like = `%${String(search).trim()}%`;
     where.push('(p.ma_de_xuat_gen LIKE ? OR u.full_name LIKE ? OR p.owner_name LIKE ? OR p.address LIKE ? OR p.tracking_code LIKE ? OR r.description LIKE ?)');
@@ -335,7 +322,10 @@ exports.listRequests = async ({
 exports.getFilterOptions = async (scope = {}) => {
   const params = [];
   const visibility = [];
-  if (['ADMIN', 'SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
+  if (scope.proposalVisibility) {
+    visibility.push(scope.proposalVisibility.sql);
+    params.push(...scope.proposalVisibility.params);
+  } else if (['ADMIN', 'SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
     const branchIds = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
     if (branchIds.length === 0) visibility.push('1 = 0');
     else {
@@ -351,6 +341,10 @@ exports.getFilterOptions = async (scope = {}) => {
     params.push(Number(scope.userId));
   }
   const scoped = visibility.length > 0 ? ` AND (${visibility.join(' OR ')})` : '';
+  const statuses = Array.isArray(scope.proposalStatuses) ? scope.proposalStatuses : [];
+  const statusClause = statuses.length
+    ? ` AND p.status IN (${statuses.map(() => '?').join(',')})${scope.signedApprovalOnly ? " AND (p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)" : ''}`
+    : '';
   const [owners] = await pool.query(
     `SELECT DISTINCT p.user_id AS id, u.full_name AS name,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
@@ -358,9 +352,9 @@ exports.getFilterOptions = async (scope = {}) => {
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS region
        FROM station_proposals p
        LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.user_id IS NOT NULL${scoped}
+      WHERE p.user_id IS NOT NULL${scoped}${statusClause}
       ORDER BY u.full_name`,
-    params
+    [...params, ...statuses]
   );
   const ownerIds = owners.map((owner) => Number(owner.id));
   const managerIds = ownerIds.length > 0
@@ -378,9 +372,9 @@ exports.getFilterOptions = async (scope = {}) => {
        SELECT DISTINCT u.id, u.full_name AS name
          FROM user_chain chain
          JOIN users u ON u.id = chain.id
-        WHERE u.id NOT IN (${ownerIds.map(() => '?').join(',')})
+        WHERE chain.depth > 0
         ORDER BY u.full_name`,
-      [...ownerIds, ...ownerIds]
+      ownerIds
     ).then(([rows]) => rows)
     : [];
   const uniqueValues = (key) => [...new Set(owners.map((owner) => owner[key]).filter(Boolean))].sort();

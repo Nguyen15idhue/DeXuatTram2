@@ -21,6 +21,7 @@ import {
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 import {
   formatProposalScale,
   getProposalAddress,
@@ -120,7 +121,7 @@ const ProposalReportTab = ({ tab }) => {
         dateTo: 'date_to'
       };
       Object.entries(filterKeys).forEach(([key, queryKey]) => {
-        if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+        appendMultiFilter(params, queryKey, targetFilters[key]);
       });
       params.set('page', targetPage);
       params.set('limit', targetSize);
@@ -238,7 +239,7 @@ const ProposalReportTab = ({ tab }) => {
     setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
   };
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount = Object.values(filters).filter(hasFilterValue).length;
   const columns = tab === 'all'
     ? REPORT_COLUMNS.filter((column) => column.key !== 'task_description')
     : REPORT_COLUMNS;
@@ -268,7 +269,7 @@ const ProposalReportTab = ({ tab }) => {
         onReset={resetFilters}
         title="Bộ lọc đề xuất"
       >
-        <ProposalAdvancedFilters
+        <ProposalAdvancedFilters multiple
           values={filters}
           onChange={setFilters}
           options={filterOptions}

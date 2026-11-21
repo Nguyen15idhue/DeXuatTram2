@@ -251,6 +251,11 @@ export const cmsReportService = {
     api.postWithAuth('/admin/cms-reports/run', { from, to, ...(rawOnly && { rawOnly }) }, token)
 };
 
+export const cmsVehicleService = {
+  run: (from, to, token, { all = false } = {}) =>
+    api.postWithAuth('/admin/cms-reports/vehicles/run', { from, to, all }, token)
+};
+
 const _pendingGets = new Map();
 function dedupGet(endpoint) {
   if (_pendingGets.has(endpoint)) return _pendingGets.get(endpoint);
@@ -339,6 +344,18 @@ export const leadService = {
   createProposal(id, data, token, idempotencyKey) {
     const body = idempotencyKey ? { ...data, idempotency_key: idempotencyKey } : data;
     return api.postWithAuth(`/admin/leads/${id}/create-proposal`, body, token);
+  },
+  saveAndCreateProposal(id, data, token, idempotencyKey) {
+    return runLeadTaskMutation(async () => {
+      const response = await fetch(`${API_URL}/admin/leads/${id}/save-and-create-proposal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ...data, idempotency_key: idempotencyKey })
+      });
+      handleUnauthorized(response);
+      const result = await parseJsonSafe(response);
+      return { ...result, httpStatus: response.status };
+    });
   }
 };
 
@@ -625,6 +642,9 @@ export const proposalReportService = {
 };
 
 export const proposalApprovalService = {
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-approvals/filter-options', token);
+  },
   withdrawSignature(id, token) {
     return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-approvals/${id}/signature-config/withdraw`, {}, token));
   },
@@ -1381,7 +1401,8 @@ export const excelService = {
   async exportData(entity, token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    if (Array.isArray(filters.status)) filters.status.forEach((value) => params.append('status', value));
+    else if (filters.status) params.append('status', filters.status);
     if (filters.layout) params.append('layout', filters.layout);
     if (filters.formId) params.append('formId', filters.formId);
     if (filters.purpose) params.append('purpose', filters.purpose);
@@ -1401,7 +1422,8 @@ export const excelService = {
   async exportDataByModel(entity, token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    if (Array.isArray(filters.status)) filters.status.forEach((value) => params.append('status', value));
+    else if (filters.status) params.append('status', filters.status);
     const query = params.toString() ? `?${params.toString()}` : '';
     await this.downloadBlob(`/admin/excel/export/${entity}/by-model${query}`, token, `${fileStamp()}_export_${entity}_mo_hinh.xlsx`);
   },

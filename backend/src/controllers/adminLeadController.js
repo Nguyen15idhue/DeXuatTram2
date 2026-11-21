@@ -173,6 +173,21 @@ exports.createProposal = async (req, res) => {
   }
 };
 
+exports.saveAndCreateProposal = async (req, res) => {
+  try {
+    const result = await require('../services/leadProposalService').saveLeadAndCreateProposal(
+      req.params.id, req.body, req.user,
+      { ip: req.ip, idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key }
+    );
+    res.status(result.deduped ? 200 : 201).json({
+      success: true, data: result.proposal, deduped: result.deduped,
+      message: 'Lưu khách hàng và tạo đề xuất thành công'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.bulkAssign = async (req, res) => {
   try {
     const body = req.body || {};

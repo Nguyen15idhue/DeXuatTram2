@@ -404,6 +404,47 @@ router.get('/:id/assignments', requireAuth, requireLeadManager, adminLeadControl
  */
 router.post('/:id/create-proposal', requireAuth, requireLeadManager, adminLeadController.createProposal);
 
+/**
+ * @swagger
+ * /api/admin/leads/{id}/save-and-create-proposal:
+ *   post:
+ *     tags: [Leads]
+ *     summary: Lưu Lead và tạo đề xuất trong cùng giao dịch
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [lead, proposal, edit_version, idempotency_key]
+ *             properties:
+ *               lead: { type: object, description: Dữ liệu Lead cần cập nhật }
+ *               proposal: { type: object, description: Dữ liệu đề xuất mới }
+ *               edit_version: { type: string, description: Phiên bản từ chi tiết Lead }
+ *               idempotency_key: { type: string, description: Khóa duy nhất cho lượt gửi }
+ *     responses:
+ *       201: { description: Lưu và tạo thành công }
+ *       400: { description: Dữ liệu không hợp lệ }
+ *       403: { description: Không có quyền }
+ *       409: { description: Lead thay đổi hoặc dữ liệu không hợp lệ }
+ */
+router.post('/:id/save-and-create-proposal', requireAuth, requireLeadManager, (req, res, next) => {
+  const body = req.body;
+  if (!body || !body.lead || typeof body.lead !== 'object' || Array.isArray(body.lead)) {
+    return res.status(400).json({ success: false, message: 'Thiếu dữ liệu Lead' });
+  }
+  const validationRequest = Object.create(req);
+  validationRequest.body = body.lead;
+  validationRequest.method = 'PUT';
+  validateUpdateLead(validationRequest, res, next);
+}, adminLeadController.saveAndCreateProposal);
+
 router.get('/:id/journey', requireAuth, requireLeadManager, adminLeadController.journey);
 
 router.get('/:id', requireAuth, requireLeadManager, adminLeadController.getById);

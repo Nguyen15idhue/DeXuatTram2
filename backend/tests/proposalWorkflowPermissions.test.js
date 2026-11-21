@@ -28,7 +28,9 @@ const profiles = [
   profile(7, 'ADMIN', 'Ban Tổng giám đốc', 'Tổng giám đốc'),
   profile(8, 'CTV', ''),
   profile(9, 'NPP', ''),
-  profile(10, 'ADMIN', 'Phòng Công nghệ và Quy hoạch')
+  profile(10, 'ADMIN', 'Phòng Công nghệ và Quy hoạch'),
+  { ...profile(20, 'CTV', 'Trung tâm KD miền Bắc'), parent_id: 5 },
+  profile(100, 'SALES', 'Trung tâm KD miền Nam')
 ];
 let proposal;
 let queries = [];
@@ -55,6 +57,7 @@ test.before(() => {
       return [profiles.filter((user) => user.id === Number(params[0]))];
     }
     if (/FROM users WHERE status/i.test(sql)) return [profiles];
+    if (/SELECT id, parent_id, custom_data FROM users/i.test(sql)) return [profiles];
     if (/COUNT\(\*\) AS total/i.test(sql)) return [[{ total: 0 }]];
     if (/FROM station_proposals.*WHERE.*id\s*=\s*\?/is.test(sql) && !/LIMIT \? OFFSET \?/.test(sql)) {
       return [[{ ...proposal }]];
@@ -96,6 +99,7 @@ test('unrelated Setup/Strategy ADMIN cannot request regrade, submit to TGD, canc
     }
     const scope = await reports.resolveScope(user);
     assert.equal(await reports.canUploadReport(scope, proposal), false);
+    assert.equal(await reports.canUploadReport(scope, { ...proposal, user_id: 100 }), false);
     await assert.rejects(() => reports.requestRevision({ user, id: 101, description: 'Fixture' }), { statusCode: 403 });
     assert.equal(mutations, 0);
   }
@@ -149,19 +153,72 @@ test('explicit regrade selection creates requests only for chosen departments', 
   }
 });
 
-test('ADMIN and SALES GDT T handle all same-region reports, never another region even as owner', async () => {
+test('GĐTTKD report task and upload scope follows organization, not proposal region', async () => {
   for (const user of profiles.filter((item) => [4, 5].includes(item.id))) {
     const scope = await reports.resolveScope(user);
-    assert.equal(await reports.canUploadReport(scope, proposal), true);
-    assert.equal(await reports.canUploadReport(scope, { ...proposal, user_id: user.id, custom_data: { vung_mien: 'Nam' } }), false);
+    assert.equal(await reports.canUploadReport(scope, proposal), false);
+    assert.equal(await reports.canUploadReport(scope, { ...proposal, user_id: user.id, custom_data: { vung_mien: 'Nam' } }), true);
+    assert.equal(await reports.canUploadReport(scope, { ...proposal, user_id: 20 }), true);
+    assert.equal(await reports.canUploadReport(scope, { ...proposal, custom_data: { nguoi_phu_trach: { id: 20 } } }), true);
+    assert.equal(await reports.canUploadReport(scope, { ...proposal, custom_data: { sales_quan_ly: { id: user.id } } }), true);
+    assert.equal(await reports.canUploadReport(scope, { ...proposal, user_id: null }), false);
     const taskScope = await access.buildReportTaskScopeSql(user);
-    assert.match(taskScope.sql, /vung_mien/);
-    assert.deepEqual(taskScope.params, ['%bac%']);
-    proposal.custom_data.vung_mien = 'Nam';
-    await assert.rejects(() => review.requestRegrade({ user, id: 101, reason: 'Fixture' }), { statusCode: 403 });
-    proposal.custom_data.vung_mien = 'Bac';
+    assert.doesNotMatch(taskScope.sql, /vung_mien/);
+    assert.ok(taskScope.params.includes(user.id));
+    assert.ok(taskScope.params.includes(20));
   }
   assert.equal(mutations, 0);
+});
+
+test('report list, filters, task count and upload use the organizational scope; ADMIN retains read-all', async t => {
+  t.mock.method(pool, 'getConnection', async () => ({
+    query: async () => [[{ acquired: 1 }]], release: () => {}
+  }));
+  proposal.status = 'PROPOSAL_REPORT_CREATING';
+  proposal.user_id = 100;
+  for (const id of [4, 5]) {
+    const user = profiles.find(item => item.id === id);
+    queries = [];
+    await reports.listProposals({ user, tab: 'all' });
+    const all = queries.find(entry => /COUNT\(\*\) AS total/.test(entry.sql));
+    assert.equal(all.sql.includes('$.sales_quan_ly'), id === 5);
+    assert.doesNotMatch(all.sql, /vung_mien/);
+    queries = [];
+    await reports.listProposals({ user, tab: 'pending', limit: 1 });
+    const pending = queries.find(entry => /COUNT\(\*\) AS total/.test(entry.sql));
+    assert.match(pending.sql, /\$\.sales_quan_ly/);
+    assert.doesNotMatch(pending.sql, /vung_mien/);
+    await assert.rejects(reports.uploadReport({ user, id: 101, files: [] }), { statusCode: 403 });
+    assert.equal(mutations, 0);
+  }
+  queries = [];
+  await reports.getFilterOptions(profiles[4]);
+  const options = queries.find(entry => /SELECT DISTINCT p\.user_id AS id/.test(entry.sql));
+  assert.match(options.sql, /\$\.sales_quan_ly/);
+  assert.doesNotMatch(options.sql, /vung_mien.*LIKE/);
+});
+
+test('report detail and document access deny unrelated SALES while ADMIN can read', async t => {
+  proposal.status = 'PROPOSAL_REPORT_CREATING';
+  proposal.user_id = 100;
+  t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({ requests: [], activity: [] }));
+  const query = pool.query;
+  t.mock.method(pool, 'query', async (sql, params = []) => {
+    if (/SELECT p\.\*, p\.ma_de_xuat_gen/.test(sql)) {
+      return [sql.includes('$.sales_quan_ly') ? [] : [{ ...proposal }]];
+    }
+    if (sql.startsWith('SELECT p.id FROM station_proposals')) {
+      return [sql.includes('$.sales_quan_ly') ? [] : [{ id: 101 }]];
+    }
+    if (sql.startsWith('SELECT id FROM station_proposals')) return [[{ id: 101 }]];
+    return query(sql, params);
+  });
+  const sales = profiles[4];
+  const adminUser = profiles[3];
+  await assert.rejects(reports.getProposalDetail({ user: sales, id: 101 }), { statusCode: 403 });
+  await assert.rejects(reports.assertReportReadAccess(sales, 101), { statusCode: 403 });
+  assert.equal((await reports.getProposalDetail({ user: adminUser, id: 101 })).permissions.canUpload, false);
+  await reports.assertReportReadAccess(adminUser, 101);
 });
 
 test('review detail permissions keep ADMIN read-all while restricting actions to the responsible region', async () => {
@@ -183,11 +240,13 @@ test('specialist notifications target only professional handlers or legitimate r
   const reportRecipients = await recipients.resolveStepRecipients('PROPOSAL_REPORT_CREATING', proposal);
   assert.equal(reportRecipients.includes(2), false);
   assert.equal(reportRecipients.includes(3), false);
-  assert.equal(reportRecipients.includes(4), true);
-  assert.equal(reportRecipients.includes(5), true);
+  assert.equal(reportRecipients.includes(4), false);
+  assert.equal(reportRecipients.includes(5), false);
   proposal.user_id = 20;
   const ownerRecipients = await recipients.resolveStepRecipients('PROPOSAL_REPORT_CREATING', proposal);
   assert.equal(ownerRecipients.includes(2), true);
+  assert.equal(ownerRecipients.includes(4), true);
+  assert.equal(ownerRecipients.includes(5), true);
 });
 
 test('layout and signature mutations deny unrelated ADMIN before changing data', async () => {

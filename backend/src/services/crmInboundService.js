@@ -147,11 +147,16 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
   if (!crmId) throw new Error('Thiếu id khách hàng CRM');
 
   // find existing by external_crm_id
-  const [existing] = await conn.query('SELECT id, custom_data FROM leads WHERE external_crm_id = ? LIMIT 1', [crmId]);
+  const [existing] = await conn.query('SELECT id, journey_id, sales_outcome, custom_data FROM leads WHERE external_crm_id = ? LIMIT 1', [crmId]);
   if (existing.length && onExisting === 'skip') {
     return { id: existing[0].id, created: false, result: 'skipped', reason: 'Lead đã tồn tại' };
   }
-
+  if (data.sales_outcome === 'SUCCESS') {
+    if (!existing.length) {
+      throw Object.assign(new Error('Khách hàng chưa có đề xuất. Vui lòng lưu và tạo đề xuất.'), { statusCode: 409 });
+    }
+    await require('./leadProposalRequirement').assertSatisfied(existing[0], 'SUCCESS', conn);
+  }
   const systemUserId = await getSystemUserId(conn, cache);
 
   const rawProvince = data.province ? String(data.province).trim() : '';
@@ -182,6 +187,7 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
 
   if (existing.length) {
     const leadId = existing[0].id;
+    await require('./leadProposalRequirement').assertSatisfied(existing[0], existing[0].sales_outcome, conn);
     const mergedCustomData = mergeCustomData(existing[0].custom_data, customData);
     await conn.query(
       `UPDATE leads SET full_name = ?, phone = ?, email = ?, address = ?, province = ?, ward = ?,

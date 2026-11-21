@@ -536,7 +536,11 @@ function getAllData(entity, filters = {}) {
         where.push(`p.user_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids);
       }
     }
-    if (status) { where.push('p.status = ?'); params.push(status); }
+    const statuses = require('../utils/multiValueFilter').values(status);
+    if (statuses.length) {
+      where.push(`p.status IN (${statuses.map(() => '?').join(',')})`);
+      params.push(...statuses);
+    }
     if (search) { where.push('(p.owner_name LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)'); params.push(like, like, like); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     const join = search ? 'JOIN users u ON p.user_id = u.id' : '';
@@ -1548,6 +1552,9 @@ exports.importPreviewDynamic = async (req, res) => {
       const previewOptionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
       for (const vr of validRows) {
         const rowErrors = [];
+        if (vr.fixedData.sales_outcome === 'SUCCESS') {
+          rowErrors.push('Khách hàng chưa có đề xuất. Vui lòng lưu và tạo đề xuất trong hệ thống.');
+        }
         const phoneDigits = String(vr.fixedData.phone || '').replace(/[^\d]/g, '');
         if (!/^\d{10}$/.test(phoneDigits)) rowErrors.push('Số điện thoại phải có đúng 10 chữ số');
         const province = String(vr.fixedData.province || '').trim();

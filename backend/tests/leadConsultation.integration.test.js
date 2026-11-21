@@ -111,6 +111,12 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     lead = await leads.getLeadById(id);
     assert.equal(lead.consultation_status, 'CONSULTING');
     assert.equal(lead.consultation_round, 2);
+    await assert.rejects(() => leads.updateLead(id, { sales_outcome: 'SUCCESS' }, gdkv), { statusCode: 409 });
+    await pool.query(
+      `INSERT INTO station_proposals (journey_id,user_id,latitude,longitude,owner_name,owner_phone,status)
+       VALUES (?, ?, 10, 106, ?, '0900000000', 'PENDING')`,
+      [lead.journey_id, gdkv.id, prefix]
+    );
     await leads.updateLead(id, { sales_outcome: 'SUCCESS' }, gdkv);
     assert.equal((await leads.getLeadById(id)).consultation_status, 'SUCCESS');
     assert.equal((await leads.getLeads({ tab: 'consulting', search: prefix }, gdkv)).pagination.total, 0);
@@ -146,6 +152,7 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     if (journeys.length) {
       const [rows] = await pool.query('SELECT id FROM leads WHERE journey_id IN (?)', [journeys]);
       if (rows.length) await pool.query("DELETE FROM notifications WHERE entity_type='leads' AND entity_id IN (?)", [rows.map((row) => row.id)]);
+      await pool.query('DELETE FROM station_proposals WHERE journey_id IN (?)', [journeys]);
       await pool.query('DELETE FROM business_journeys WHERE id IN (?)', [journeys]);
     }
     for (const id of users.reverse()) await pool.query('DELETE FROM users WHERE id = ?', [id]);

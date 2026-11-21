@@ -256,47 +256,9 @@ const listReviews = async ({
     params.push(like, like, like, like, like, like, like);
   }
 
-  if (filters.proposalStatus) {
-    where.push('p.status = ?');
-    params.push(String(filters.proposalStatus));
-  }
-  if (filters.model) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?");
-    params.push(String(filters.model));
-  }
-  if (filters.province) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?");
-    params.push(String(filters.province));
-  }
-  if (filters.region) {
-    const selectedRegion = resolveRegion(filters.region);
-    if (selectedRegion) {
-      const clause = regionClause(selectedRegion, params);
-      if (clause) where.push(clause.replace(/^ AND /, ''));
-    }
-  }
-  if (filters.ownerUserId) {
-    where.push('p.user_id = ?');
-    params.push(Number(filters.ownerUserId));
-  }
-  if (filters.managerUserId) {
-    const adminUserService = require('./adminUserService');
-    const branchIds = await adminUserService.getBranchIds(Number(filters.managerUserId));
-    if (branchIds.length) {
-      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
-      params.push(...branchIds.map(Number));
-    } else {
-      where.push('1 = 0');
-    }
-  }
-  if (filters.dateFrom) {
-    where.push('p.created_at >= ?');
-    params.push(`${String(filters.dateFrom).slice(0, 10)} 00:00:00`);
-  }
-  if (filters.dateTo) {
-    where.push('p.created_at < DATE_ADD(?, INTERVAL 1 DAY)');
-    params.push(String(filters.dateTo).slice(0, 10));
-  }
+  const { addProposalAdvancedFilters } = require('../utils/proposalAdvancedFilters');
+  await addProposalAdvancedFilters(where, params, filters, value =>
+    ({ Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' })[resolveRegion(value)]);
 
   const whereClause = `WHERE ${where.length > 0 ? where.join(' AND ') : '1 = 1'}`;
 

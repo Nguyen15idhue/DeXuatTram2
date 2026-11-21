@@ -99,11 +99,11 @@ exports.createProposal = async (userId, data, opts = {}) => {
     zoneErr.statusCode = 400;
     throw zoneErr;
   }
-  const conn = await pool.getConnection();
+  const conn = opts.connection || await pool.getConnection();
   let recordId;
   let postResults = {};
   try {
-    await conn.beginTransaction();
+    if (!opts.connection) await conn.beginTransaction();
     const deadlines = await require('./proposalLifecycle').getDeadlineDates(initialStatus, conn);
 
     const [result] = await conn.query(
@@ -127,14 +127,22 @@ exports.createProposal = async (userId, data, opts = {}) => {
     } catch { /* silent: khong chan tao de xuat vi rename */ }
     await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
 
-    await conn.commit();
+    if (!opts.connection) await conn.commit();
   } catch (err) {
-    try { await conn.rollback(); } catch { /* silent */ }
+    if (!opts.connection) {
+      try { await conn.rollback(); } catch { /* silent */ }
+    }
     throw err;
   } finally {
-    conn.release();
+    if (!opts.connection) conn.release();
   }
 
+  if (opts.connection) return { id: recordId, initialStatus, postResults };
+  return exports.finishProposalCreation(recordId, userId, initialStatus, postResults, opts);
+};
+
+exports.finishProposalCreation = async (recordId, userId, initialStatus, postResults = {}, opts = {}) => {
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const [proposal] = await pool.query(
     `SELECT p.*, u.full_name as user_name
      FROM station_proposals p

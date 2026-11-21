@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { leadService, dynamicService, formService } from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -8,6 +8,7 @@ import LeadJourneyPopup from "./LeadJourneyPopup";
 import LeadAssignDialog from "./LeadAssignDialog";
 import LeadReportTab from "./LeadReportTab";
 import Toast from "../Toast";
+import ConfirmDialog from "../ConfirmDialog";
 import {
   X,
   Pencil,
@@ -88,6 +89,18 @@ const buildCrmExtraNote = (extra) => {
   return lines.join("\n");
 };
 
+const proposalPrefill = (record, draft = {}) => {
+  const source = { ...record, ...draft };
+  const sameProvince = source.province === record.province;
+  return {
+    owner_name: source.full_name || "", owner_phone: source.phone || "",
+    address: source.address || "", province: source.province || "",
+    xa_phuong: source.ward || "",
+    ma_tinh: sameProvince ? record.province_code || "" : "",
+    vung_mien: sameProvince ? record.region || "" : "",
+  };
+};
+
 const LeadDetailPopup = ({
   recordId,
   mode: modeProp = "view",
@@ -146,6 +159,12 @@ const LeadDetailPopup = ({
   }, [user, record, viewFields, allFields, formConfig]);
   const [saving, setSaving] = useState(false);
   const [showCreateProposal, setShowCreateProposal] = useState(false);
+  const [proposalOpened, setProposalOpened] = useState(false);
+  const [pendingLead, setPendingLead] = useState(null);
+  const [proposalSeed, setProposalSeed] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const proposalRequest = useRef(null);
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [addingCrmExtra, setAddingCrmExtra] = useState(false);
   const [showJourney, setShowJourney] = useState(false);
@@ -181,9 +200,10 @@ const LeadDetailPopup = ({
   }, [token]);
 
   const openCreateProposal = () => {
-    setMapLink("");
-    setMapCoords({ latitude: "", longitude: "" });
-    setLinkError("");
+    if (!proposalOpened) {
+      setProposalSeed(proposalPrefill(record, pendingLead || {}));
+    }
+    setProposalOpened(true);
     setShowCreateProposal(true);
   };
 
@@ -335,7 +355,9 @@ const LeadDetailPopup = ({
     return map;
   }, [formConfig, layout]);
 
-  const handleDraftChange = ({ customer_classification, sales_outcome }) => {
+  const handleDraftChange = ({ customer_classification, sales_outcome, ...other }) => {
+    if (customer_classification !== undefined || sales_outcome !== undefined ||
+        Object.keys(other).some((key) => key !== "latitude" && key !== "longitude")) setDirty(true);
     if (customer_classification === undefined && sales_outcome === undefined) return;
     setDraftFields((previous) => ({
       ...previous,
@@ -348,7 +370,12 @@ const LeadDetailPopup = ({
   const canCreateProposalFrom = (lead) =>
     !!lead && lead.consultation_status === "SUCCESS" && lead.sales_outcome === "SUCCESS" && mayCreateProposal(lead);
   const saveAndCreate = !loading && !error && !!record && mayCreateProposal(record)
-    && (draftFields.sales_outcome ?? record.sales_outcome) === "SUCCESS";
+    && !record.has_proposal && (draftFields.sales_outcome ?? record.sales_outcome) === "SUCCESS";
+
+  const requestClose = () => {
+    if (mode === "edit" && dirty) setConfirmClose(true);
+    else onClose();
+  };
 
   const handleSave = async (formData) => {
     if (!canEditLead(user, record))
@@ -373,21 +400,35 @@ const LeadDetailPopup = ({
         )
           delete payload[k];
       });
-      const shouldOpenProposal = saveAndCreate && payload.sales_outcome === "SUCCESS";
+      if (pendingLead && proposalRequest.current &&
+          JSON.stringify(payload) !== JSON.stringify(pendingLead)) {
+        throw new Error("Yêu cầu trước chưa xác nhận kết quả. Hãy gửi lại đúng dữ liệu để kiểm tra trước khi thay đổi.");
+      }
+      const shouldOpenProposal = (payload.sales_outcome ?? record.sales_outcome) === "SUCCESS" && !record.has_proposal;
+      if (shouldOpenProposal) {
+        if (!mayCreateProposal(record)) throw new Error("Cần người có quyền tư vấn tạo đề xuất trước khi lưu khách hàng.");
+        setPendingLead(payload);
+        if (!proposalOpened) {
+          setProposalSeed(proposalPrefill(record, payload));
+        }
+        setProposalOpened(true);
+        setShowCreateProposal(true);
+        return;
+      }
       const res = await leadService.update(recordId, payload, token);
       if (res.success) {
         setRecord(res.data);
+        setDirty(false);
+        setPendingLead(null);
+        setProposalOpened(false);
+        setProposalSeed(null);
+        setMapCoords({ latitude: "", longitude: "" });
+        setMapLink("");
+        proposalRequest.current = null;
         setToast({ message: "Cập nhật Lead thành công", type: "success" });
         if (onSaved) onSaved();
         setMode("view");
         if (onSwitchMode) onSwitchMode("view");
-        if (shouldOpenProposal) {
-          if (canCreateProposalFrom(res.data)) {
-            openCreateProposal();
-          } else {
-            setToast({ message: "Đã lưu khách hàng nhưng chưa đủ điều kiện tạo đề xuất", type: "error" });
-          }
-        }
       } else {
         throw new Error(res.message || "Cập nhật thất bại");
       }
@@ -399,37 +440,31 @@ const LeadDetailPopup = ({
     }
   };
 
-  const prefillProposal = useMemo(() => record
-    ? {
-        owner_name: record.full_name || "",
-        owner_phone: record.phone || "",
-        address: record.address || "",
-        province: record.province || "",
-        xa_phuong: record.ward || "",
-        ma_tinh: record.province_code || "",
-        vung_mien: record.region || "",
-        latitude: mapCoords.latitude || "",
-        longitude: mapCoords.longitude || "",
-      }
-    : {}, [record, mapCoords]);
+  const proposalInitialData = useMemo(() =>
+    mapCoords.latitude && mapCoords.longitude ? mapCoords : proposalSeed || {},
+  [mapCoords, proposalSeed]);
 
   const handleCreateProposal = async (formData) => {
-    if (!canCreateProposalFrom(record))
+    if (!pendingLead && !canCreateProposalFrom(record))
       throw new Error("Chưa đủ điều kiện tạo đề xuất");
     setCreatingProposal(true);
-    const idem =
-      window.crypto && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `idem_${Date.now()}`;
     try {
-      const res = await leadService.createProposal(
-        recordId,
-        formData,
-        token,
-        idem,
-      );
+      const data = pendingLead ? { lead: pendingLead, proposal: formData, edit_version: record.edit_version } : formData;
+      const serialized = JSON.stringify(data);
+      if (proposalRequest.current && proposalRequest.current.serialized !== serialized) {
+        throw new Error("Yêu cầu trước chưa xác nhận kết quả. Hãy gửi lại đúng dữ liệu để kiểm tra trước khi thay đổi.");
+      }
+      if (!proposalRequest.current) {
+        const key = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        proposalRequest.current = { serialized, key };
+      }
+      const res = pendingLead
+        ? await leadService.saveAndCreateProposal(recordId, data, token, proposalRequest.current.key)
+        : await leadService.createProposal(recordId, data, token, proposalRequest.current.key);
       if (res.success) {
         const pid = res.data && res.data.id;
+        setDirty(false);
+        if (onSaved) onSaved();
         setToast({
           message: res.message || "Tạo đề xuất thành công",
           type: "success",
@@ -437,6 +472,7 @@ const LeadDetailPopup = ({
         setShowCreateProposal(false);
         if (pid) navigate(`/admin/proposals/chi-tiet/${pid}`);
       } else {
+        if (pendingLead && res.httpStatus >= 400 && res.httpStatus < 500) proposalRequest.current = null;
         throw new Error(res.message || "Tạo đề xuất thất bại");
       }
     } catch (err) {
@@ -663,8 +699,8 @@ const LeadDetailPopup = ({
             <button
               type="button"
               className="btn btn-ghost btn-sm btn-circle"
-              onClick={onClose}
-              disabled={saving}
+              onClick={requestClose}
+              disabled={saving || creatingProposal}
               aria-label="Đóng"
             >
               <X size={18} />
@@ -804,6 +840,11 @@ const LeadDetailPopup = ({
                 className="btn btn-ghost btn-sm"
                 onClick={() => {
                   setMode("view");
+                  setDirty(false);
+                  setPendingLead(null);
+                  setProposalOpened(false);
+                  setProposalSeed(null);
+                  proposalRequest.current = null;
                   if (onSwitchMode) onSwitchMode("view");
                 }}
                 disabled={saving}
@@ -823,8 +864,8 @@ const LeadDetailPopup = ({
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={onClose}
-            disabled={saving}
+            onClick={requestClose}
+            disabled={saving || creatingProposal}
           >
             Đóng
           </button>
@@ -866,9 +907,10 @@ const LeadDetailPopup = ({
         }}
       />
 
-      {showCreateProposal && (
+      {proposalOpened && (
         <dialog
           className="modal modal-open"
+          style={{ display: showCreateProposal ? undefined : "none" }}
           onCancel={(e) => e.preventDefault()}
         >
           <div
@@ -883,6 +925,7 @@ const LeadDetailPopup = ({
                 type="button"
                 className="btn btn-ghost btn-sm btn-circle"
                 onClick={() => setShowCreateProposal(false)}
+                disabled={creatingProposal}
                 aria-label="Close"
               >
                 <X size={18} />
@@ -935,11 +978,11 @@ const LeadDetailPopup = ({
               )}
             </div>
             <DynamicForm
-              key={`lead-proposal-${record.id}-${mapCoords.latitude}-${mapCoords.longitude}-${quickFormId || "full"}`}
+              key={`lead-proposal-${record.id}-${quickFormId || "full"}`}
               entity="station_proposals"
               purpose="create"
               formId={quickFormId || undefined}
-              initialData={prefillProposal}
+              initialData={proposalInitialData}
               onSubmit={handleCreateProposal}
             >
               <button
@@ -955,6 +998,15 @@ const LeadDetailPopup = ({
           <div className="modal-backdrop" />
         </dialog>
       )}
+      <ConfirmDialog
+        isOpen={confirmClose}
+        title="Bỏ dữ liệu chưa lưu?"
+        message="Dữ liệu đang nhập sẽ bị mất nếu đóng cửa sổ."
+        confirmText="Bỏ nháp"
+        cancelText="Tiếp tục chỉnh sửa"
+        onCancel={() => setConfirmClose(false)}
+        onConfirm={onClose}
+      />
     </div>
   );
 };

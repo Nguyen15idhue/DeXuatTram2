@@ -31,6 +31,7 @@ import {
   ProposalStatusBadge,
 } from "./ProposalTableBadges";
 import ProposalAdvancedFilters from "./ProposalAdvancedFilters";
+import { appendMultiFilter, hasFilterValue } from "../../utils/proposalMultiFilters";
 import { FilterBody, FilterToggle } from "../ui/FilterPanel";
 import {
   Check,
@@ -211,7 +212,7 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
           dateTo: "date_to",
         };
         Object.entries(filterKeys).forEach(([key, queryKey]) => {
-          if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+          appendMultiFilter(params, queryKey, targetFilters[key]);
         });
         params.set("page", targetPage);
         params.set("limit", targetSize);
@@ -276,7 +277,7 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
     setPage(1);
   };
 
-  const activeFilterCount = Object.values(appliedFilters).filter(Boolean).length;
+  const activeFilterCount = Object.values(appliedFilters).filter(hasFilterValue).length;
 
   const openAction = async (row, type) => {
     const requestId = ++actionRequestId.current;
@@ -476,7 +477,7 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
         onApply={applyFilters}
         onReset={resetFilters}
       >
-        <ProposalAdvancedFilters
+        <ProposalAdvancedFilters multiple
           values={filters}
           onChange={setFilters}
           options={filterOptions}

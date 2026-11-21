@@ -25,6 +25,9 @@ const assignInTransaction = async (leadId, targetUserId, actor, opts, conn) => {
   if (!opts.systemAuto && !(await access.permissions(lead, actor, conn)).can_assign) {
     throw fail('Chỉ GĐTTKD và Super Admin được phân bổ GĐKV trong phạm vi quản lý', 403);
   }
+  if (!opts.creatingProposal) {
+    await require('./leadProposalRequirement').assertSatisfied(lead, lead.sales_outcome, conn);
+  }
   if (!leadService.isAssignableClassification(lead.customer_classification)) {
     throw fail('Chỉ khách hàng Tiềm năng hoặc Quan tâm mới được phân bổ');
   }

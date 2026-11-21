@@ -4,6 +4,7 @@ const { isGdtt, isGdkv } = require('../constants/salesRanks');
 const leadAccess = require('./leadAccessService');
 const { canManageAllLeads } = require('../utils/leadPortal');
 const consultation = require('./leadConsultationService');
+const { values } = require('../utils/multiValueFilter');
 
 const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
 
@@ -108,26 +109,38 @@ const normalizeQueryValue = (v) => {
   return v;
 };
 
+const classificationFilterValues = (value) => {
+  const key = String(value).trim().toLowerCase();
+  if (['tiềm năng', 'tiem_nang', 'ut1'].includes(key)) return ['Tiềm năng', 'TIEM_NANG', 'ut1'];
+  if (['quan tâm', 'quan_tam', 'ut2'].includes(key)) return ['Quan tâm', 'QUAN_TAM', 'ut2'];
+  return [value];
+};
+
 // Điều kiện lọc danh sách Lead dùng chung cho GET list và Excel export.
 // Hỗ trợ __empty__ (chưa có giá trị) + khoảng ngày. Không ném lỗi với mảng.
 const applyLeadListFilters = (where, params, query, alias = 'l.') => {
   const q = {};
   Object.keys(query || {}).forEach((k) => { q[k] = normalizeQueryValue(query[k]); });
   const EMPTY_FILTER = '__empty__';
-  Object.keys(FILTER_COLUMNS).forEach((key) => {
-    const value = q[key];
-    if (value === undefined || value === null || String(value).trim() === '') return;
+  const applyFilter = (key, selected) => {
     const col = `${alias}${FILTER_COLUMNS[key].split('.')[1]}`;
-    if (value === EMPTY_FILTER) {
-      if (key === 'assigned_user_id') {
-        where.push(`${col} IS NULL`);
-      } else {
-        where.push(`(${col} IS NULL OR ${col} = '')`);
-      }
-      return;
+    const choices = values(selected);
+    if (!choices.length) return;
+    const includeEmpty = choices.includes(EMPTY_FILTER);
+    const nonEmpty = choices.filter(value => value !== EMPTY_FILTER);
+    const expanded = [...new Set(nonEmpty.flatMap(value =>
+      key === 'customer_classification' ? classificationFilterValues(value) : [value]))];
+    const clauses = [];
+    if (expanded.length) {
+      clauses.push(`${col} IN (${expanded.map(() => '?').join(',')})`);
+      params.push(...expanded);
     }
-    where.push(`${col} = ?`);
-    params.push(value);
+    if (includeEmpty) clauses.push(key === 'assigned_user_id' ? `${col} IS NULL` : `(${col} IS NULL OR ${col} = '')`);
+    where.push(`(${clauses.join(' OR ')})`);
+  };
+  Object.keys(FILTER_COLUMNS).forEach((key) => {
+    applyFilter(key, q[key]);
+    applyFilter(key, query?.[`filter_${key}`]);
   });
   const dateField = q.date_field === 'updated_at' ? `${alias}updated_at` : `${alias}created_at`;
   if (q.date_from && String(q.date_from).trim()) {
@@ -269,6 +282,9 @@ const getLeadRow = async (id, conn = pool) => {
 
 exports.createLead = async (data, user, opts = {}) => {
   if (!canManageAllLeads(user)) throw Object.assign(new Error('Không có quyền tạo khách hàng'), { statusCode: 403 });
+  if (data.sales_outcome === 'SUCCESS') {
+    throw Object.assign(new Error('Khách hàng chưa có đề xuất. Vui lòng lưu và tạo đề xuất.'), { statusCode: 409 });
+  }
   const fullName = String(data.full_name || '').trim();
   const phone = String(data.phone || '').trim();
   if (!fullName) {
@@ -373,6 +389,39 @@ exports.createLead = async (data, user, opts = {}) => {
   }
 };
 
+const notifyLeadUpdate = async (lead, updated, user) => {
+  try {
+    const crmLeadId = lead.external_crm_id || null;
+    if (crmLeadId && updated) {
+      const crmOutboundService = require('./crmOutboundService');
+      const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+      if (lead.stage !== updated.stage) {
+        const crmStatus = crmStatusMapping.mapTmtStageToCrm(updated.stage);
+        if (crmStatus) {
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_stage_${Date.now()}`,
+            eventType: 'lead.result',
+            leadId: lead.id,
+            crmLeadId,
+            payload: { leadId: crmLeadId, status: crmStatus, note: `Trạng thái: ${updated.stage}`, staff: user.full_name || '', ref: `EG-${lead.id}` }
+          });
+        }
+      }
+      if (lead.customer_classification !== updated.customer_classification && normalizeClassification(updated.customer_classification) === 'KHONG_CHAT_LUONG') {
+        await crmOutboundService.enqueue({
+          eventId: `eg_${lead.id}_badquality_${Date.now()}`,
+          eventType: 'lead.result',
+          leadId: lead.id,
+          crmLeadId,
+          payload: { leadId: crmLeadId, status: 'bad_quality', reason: 'Không chất lượng', note: 'Phân loại: Không chất lượng', staff: user.full_name || '', ref: `EG-${lead.id}` }
+        });
+      }
+    }
+  } catch (error) {
+    console.error(`[CRM] notify lead update failed: leadId=${lead.id}`, error);
+  }
+};
+
 exports.updateLead = async (id, data, user, opts = {}) => {
   let lead = await getLeadRow(id);
   if (!lead) {
@@ -393,35 +442,7 @@ exports.updateLead = async (id, data, user, opts = {}) => {
     lead = await getLeadRow(id, conn);
     const updated = await applyLeadUpdate(conn, lead, data, user, opts);
     await conn.commit();
-    // CRM outbound: notify stage change + bad_quality
-    try {
-      const crmLeadId = lead.external_crm_id || null;
-      if (crmLeadId && updated) {
-        const crmOutboundService = require('./crmOutboundService');
-        const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
-        if (lead.stage !== updated.stage) {
-          const crmStatus = crmStatusMapping.mapTmtStageToCrm(updated.stage);
-          if (crmStatus) {
-            await crmOutboundService.enqueue({
-              eventId: `eg_${lead.id}_stage_${Date.now()}`,
-              eventType: 'lead.result',
-              leadId: lead.id,
-              crmLeadId,
-              payload: { leadId: crmLeadId, status: crmStatus, note: `Trạng thái: ${updated.stage}`, staff: user.full_name || '', ref: `EG-${lead.id}` }
-            });
-          }
-        }
-        if (lead.customer_classification !== updated.customer_classification && normalizeClassification(updated.customer_classification) === 'KHONG_CHAT_LUONG') {
-          await crmOutboundService.enqueue({
-            eventId: `eg_${lead.id}_badquality_${Date.now()}`,
-            eventType: 'lead.result',
-            leadId: lead.id,
-            crmLeadId,
-            payload: { leadId: crmLeadId, status: 'bad_quality', reason: 'Không chất lượng', note: 'Phân loại: Không chất lượng', staff: user.full_name || '', ref: `EG-${lead.id}` }
-          });
-        }
-      }
-    } catch { /* silent */ }
+    await notifyLeadUpdate(lead, updated, user);
     return updated;
   } catch (err) {
     try { await conn.rollback(); } catch { /* silent */ }
@@ -436,6 +457,11 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
 
   const patch = {};
   await consultation.assertUpdateAllowed(lead, data, user, conn);
+  if (!opts.creatingProposal) {
+    await require('./leadProposalRequirement').assertSatisfied(
+      lead, data.sales_outcome === undefined ? lead.sales_outcome : data.sales_outcome, conn
+    );
+  }
   // assigned_department KHÔNG nhận trực tiếp từ PUT (đi qua /assign hoặc tự resolve
   // nội bộ khi đổi người) — tránh ghi phòng ban bừa / NULL gây 500 ở history.
   const updatable = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
@@ -811,6 +837,8 @@ exports.getLeadDetail = async (id, user = null) => {
   }
   out.consultation_timing = await consultation.getTiming(row);
   if (user) out.permissions = await leadAccess.permissions(row, user);
+  out.has_proposal = await require('./leadProposalRequirement').hasProposal(row, pool);
+  out.edit_version = require('./leadProposalRequirement').editVersion(row);
   return out;
 };
 
@@ -830,6 +858,8 @@ exports.getJourneyProposals = async (journeyId) => {
 };
 
 exports.getLeadById = getLeadRow;
+exports.applyLeadUpdate = applyLeadUpdate;
+exports.notifyLeadUpdate = notifyLeadUpdate;
 exports.canAccessLead = canAccessLead;
 exports.buildScope = buildScope;
 exports.lookupProvince = lookupProvince;

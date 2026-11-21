@@ -24,6 +24,36 @@ test('chairman upload allows Back Office and Finance but denies MKT/CTV departme
   }
 });
 
+test('report files do not fall back to proposal region for GĐTTKD', async t => {
+  const files = require('../src/controllers/fileController');
+  const review = require('../src/services/proposalReviewService');
+  const scope = {
+    id: 7, region: 'Trung', managedIds: new Set([7, 8]), accountIds: new Set([7, 8, 99])
+  };
+  let custom = { vung_mien: 'Trung', file_bc_dx: [{ id: 101, name: 'report.pdf' }] };
+  let status = 'PROPOSAL_REPORT_CREATING';
+  t.mock.method(review, 'resolveReviewer', async () => ({ managementScope: scope }));
+  t.mock.method(require('../src/services/adminUserService'), 'getBranchIds', async () => [7]);
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('SELECT role, token_version, custom_data FROM users')) return [[{
+      role: 'SALES', token_version: 0,
+      custom_data: { department: 'Trung tâm KD miền Trung', chuc_vu: 'Giám đốc Trung tâm Kinh doanh' }
+    }]];
+    if (sql === 'SELECT user_id, status, review_level, custom_data FROM station_proposals') {
+      return [[{ user_id: 99, status, review_level: null, custom_data: custom }]];
+    }
+    return [[]];
+  });
+  const req = { user: { id: 7, role: 'SALES', tokenVersion: 0 } };
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), false);
+  status = 'PROPOSAL_REPORT_REVIEWING';
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), false);
+  custom = { ...custom, nguoi_phu_trach: { id: 8 } };
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), true);
+  custom = { vung_mien: 'Trung', ban_ve_layout: [{ id: 101, name: 'layout.pdf' }] };
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), true);
+});
+
 for (const department of ['Phòng Tài chính và Kế toán', 'Back Office']) {
 test(`${department} file access is restricted to eligible chairman proposal attachments`, async t => {
   const files = require('../src/controllers/fileController');
@@ -134,6 +164,8 @@ test('real SQL signature tabs split personal completion and chairman handoff wit
       (3,10,'SIGNED',4,104),(3,11,'PENDING',4,104),
       (4,11,'SIGNED',5,105),(5,10,'SIGNED',6,106),
       (7,10,'SIGNED',7,107),(7,10,'CANCELLED',8,108),(7,20,'SIGNED',7,107)`);
+    await connection.query(`UPDATE station_proposals SET custom_data = JSON_OBJECT('mo_hinh_dau_tu',
+      CASE WHEN id IN (1, 3) THEN 'NQ' ELSE 'LK' END)`);
     const ids = async (user, tab, extra = {}) => {
       const result = await service.listProposals({ user, tab, ...extra });
       assert.equal(result.pagination.total, result.proposals.length);
@@ -152,6 +184,12 @@ test('real SQL signature tabs split personal completion and chairman handoff wit
     assert.deepEqual(await ids(finance, 'all'), [1, 4, 5, 7]);
     assert.deepEqual(await ids(finance, 'pending', { myStatus: 'my_pending' }), [1]);
     assert.deepEqual(await ids(signer, 'all', { myStatus: 'my_signed' }), [3, 5, 7]);
+    assert.deepEqual(await ids(signer, 'all', { myStatus: ['my_pending', 'my_signed'] }), [1, 2, 3, 5, 7]);
+    assert.deepEqual(await ids(superAdmin, 'all', { myStatus: ['my_pending', 'my_signed'] }), []);
+    assert.deepEqual(await ids(signer, 'all', {
+      myStatus: ['my_pending', 'my_signed'], moHinh: ['NQ'], signStatus: ['PENDING', 'DOING']
+    }), [1, 3]);
+    assert.deepEqual(await ids(signer, 'all', { moHinh: ['NQ', 'LK'], myStatus: 'my_signed' }), [3, 5, 7]);
     assert.deepEqual(await ids(superAdmin, 'pending'), [5, 7]);
     assert.deepEqual(await ids(superAdmin, 'completed'), [4]);
     assert.deepEqual(await ids(superAdmin, 'chairman'), [5, 7]);
