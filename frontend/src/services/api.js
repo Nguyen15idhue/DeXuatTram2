@@ -251,6 +251,11 @@ export const cmsReportService = {
     api.postWithAuth('/admin/cms-reports/run', { from, to, ...(rawOnly && { rawOnly }) }, token)
 };
 
+export const cmsVehicleService = {
+  run: (from, to, token, { all = false } = {}) =>
+    api.postWithAuth('/admin/cms-reports/vehicles/run', { from, to, all }, token)
+};
+
 const _pendingGets = new Map();
 function dedupGet(endpoint) {
   if (_pendingGets.has(endpoint)) return _pendingGets.get(endpoint);

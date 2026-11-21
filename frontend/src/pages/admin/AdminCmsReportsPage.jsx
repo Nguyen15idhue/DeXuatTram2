@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink, LoaderCircle, Play, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { cmsReportService } from '../../services/api';
+import { cmsReportService, cmsVehicleService } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 
 const STATUS_LABELS = { RUNNING: 'Đang chạy', SUCCESS: 'Thành công', PARTIAL: 'Một phần bị lỗi', FAILED: 'Thất bại' };
@@ -16,6 +16,11 @@ const AdminCmsReportsPage = () => {
   const [to, setTo] = useState('');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
+  const [vehicleSyncing, setVehicleSyncing] = useState(false);
+  const [vehicleResult, setVehicleResult] = useState(null);
+  const [vehicleError, setVehicleError] = useState('');
+  const [vehicleFrom, setVehicleFrom] = useState('');
+  const [vehicleTo, setVehicleTo] = useState('');
   const mounted = useRef(false);
   const initialized = useRef(false);
   const load = useCallback(async () => {
@@ -29,6 +34,8 @@ const AdminCmsReportsPage = () => {
         initialized.current = true;
         setFrom(response.data.yesterday);
         setTo(response.data.yesterday);
+        setVehicleFrom(response.data.yesterday);
+        setVehicleTo(response.data.yesterday);
       }
     } catch (cause) {
       if (mounted.current) setError(cause.message || 'Không tải được trạng thái CMS');
@@ -69,6 +76,26 @@ const AdminCmsReportsPage = () => {
       if (mounted.current) setStarting(false);
     }
   };
+
+  const runVehicleSync = async (all = false) => {
+    if (!all && (!vehicleFrom || !vehicleTo || vehicleFrom > vehicleTo)) {
+      setVehicleError('Vui lòng chọn khoảng ngày xe hợp lệ');
+      return;
+    }
+    setVehicleSyncing(true);
+    setVehicleError('');
+    setVehicleResult(null);
+    try {
+      const response = await cmsVehicleService.run(vehicleFrom, vehicleTo, token, { all });
+      if (!response?.success) throw new Error(response?.message || 'Không đồng bộ được danh sách xe');
+      setVehicleResult(response.data);
+    } catch (cause) {
+      setVehicleError(cause.message || 'Không đồng bộ được danh sách xe');
+    } finally {
+      setVehicleSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader title="Thống kê phiên sạc CMS" subtitle="Lấy trực tiếp từ CMS và xuất Google Sheet — không lưu database" />
@@ -126,6 +153,36 @@ const AdminCmsReportsPage = () => {
             </p>}
             <p>Tiến độ và kết quả dưới đây chỉ giữ trong bộ nhớ của một backend. Khởi động lại sẽ mất tiến độ; có thể chạy lại ngày cần lấy.</p>
           </div>
+        </div>
+      </div>
+      <div className="card bg-base-100 shadow-sm border border-base-200">
+        <div className="card-body gap-3">
+          <h2 className="card-title text-base">Đồng bộ danh sách xe (tab thong_tin_xe)</h2>
+          <p className="text-sm text-base-content/70">Đồng bộ theo mã xe: thêm xe mới, cập nhật xe đã có và giữ ô cũ khi CMS không có dữ liệu. Tự động chạy 06:00 mỗi ngày (chỉ xe tạo hôm qua).</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="form-control">
+              <span className="label-text mb-1">Từ ngày</span>
+              <input aria-label="Xe từ ngày" type="date" className="input input-bordered" value={vehicleFrom} disabled={vehicleSyncing} onChange={event => setVehicleFrom(event.target.value)} />
+            </label>
+            <label className="form-control">
+              <span className="label-text mb-1">Đến ngày</span>
+              <input aria-label="Xe đến ngày" type="date" className="input input-bordered" value={vehicleTo} disabled={vehicleSyncing} onChange={event => setVehicleTo(event.target.value)} />
+            </label>
+            <button type="button" className="btn btn-primary" disabled={vehicleSyncing || !data?.configured}
+              onClick={() => runVehicleSync(false)}>
+              {vehicleSyncing ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
+              Đồng bộ danh sách xe
+            </button>
+            <button type="button" className="btn btn-outline btn-primary" disabled={vehicleSyncing || !data?.configured}
+              onClick={() => runVehicleSync(true)}>
+              {vehicleSyncing ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
+              Lấy tất cả xe
+            </button>
+          </div>
+          {vehicleError && <div role="alert" className="alert alert-error">{vehicleError}</div>}
+          {vehicleResult && <div className="text-sm text-base-content/70">
+            Tổng {vehicleResult.total} xe · lọc {vehicleResult.filtered} · thêm mới {vehicleResult.added} · cập nhật {vehicleResult.updated} · không đổi {vehicleResult.skipped}
+          </div>}
         </div>
       </div>
       {run && <section className="space-y-3" aria-label="Lượt thống kê">

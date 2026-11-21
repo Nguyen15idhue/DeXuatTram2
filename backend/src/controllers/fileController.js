@@ -278,6 +278,11 @@ const canAccessFile = async (file, req) => {
       } catch { /* silent */ }
       for (const p of props) {
         if (!containsFileId(p.custom_data, fid)) continue;
+        const proposalCustom = parseUserCustomData(p.custom_data);
+        if (isGdttkdUser
+          && reportService.TAB_STATUSES.all.includes(p.status)
+          && containsFileId({ files: proposalCustom.file_bc_dx, sources: proposalCustom.file_bc_dx_sources }, fid)
+          && !require('../services/proposalReviewScope').matches({ ...reviewScope, region: null }, p)) continue;
         if (p.user_id !== null && Number(p.user_id) === Number(requesterId)) return true;
         if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
         if (isTgdUser) return true;

@@ -7,6 +7,7 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
   let started = false;
   let statusReads = 0;
   const posts = [];
+  const vehiclePosts = [];
   const errors = [];
   const cmsRequests = [];
   let rawOnly = false;
@@ -43,6 +44,11 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
         } : null
       };
     }
+    if (url.pathname.endsWith('/cms-reports/vehicles/run')) {
+      vehiclePosts.push(route.request().postDataJSON());
+      await route.fulfill({ json: { success: true, data: { total: 3, filtered: 2, added: 1, updated: 1, skipped: 0 } } });
+      return;
+    }
     if (url.pathname.endsWith('/cms-reports/run')) {
       posts.push(route.request().postDataJSON());
       rawOnly = posts.at(-1).rawOnly === true;
@@ -56,8 +62,21 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
     }
     await route.fulfill({ json: { success: true, data } });
   });
-  return { posts, errors, cmsRequests };
+  return { posts, vehiclePosts, errors, cmsRequests };
 };
+
+test('vehicle sync uses its own selected date range and shows update counts', async ({ page }) => {
+  const { vehiclePosts, errors } = await setup(page);
+  await page.goto('/admin/cms-reports');
+  await expect(page.getByLabel('Xe từ ngày')).toHaveValue('2026-11-16');
+  await page.getByLabel('Xe từ ngày').fill('2026-11-10');
+  await page.getByLabel('Xe đến ngày').fill('2026-11-15');
+  await page.getByRole('button', { name: 'Đồng bộ danh sách xe', exact: true }).click();
+  expect(vehiclePosts).toEqual([{ from: '2026-11-10', to: '2026-11-15', all: false }]);
+  await expect(page.getByText('Tổng 3 xe · lọc 2 · thêm mới 1 · cập nhật 1 · không đổi 0')).toBeVisible();
+  await expect(page.getByLabel('Ngày báo cáo')).toHaveValue('2026-11-16');
+  expect(errors).toEqual([]);
+});
 
 test('raw-only button submits the selected range and shows only raw results', async ({ page }) => {
   const { posts, errors } = await setup(page, { raw: true });

@@ -24,6 +24,36 @@ test('chairman upload allows Back Office and Finance but denies MKT/CTV departme
   }
 });
 
+test('report files do not fall back to proposal region for GĐTTKD', async t => {
+  const files = require('../src/controllers/fileController');
+  const review = require('../src/services/proposalReviewService');
+  const scope = {
+    id: 7, region: 'Trung', managedIds: new Set([7, 8]), accountIds: new Set([7, 8, 99])
+  };
+  let custom = { vung_mien: 'Trung', file_bc_dx: [{ id: 101, name: 'report.pdf' }] };
+  let status = 'PROPOSAL_REPORT_CREATING';
+  t.mock.method(review, 'resolveReviewer', async () => ({ managementScope: scope }));
+  t.mock.method(require('../src/services/adminUserService'), 'getBranchIds', async () => [7]);
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('SELECT role, token_version, custom_data FROM users')) return [[{
+      role: 'SALES', token_version: 0,
+      custom_data: { department: 'Trung tâm KD miền Trung', chuc_vu: 'Giám đốc Trung tâm Kinh doanh' }
+    }]];
+    if (sql === 'SELECT user_id, status, review_level, custom_data FROM station_proposals') {
+      return [[{ user_id: 99, status, review_level: null, custom_data: custom }]];
+    }
+    return [[]];
+  });
+  const req = { user: { id: 7, role: 'SALES', tokenVersion: 0 } };
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), false);
+  status = 'PROPOSAL_REPORT_REVIEWING';
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), false);
+  custom = { ...custom, nguoi_phu_trach: { id: 8 } };
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), true);
+  custom = { vung_mien: 'Trung', ban_ve_layout: [{ id: 101, name: 'layout.pdf' }] };
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), true);
+});
+
 for (const department of ['Phòng Tài chính và Kế toán', 'Back Office']) {
 test(`${department} file access is restricted to eligible chairman proposal attachments`, async t => {
   const files = require('../src/controllers/fileController');

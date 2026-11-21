@@ -322,7 +322,10 @@ exports.listRequests = async ({
 exports.getFilterOptions = async (scope = {}) => {
   const params = [];
   const visibility = [];
-  if (['ADMIN', 'SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
+  if (scope.proposalVisibility) {
+    visibility.push(scope.proposalVisibility.sql);
+    params.push(...scope.proposalVisibility.params);
+  } else if (['ADMIN', 'SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
     const branchIds = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
     if (branchIds.length === 0) visibility.push('1 = 0');
     else {

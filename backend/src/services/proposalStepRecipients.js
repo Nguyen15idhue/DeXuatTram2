@@ -105,8 +105,18 @@ const layoutUsers = async () => {
 
 const reportUploadUsers = async (proposal) => {
   const proposalReviewService = require('./proposalReviewService');
-  const region = proposalRegion(proposal);
   const users = await loadActiveUsers();
+  const reviewScope = require('./proposalReviewScope');
+  const managers = users.filter((user) => ['ADMIN', 'SALES'].includes(user.role)
+    && proposalReviewService.resolveRoleKey({
+      role: user.role, department: user.department, chucVu: user.chucVu
+    }) === proposalReviewService.REVIEW_ROLE.GDTTKD);
+  const allUsers = managers.length ? (await pool.query('SELECT id, parent_id, custom_data FROM users'))[0] : [];
+  const managerIds = new Set();
+  for (const manager of managers) {
+    const scope = await reviewScope.build({ id: manager.id, department: manager.department, region: null }, allUsers);
+    if (reviewScope.matches(scope, proposal)) managerIds.add(manager.id);
+  }
   const ownerId = Number(proposal.user_id) || null;
   const custom = parseCustomData(proposal.custom_data);
   const responsibleIds = [ownerId, custom.nguoi_phu_trach?.id, custom.sales_quan_ly?.id].map(Number).filter(Boolean);
@@ -122,9 +132,7 @@ const reportUploadUsers = async (proposal) => {
         chucVu: user.chucVu
       });
       if (roleKey === proposalReviewService.REVIEW_ROLE.TGD) return false;
-      const userRegion = proposalReviewService.resolveRegion(user.department)
-        || proposalReviewService.resolveRegion(user.customData.vung_mien);
-      if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) return !!region && userRegion === region;
+      if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) return managerIds.has(user.id);
       return (ownerId && user.id === ownerId)
         || (['ADMIN', 'SALES', 'NPP'].includes(user.role) && ancestorIds.has(user.id));
     })

@@ -19,6 +19,7 @@ import Pagination from "../../../components/Pagination";
 import SearchableMultiSelect from "../../../components/ui/SearchableMultiSelect";
 import { appendMultiFilter, hasFilterValue } from "../../../utils/proposalMultiFilters";
 import useFieldOptions from "../../../hooks/useFieldOptions";
+import useDataListMap from "../../../hooks/useDataListMap";
 import useDefaultViewId from "../../../hooks/useDefaultViewId";
 import useDebouncedValue from "../../../hooks/useDebouncedValue";
 import useMediaQuery from "../../../hooks/useMediaQuery";
@@ -36,6 +37,12 @@ import {
 } from "../../../utils/leadAccess";
 import useLeadTaskCounts from "../../../hooks/useLeadTaskCounts";
 import { notifyLeadTaskCountsChanged } from "../../../utils/leadTaskCounts";
+import {
+  getLatestLeadHistoryClassification,
+  getLeadHistoryClassificationField,
+  getLeadHistoryClassificationLabel,
+  getLeadHistoryClassificationStyle,
+} from "../../../utils/leadHistoryClassification";
 import {
   Users,
   Upload,
@@ -84,7 +91,7 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
   }, [activeTab, requestedTab, location.pathname, location.search, navigate]);
   const leadsViewId = useDefaultViewId("leads", null);
   const isDesktop = useMediaQuery("(min-width: 768px)");
-  const { getSelectOptions } = useFieldOptions("leads", [
+  const { fields, getSelectOptions } = useFieldOptions("leads", [
     "source",
     "province",
     "customer_classification",
@@ -95,6 +102,8 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
   const provinceOptions = getSelectOptions("province");
   const classificationOptions = getSelectOptions("customer_classification");
   const salesOutcomeOptions = getSelectOptions("sales_outcome");
+  const historyClassificationField = getLeadHistoryClassificationField(fields);
+  const historyDataListMaps = useDataListMap([historyClassificationField?.data_list_id]);
   const [gdkvOptions, setGdkvOptions] = useState([]);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1394,6 +1403,15 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
           entity="leads"
           viewId={leadsViewId}
           data={leads}
+          additionalColumns={basePath === "/admin/leads" ? [{
+            key: "gdkv_history_classification",
+            label: "GĐKV phân loại",
+            type: "text",
+            visible: true,
+            sortable: false,
+            filterable: false,
+          }] : []}
+          columnsAfter={{ anchorKey: "customer_classification", keys: ["gdkv_history_classification"], visibleAnchorOnly: true }}
           cellRenderers={{
             lead_code: (row, value) => (
               <Link
@@ -1421,6 +1439,16 @@ const AdminLeadsPage = ({ basePath = "/admin/leads" }) => {
                   entityId={row.id}
                   dataListOptions={dataListOptions}
                 />
+              );
+            },
+            gdkv_history_classification: (row) => {
+              const value = getLatestLeadHistoryClassification(row);
+              if (!value) return "—";
+              const label = getLeadHistoryClassificationLabel(value, historyClassificationField, historyDataListMaps);
+              return (
+                <span className="badge whitespace-nowrap" style={getLeadHistoryClassificationStyle(value, label)}>
+                  {label}
+                </span>
               );
             },
             consultation_status: (row) => {

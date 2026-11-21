@@ -53,3 +53,38 @@ test('TGĐ sees no BCĐX tasks/upload, retains all-list viewing and approval rej
   expect(rejected[0]).toEqual({ reason: 'Cần xem lại thông tin BCĐX' });
   expect(errors).toEqual([]);
 });
+
+test('GĐTTKD report list reflects scoped tasks and ADMIN read-only rows', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => localStorage.setItem('token', 'report-scope-fixture'));
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    const role = await page.evaluate(() => sessionStorage.getItem('reportFixtureRole'));
+    let data = [];
+    let pagination;
+    const meta = { roleKey: 'GDTTKD', isAdmin: role === 'ADMIN', isBackOffice: false };
+    if (url.pathname.endsWith('/auth/me')) {
+      data = { user: { id: 7, role: role || 'SALES', full_name: 'GĐTTKD',
+        custom_data: { department: 'Trung tâm KD miền Trung', chuc_vu: 'Giám đốc Trung tâm Kinh doanh' } } };
+    } else if (url.pathname.endsWith('/admin/proposal-reports')) {
+      data = [{ id: 101, ma_de_xuat: 'TRONG-NHANH', status: 'PROPOSAL_REPORT_CREATING', can_upload: true, custom_data: {} }];
+      if (role === 'ADMIN' && url.searchParams.get('tab') === 'all') {
+        data.push({ id: 102, ma_de_xuat: 'NGOAI-NHANH', status: 'PROPOSAL_REPORT_CREATING', can_upload: false, custom_data: {} });
+      }
+      pagination = { page: 1, total: data.length, limit: 20, totalPages: 1 };
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data, meta, pagination }) });
+  });
+  await page.goto('/admin/proposals/lap-to-trinh');
+  await expect(page.locator('tbody').getByText('TRONG-NHANH', { exact: true })).toBeVisible();
+  await expect(page.locator('tbody').getByText('NGOAI-NHANH', { exact: true })).toHaveCount(0);
+  await expect(page.locator('tbody tr').filter({ hasText: 'TRONG-NHANH' }).getByRole('button', { name: /Cập nhật/ })).toBeVisible();
+  await page.evaluate(() => sessionStorage.setItem('reportFixtureRole', 'ADMIN'));
+  await page.reload();
+  await page.getByRole('tab', { name: 'Tất cả đề xuất', exact: true }).click();
+  const foreignRow = page.locator('tbody tr').filter({ hasText: 'NGOAI-NHANH' });
+  await expect(foreignRow).toBeVisible();
+  await expect(foreignRow.getByRole('button', { name: /Cập nhật/ })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

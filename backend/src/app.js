@@ -234,6 +234,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.error('[OnStationSheetSyncWorker] start error:', err.message);
   });
   require('./workers/cmsReportWorker').start();
+  require('./workers/cmsVehicleSheetWorker').start();
   crmInboundPollingWorker.start().catch((err) => {
     console.error('[CrmInboundPollingWorker] start error:', err.message);
   });

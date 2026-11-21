@@ -245,6 +245,18 @@ test('opens the Lead by code without leaving its tab and displays current and le
   await expect(page).toHaveURL(/\/admin\/leads\?tab=consulting$/);
 });
 
+test('refreshes history classification after saving a lead', async ({ page }) => {
+  await openLead(page, { mode: 'list' });
+  const table = page.locator('table.dynamic-table');
+  const leadRow = table.locator('tbody tr').filter({ has: page.getByRole('link', { name: 'LD-000017' }) });
+  await expect(leadRow.getByText('—', { exact: true })).toBeVisible();
+  await leadRow.getByRole('button', { name: 'Cập nhật', exact: true }).click();
+  await page.getByRole('button', { name: 'GĐKV phân loại KH: -- Chọn --' }).click();
+  await page.getByRole('button', { name: 'ƯT2_Quan tâm', exact: true }).click();
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(leadRow.getByText('ƯT2_Quan tâm', { exact: true })).toHaveCount(1);
+});
+
 test.describe('touch device', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 

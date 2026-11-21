@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
 const reports = require('../services/cmsReportService');
+const vehicles = require('../services/cmsVehicleSheetService');
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
@@ -66,6 +67,57 @@ router.post('/run', (req, res) => {
     res.status(202).json({ success: true, data: { id: run.id }, message: 'Đã bắt đầu thống kê CMS' });
   } catch (cause) {
     console.error('[CmsReport] start:', cause.message);
+    res.status(cause.statusCode || 500).json({ success: false, message: cause.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/cms-reports/vehicles/run:
+ *   post:
+ *     tags: [Admin - CMS Reports]
+ *     summary: Đồng bộ danh sách xe theo mã xe, giữ giá trị cũ khi CMS không có dữ liệu
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               from:
+ *                 type: string
+ *                 format: date
+ *               to:
+ *                 type: string
+ *                 format: date
+ *               all:
+ *                 type: boolean
+ *                 description: Lấy toàn bộ xe, bỏ qua khoảng ngày.
+ *     responses:
+ *       200:
+ *         description: Số xe đọc, lọc, thêm mới, cập nhật và không đổi
+ *       400:
+ *         description: Khoảng ngày không hợp lệ
+ *       403:
+ *         description: Chỉ ADMIN/SUPER_ADMIN
+ *       409:
+ *         description: Đang chạy đồng bộ hoặc header Sheet không khớp
+ *       502:
+ *         description: Lỗi CMS hoặc Google Sheet
+ *       503:
+ *         description: Thiếu cấu hình
+ */
+router.post('/vehicles/run', async (req, res) => {
+  try {
+    const result = await vehicles.runVehicleSync({
+      from: req.body?.from,
+      to: req.body?.to,
+      all: req.body?.all === true,
+    });
+    res.status(200).json({ success: true, data: result, message: 'Đã đồng bộ danh sách xe' });
+  } catch (cause) {
+    console.error('[CmsVehicle] run:', cause.message);
     res.status(cause.statusCode || 500).json({ success: false, message: cause.message });
   }
 });

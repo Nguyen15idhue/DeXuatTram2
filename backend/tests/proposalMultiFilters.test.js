@@ -192,6 +192,27 @@ test('proposal filters apply unions within each field and preserve scope before 
       status: 'PENDING', scopeBranchUserIds: '10,11'
     });
     assert.deepEqual(legacy.map(row => row.id), [1]);
+
+    run(`USE \`${database}\`;
+      INSERT INTO station_proposals VALUES
+        (5,12,'PENDING','{"vung_mien":"Nam","nguoi_phu_trach":{"id":11}}',NULL,NULL,'2026-01-05','2026-01-05'),
+        (6,NULL,'PENDING','{"vung_mien":"Nam","sales_quan_ly":{"id":10}}',NULL,NULL,'2026-01-06','2026-01-06'),
+        (7,NULL,'PENDING','{"vung_mien":"Bac"}',NULL,NULL,'2026-01-07','2026-01-07');
+    `);
+    const organizational = await require('../src/services/proposalReviewScope').build(
+      { id: 10, department: 'Phòng A, B', region: null },
+      [
+        { id: 10, parent_id: null, custom_data: { department: 'Phòng A, B' } },
+        { id: 11, parent_id: 10, custom_data: { department: 'Phòng C' } },
+        { id: 12, parent_id: null, custom_data: { department: 'Phòng C' } }
+      ]
+    );
+    const scopeParams = [];
+    const scopeSql = require('../src/services/proposalReviewScope').sql(organizational, scopeParams);
+    for (const [id, expected] of [[1, 1], [2, 1], [3, 0], [5, 1], [6, 1], [7, 0]]) {
+      const sql = mysql.format(`SELECT COUNT(*) FROM station_proposals p WHERE p.id = ? AND ${scopeSql}`, [id, ...scopeParams]);
+      assert.equal(run(`USE \`${database}\`; ${sql};`)[0].total, expected, `proposal ${id}`);
+    }
   } finally {
     if (created) run(`DROP DATABASE \`${database}\`;`);
   }

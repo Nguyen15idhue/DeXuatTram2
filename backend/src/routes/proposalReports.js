@@ -18,7 +18,9 @@ const reportDocuments = require('../controllers/proposalReportDocumentController
  *       APPROVED, CANCELLED. Hỗ trợ lọc theo status, model, province, region, owner, manager, date.
  *       Phân quyền theo vai trò: Admin/Super Admin và Back Office xem tất cả;
  *       TGĐ chỉ xem, tab=pending trả rỗng và không được upload/cập nhật BCĐX;
- *       GĐTTKD xem theo khu vực; SALES xem theo nhánh; CTV/NPP xem đề xuất của mình.
+ *       GĐTTKD xem và xử lý theo nhánh, phòng ban hoặc phân công quản lý, không theo miền địa điểm;
+ *       ADMIN vẫn xem tất cả nhưng task và thao tác theo phạm vi nghiệp vụ.
+ *       SALES xem theo nhánh; NPP xem theo phạm vi được phân công.
  *     security:
  *       - bearerAuth: []
  *     parameters:

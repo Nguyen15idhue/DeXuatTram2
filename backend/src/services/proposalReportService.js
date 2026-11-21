@@ -78,15 +78,19 @@ const resolveScope = async (user) => {
   };
 };
 
+const getManagementScope = async (scope) => {
+  if (!scope.managementScopePromise) {
+    scope.managementScopePromise = require('./proposalReviewScope').build({
+      id: scope.userId, department: scope.department, region: null
+    });
+  }
+  return scope.managementScopePromise;
+};
+
 const scopeClause = async (scope, params) => {
   if (scope.isAdmin || scope.isBackOffice || scope.roleKey === 'TGD') return '';
-  if (scope.roleKey === 'GDTTKD' && scope.region) {
-    const pattern = { Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' }[scope.region];
-    if (pattern) {
-      params.push(pattern);
-      return " AND LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?";
-    }
-    return '';
+  if (scope.roleKey === 'GDTTKD') {
+    return ` AND ${require('./proposalReviewScope').sql(await getManagementScope(scope), params)}`;
   }
   if (['SALES', 'NPP'].includes(scope.role)) {
     const adminProposalService = require('./adminProposalService');
@@ -111,8 +115,7 @@ const canUploadReport = async (scope, proposal) => {
   if (scope.role === 'SUPER_ADMIN') return true;
   if (scope.roleKey === 'TGD') return false;
   if (scope.roleKey === 'GDTTKD') {
-    const region = proposalRegion(proposal.custom_data);
-    return !!scope.region && !!region && region === scope.region;
+    return require('./proposalReviewScope').matches(await getManagementScope(scope), proposal);
   }
   return require('./proposalAccessService').canActAsProposalOwner(
     { id: scope.userId, role: scope.role }, proposal
@@ -150,6 +153,7 @@ exports.resolveScope = resolveScope;
 exports.isBackOffice = isBackOffice;
 exports.isFinanceDepartment = isFinanceDepartment;
 exports.canUploadReport = canUploadReport;
+exports.getManagementScope = getManagementScope;
 exports.assertReportReadAccess = async (user, id) => {
   const scope = await resolveScope(user);
   const params = [id];
@@ -182,7 +186,7 @@ exports.listProposals = async ({
   const scoped = await scopeClause(scope, params);
   if (scoped) where.push(scoped.replace(/^ AND /, ''));
   if (safeTab === 'pending') {
-    const taskScope = await require('./proposalAccessService').buildReportTaskScopeSql(user);
+    const taskScope = await require('./proposalAccessService').buildReportTaskScopeSql(user, 'p', scope);
     where.push(taskScope.sql);
     params.push(...taskScope.params);
   }
@@ -256,8 +260,14 @@ exports.getFilterOptions = async (user) => {
   let filterScope;
   if (scope.isAdmin || scope.isBackOffice) {
     filterScope = { all: true };
-  } else if (scope.roleKey === 'GDTTKD' && scope.region) {
-    filterScope = { role: 'NPP', branchIds: [], region: scope.region };
+  } else if (scope.roleKey === 'GDTTKD') {
+    const params = [];
+    filterScope = {
+      proposalVisibility: {
+        sql: require('./proposalReviewScope').sql(await getManagementScope(scope), params),
+        params
+      }
+    };
   } else if (scope.role === 'SALES') {
     const adminProposalService = require('./adminProposalService');
     const branchIds = await adminProposalService.getBranchUserIds(scope.userId);
@@ -333,14 +343,9 @@ const loadProposal = async (id) => {
   return rows[0];
 };
 
-const proposalRegion = (customData) => {
-  const proposalReviewService = require('./proposalReviewService');
-  return proposalReviewService.resolveRegion(parseCustomData(customData).vung_mien);
-};
-
 const assertCanUpload = async (scope, proposal) => {
   if (await canUploadReport(scope, proposal)) return;
-  if (scope.roleKey === 'GDTTKD') throw err('Đề xuất không thuộc khu vực của bạn', 403);
+  if (scope.roleKey === 'GDTTKD') throw err('Đề xuất không thuộc phạm vi quản lý của bạn', 403);
   throw err('Bạn không có quyền tải tờ trình BCĐX cho đề xuất này', 403);
 };
 

@@ -135,6 +135,10 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
         .filter(Boolean);
       const anchorIndex = remainingColumns.findIndex(
         (column) => (column.field_key || column.key) === insertion.anchorKey
+          && (!insertion.visibleAnchorOnly || (
+            column.visible && !hiddenColumns.has(column.key) && !hiddenColumns.has(column.field_key)
+            && !hiddenLabels.has(String(column.label || '').trim().toLowerCase())
+          ))
       );
       if (anchorIndex >= 0) remainingColumns.splice(anchorIndex + 1, 0, ...orderedMovingColumns);
       else remainingColumns.push(...orderedMovingColumns);
