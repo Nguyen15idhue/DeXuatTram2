@@ -198,48 +198,8 @@ exports.listProposals = async ({
     params.push(like, like, like, like, like, like, like);
   }
 
-  if (filters.proposalStatus) {
-    where.push('p.status = ?');
-    params.push(String(filters.proposalStatus));
-  }
-  if (filters.model) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?");
-    params.push(String(filters.model));
-  }
-  if (filters.province) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?");
-    params.push(String(filters.province));
-  }
-  if (filters.region) {
-    const region = normalizeText(filters.region);
-    const pattern = region.includes('bac') ? '%bac%'
-      : region.includes('trung') ? '%trung%'
-        : region.includes('nam') ? '%nam%' : null;
-    if (pattern) {
-      where.push("LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?");
-      params.push(pattern);
-    }
-  }
-  if (filters.ownerUserId) {
-    where.push('p.user_id = ?');
-    params.push(Number(filters.ownerUserId));
-  }
-  if (filters.managerUserId) {
-    const branchIds = await require('./adminUserService').getBranchIds(Number(filters.managerUserId));
-    if (branchIds.length === 0) where.push('1 = 0');
-    else {
-      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
-      params.push(...branchIds.map(Number));
-    }
-  }
-  if (filters.dateFrom) {
-    where.push('p.created_at >= ?');
-    params.push(`${filters.dateFrom} 00:00:00`);
-  }
-  if (filters.dateTo) {
-    where.push('p.created_at < DATE_ADD(?, INTERVAL 1 DAY)');
-    params.push(filters.dateTo);
-  }
+  const { addProposalAdvancedFilters, patternForNormalizedRegion } = require('../utils/proposalAdvancedFilters');
+  await addProposalAdvancedFilters(where, params, filters, value => patternForNormalizedRegion(normalizeText(value)));
 
   const whereClause = `WHERE ${where.join(' AND ')}`;
 

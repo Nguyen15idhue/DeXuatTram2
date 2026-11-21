@@ -7,6 +7,7 @@ import useMediaQuery from '../../hooks/useMediaQuery';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import {
@@ -226,7 +227,7 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
         dateTo: 'date_to'
       };
       Object.entries(filterKeys).forEach(([key, queryKey]) => {
-        if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+        appendMultiFilter(params, queryKey, targetFilters[key]);
       });
       params.set('page', targetPage);
       params.set('limit', targetSize);
@@ -280,7 +281,7 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
     setShowFilter(false);
   };
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount = Object.values(filters).filter(hasFilterValue).length;
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => (
@@ -389,7 +390,7 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
         onReset={handleResetFilters}
         title="Bộ lọc đề xuất"
       >
-        <ProposalAdvancedFilters
+        <ProposalAdvancedFilters multiple
           values={filters}
           onChange={setFilters}
           options={filterOptions}

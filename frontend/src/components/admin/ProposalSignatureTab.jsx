@@ -10,6 +10,8 @@ import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
 import FilterBar from '../ui/FilterBar';
+import SearchableMultiSelect from '../ui/SearchableMultiSelect';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 import ProposalSignedFileModal from './ProposalSignedFileModal';
 import ReviewActionDialog from './ReviewActionDialog';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
@@ -109,9 +111,9 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       const params = new URLSearchParams();
       params.set('tab', tab);
       if (debouncedSearch) params.set('search', debouncedSearch);
-      if (filters.signStatus) params.set('sign_status', filters.signStatus);
-      if (filters.myStatus) params.set('my_status', filters.myStatus);
-      if (filters.moHinh) params.set('mo_hinh', filters.moHinh);
+      appendMultiFilter(params, 'sign_status', filters.signStatus);
+      appendMultiFilter(params, 'my_status', filters.myStatus);
+      appendMultiFilter(params, 'mo_hinh', filters.moHinh);
       params.set('page', targetPage);
       params.set('limit', targetSize);
       const res = await proposalSignatureService.getAll(params.toString(), token);
@@ -296,7 +298,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     return <div className="flex flex-wrap gap-1">{buttons}</div>;
   };
 
-  const hasActiveFilters = filters.signStatus || filters.myStatus || filters.moHinh || search;
+  const hasActiveFilters = Object.values(filters).some(hasFilterValue) || search;
 
   return (
     <div className="space-y-2">
@@ -315,37 +317,32 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
             </button>
           )}
         </label>
-        <select
-          aria-label="Lọc kết quả ký"
-          className="select select-bordered select-sm w-44"
-          value={filters.signStatus}
-          onChange={(e) => setFilters((current) => ({ ...current, signStatus: e.target.value }))}
-        >
-          <option value="">Kết quả ký: Tất cả</option>
-          {SIGN_STATUS_FILTER_OPTIONS.map((code) => (
-            <option key={code} value={code}>{SIGN_STATUS_LABELS[code]}</option>
-          ))}
-        </select>
-        <select
-          className="select select-bordered select-sm w-40"
-          aria-label="Lọc công việc ký cá nhân"
-          value={filters.myStatus}
-          onChange={(e) => setFilters((current) => ({ ...current, myStatus: e.target.value }))}
-        >
-          <option value="">Của tôi: Tất cả</option>
-          <option value="my_pending">Tôi cần ký</option>
-          <option value="my_signed">Tôi đã ký xong</option>
-        </select>
-        <select
-          className="select select-bordered select-sm w-44"
-          value={filters.moHinh}
-          onChange={(e) => setFilters((current) => ({ ...current, moHinh: e.target.value }))}
-        >
-          <option value="">Mô hình: Tất cả</option>
-          {(modelOptions || []).map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
+        <SearchableMultiSelect
+          ariaLabel="Lọc kết quả ký"
+          className="w-44"
+          placeholder="Kết quả ký: Tất cả"
+          selectedLabel="mục"
+          options={SIGN_STATUS_FILTER_OPTIONS.map(code => ({ value: code, label: SIGN_STATUS_LABELS[code] }))}
+          values={filters.signStatus}
+          onChange={(value) => setFilters((current) => ({ ...current, signStatus: value }))}
+        />
+        <SearchableMultiSelect
+          ariaLabel="Lọc công việc ký cá nhân"
+          className="w-44"
+          placeholder="Của tôi: Tất cả"
+          selectedLabel="mục"
+          options={[{ value: 'my_pending', label: 'Tôi cần ký' }, { value: 'my_signed', label: 'Tôi đã ký xong' }]}
+          values={filters.myStatus}
+          onChange={(value) => setFilters((current) => ({ ...current, myStatus: value }))}
+        />
+        <SearchableMultiSelect
+          className="w-44"
+          placeholder="Mô hình: Tất cả"
+          selectedLabel="mục"
+          options={modelOptions || []}
+          values={filters.moHinh}
+          onChange={(value) => setFilters((current) => ({ ...current, moHinh: value }))}
+        />
         {hasActiveFilters && (
           <button
             type="button"

@@ -625,6 +625,9 @@ export const proposalReportService = {
 };
 
 export const proposalApprovalService = {
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-approvals/filter-options', token);
+  },
   withdrawSignature(id, token) {
     return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-approvals/${id}/signature-config/withdraw`, {}, token));
   },
@@ -1381,7 +1384,8 @@ export const excelService = {
   async exportData(entity, token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    if (Array.isArray(filters.status)) filters.status.forEach((value) => params.append('status', value));
+    else if (filters.status) params.append('status', filters.status);
     if (filters.layout) params.append('layout', filters.layout);
     if (filters.formId) params.append('formId', filters.formId);
     if (filters.purpose) params.append('purpose', filters.purpose);
@@ -1401,7 +1405,8 @@ export const excelService = {
   async exportDataByModel(entity, token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    if (Array.isArray(filters.status)) filters.status.forEach((value) => params.append('status', value));
+    else if (filters.status) params.append('status', filters.status);
     const query = params.toString() ? `?${params.toString()}` : '';
     await this.downloadBlob(`/admin/excel/export/${entity}/by-model${query}`, token, `${fileStamp()}_export_${entity}_mo_hinh.xlsx`);
   },

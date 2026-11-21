@@ -8,6 +8,7 @@ const proposalReportDocumentService = require('./proposalReportDocumentService')
 const signedDocumentService = require('./signedDocumentService');
 const signatureSnapshots = require('./signatureSnapshotService');
 const JSZip = require('jszip');
+const { values, addInFilter } = require('../utils/multiValueFilter');
 
 const { parseCustomData, toFileSummaries } = proposalGradingService;
 
@@ -240,25 +241,19 @@ exports.listProposals = async ({
     params.push(like, like, like, like, like);
   }
 
-  const cleanSignStatus = Object.values(SIGN_STATUS).includes(signStatus) ? signStatus : '';
-  if (cleanSignStatus) {
-    where.push(`${SIGN_STATUS_CASE_SQL} = ?`);
-    params.push(cleanSignStatus);
+  addInFilter(where, params, SIGN_STATUS_CASE_SQL, values(signStatus).filter(status => Object.values(SIGN_STATUS).includes(status)));
+  const myConditions = [];
+  for (const status of values(myStatus)) {
+    if (status === 'my_pending') {
+      myConditions.push(`${MY_PENDING_CONFIG_SQL} > 0`);
+      params.push(scope.userId);
+    } else if (status === 'my_signed') {
+      myConditions.push(MY_COMPLETED_SQL);
+      params.push(scope.userId, scope.userId);
+    }
   }
-
-  const cleanMyStatus = myStatus === 'my_pending' || myStatus === 'my_signed' ? myStatus : '';
-  if (cleanMyStatus === 'my_pending') {
-    where.push(`${MY_PENDING_CONFIG_SQL} > 0`);
-    params.push(scope.userId);
-  } else if (cleanMyStatus === 'my_signed') {
-    where.push(MY_COMPLETED_SQL);
-    params.push(scope.userId, scope.userId);
-  }
-
-  if (moHinh) {
-    where.push(`JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?`);
-    params.push(String(moHinh));
-  }
+  if (myConditions.length) where.push(`(${myConditions.join(' OR ')})`);
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu'))", moHinh);
 
   const whereClause = `WHERE ${where.join(' AND ')}`;
 

@@ -5,6 +5,7 @@ import FieldRenderer from './FieldRenderer';
 import useDataListMap from '../../hooks/useDataListMap';
 import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
 import { getNumberedProposalStatusOptions } from '../../utils/proposalStatus';
+import SearchableMultiSelect from '../ui/SearchableMultiSelect';
 
 const SERVER_FILTER_DEBOUNCE_MS = 500;
 
@@ -14,7 +15,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, onStatusFilterChange, multiStatusFilter = false, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
   const navigate = useNavigate();
   const numberedStatuses = useNumberedProposalStatuses();
   const [loading, setLoading] = useState(true);
@@ -44,6 +45,8 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
   const onColumnFiltersChangeRef = useRef(onColumnFiltersChange);
   onColumnFiltersChangeRef.current = onColumnFiltersChange;
   const lastPushedRef = useRef('{}');
+  const statusFilterRef = useRef(onStatusFilterChange);
+  statusFilterRef.current = onStatusFilterChange;
 
   useImperativeHandle(ref, () => ({
     clearFilters() {
@@ -51,6 +54,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setSortConfig({ key: null, direction: null });
       lastPushedRef.current = '{}';
       if (onColumnFiltersChangeRef.current) onColumnFiltersChangeRef.current({});
+      if (statusFilterRef.current) statusFilterRef.current([]);
     }
   }));
 
@@ -64,6 +68,12 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
     }, SERVER_FILTER_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [filters, serverMode]);
+
+  useEffect(() => {
+    if (!onStatusFilterChange) return undefined;
+    const timer = setTimeout(() => statusFilterRef.current?.(filters.status || []), SERVER_FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [filters.status, onStatusFilterChange]);
 
   useEffect(() => {
     if (typeof getCellStyle !== 'function' && typeof getRowStyle !== 'function') return undefined;
@@ -209,18 +219,21 @@ const toDisplayValue = (val) => {
   const filteredData = useMemo(() => {
     if (!data) return [];
     if (serverMode) return data;
-    const activeFilters = Object.entries(filters).filter(([, v]) => v.trim());
+    const activeFilters = Object.entries(filters).filter(([key, v]) =>
+      !(key === 'status' && onStatusFilterChange) && (Array.isArray(v) ? v.length > 0 : v.trim()));
     if (activeFilters.length === 0) return data;
 
     return data.filter(row => {
       return activeFilters.every(([key, filterVal]) => {
         const val = toDisplayValue(getFieldValue(row, { key }));
         if (val === null || val === undefined) return false;
-        if (numberedStatuses && entity === 'station_proposals' && key === 'status') return String(val) === filterVal;
+        if (numberedStatuses && entity === 'station_proposals' && key === 'status') {
+          return Array.isArray(filterVal) ? filterVal.includes(String(val)) : String(val) === filterVal;
+        }
         return String(val).toLowerCase().includes(filterVal.toLowerCase());
       });
     });
-  }, [serverMode, data, filters, numberedStatuses, entity]);
+  }, [serverMode, data, filters, numberedStatuses, entity, onStatusFilterChange]);
 
   const sortedData = useMemo(() => {
     if (!filteredData) return [];
@@ -453,7 +466,16 @@ const toDisplayValue = (val) => {
                   return (
                     <Fragment key={key}>
                       <th style={{ ...colWidthStyle(col), ...fp.style }} className={fp.className}>
-                        {col.filterable && numberedStatuses && entity === 'station_proposals' && key === 'status' ? (
+                        {col.filterable && numberedStatuses && entity === 'station_proposals' && key === 'status' && multiStatusFilter ? (
+                          <SearchableMultiSelect
+                            ariaLabel="Lọc trạng thái quy trình"
+                            placeholder="Tất cả trạng thái"
+                            selectedLabel="mục"
+                            options={col.options}
+                            values={filters[key] || []}
+                            onChange={value => handleFilterChange(key, value)}
+                          />
+                        ) : col.filterable && numberedStatuses && entity === 'station_proposals' && key === 'status' ? (
                           <select
                             aria-label="Lọc trạng thái quy trình"
                             className="select select-bordered select-xs w-full"

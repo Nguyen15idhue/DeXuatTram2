@@ -53,6 +53,8 @@ import useDefaultViewId from "../../../hooks/useDefaultViewId";
 import useDebouncedValue from "../../../hooks/useDebouncedValue";
 import useMediaQuery from "../../../hooks/useMediaQuery";
 import { FilterToggle, FilterBody } from "../../../components/ui/FilterPanel";
+import SearchableMultiSelect from "../../../components/ui/SearchableMultiSelect";
+import { appendMultiFilter, hasFilterValue } from "../../../utils/proposalMultiFilters";
 import { PRIORITY_OPTIONS } from "../../../utils/mapStatuses";
 import { CS_STATUS_LABELS } from "../../../utils/chargingStation";
 import { getProposalStatusFilterOptions } from "../../../utils/proposalStatus";
@@ -170,13 +172,13 @@ const AdminProposalsPage = () => {
   const [proposals, setProposals] = useState([]);
   const [countdownFlags, setCountdownFlags] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("");
-  const [filterUuTien, setFilterUuTien] = useState("");
-  const [filterProvince, setFilterProvince] = useState("");
-  const [filterRegion, setFilterRegion] = useState("");
-  const [filterDepartment, setFilterDepartment] = useState("");
-  const [filterOwner, setFilterOwner] = useState("");
-  const [filterLeadLink, setFilterLeadLink] = useState("");
+  const [filter, setFilter] = useState([]);
+  const [filterUuTien, setFilterUuTien] = useState([]);
+  const [filterProvince, setFilterProvince] = useState([]);
+  const [filterRegion, setFilterRegion] = useState([]);
+  const [filterDepartment, setFilterDepartment] = useState([]);
+  const [filterOwner, setFilterOwner] = useState([]);
+  const [filterLeadLink, setFilterLeadLink] = useState([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dateField, setDateField] = useState("created_at");
@@ -502,15 +504,15 @@ const AdminProposalsPage = () => {
           overrides.columnFilters !== undefined
             ? overrides.columnFilters
             : columnFilters;
-        if (f) params.append("status", f);
-        if (cf?.status) params.append("statuses", cf.status);
-        if (ut) params.append("uu_tien", ut);
+        appendMultiFilter(params, "status", f);
+        if (hasFilterValue(cf?.status)) params.append("statuses", Array.isArray(cf.status) ? cf.status.join(",") : cf.status);
+        appendMultiFilter(params, "uu_tien", ut);
         if (s) params.append("search", s);
-        if (pr) params.append("province", pr);
-        if (rg) params.append("region", rg);
-        if (dp) params.append("department", dp);
-        if (ow) params.append("owner_user_id", ow);
-        if (ll) params.append("lead_link", ll);
+        appendMultiFilter(params, "province", pr);
+        appendMultiFilter(params, "region", rg);
+        appendMultiFilter(params, "department", dp);
+        appendMultiFilter(params, "owner_user_id", ow);
+        appendMultiFilter(params, "lead_link", ll);
         if (df || dt) {
           params.append("date_field", dfield);
           if (df) params.append("date_from", df);
@@ -967,13 +969,13 @@ const AdminProposalsPage = () => {
 
   const handleReset = () => {
     setSearch("");
-    setFilter("");
-    setFilterUuTien("");
-    setFilterProvince("");
-    setFilterRegion("");
-    setFilterDepartment("");
-    setFilterOwner("");
-    setFilterLeadLink("");
+    setFilter([]);
+    setFilterUuTien([]);
+    setFilterProvince([]);
+    setFilterRegion([]);
+    setFilterDepartment([]);
+    setFilterOwner([]);
+    setFilterLeadLink([]);
     setDateFrom("");
     setDateTo("");
     setDateField("created_at");
@@ -983,14 +985,14 @@ const AdminProposalsPage = () => {
     if (tableRef.current) tableRef.current.clearFilters();
     setError("");
     loadProposals(1, {
-      filter: "",
-      filterUuTien: "",
+      filter: [],
+      filterUuTien: [],
       search: "",
-      filterProvince: "",
-      filterRegion: "",
-      filterDepartment: "",
-      filterOwner: "",
-      filterLeadLink: "",
+      filterProvince: [],
+      filterRegion: [],
+      filterDepartment: [],
+      filterOwner: [],
+      filterLeadLink: [],
       dateFrom: "",
       dateTo: "",
       dateField: "created_at",
@@ -2170,7 +2172,7 @@ const AdminProposalsPage = () => {
                   filterLeadLink,
                   dateFrom,
                   dateTo,
-                ].filter(Boolean).length
+                ].filter(hasFilterValue).length
               }
             />
           </div>
@@ -2184,87 +2186,13 @@ const AdminProposalsPage = () => {
             title="Bộ lọc đề xuất"
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              >
-                <option value="">Tất cả trạng thái</option>
-                {statusOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filterUuTien}
-                onChange={(e) => setFilterUuTien(e.target.value)}
-              >
-                <option value="">Tất cả loại ưu tiên</option>
-                {PRIORITY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filterProvince}
-                onChange={(e) => setFilterProvince(e.target.value)}
-              >
-                <option value="">Tất cả tỉnh/thành</option>
-                {provinceOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filterRegion}
-                onChange={(e) => setFilterRegion(e.target.value)}
-              >
-                <option value="">Tất cả vùng miền</option>
-                {regionOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filterDepartment}
-                onChange={(e) => setFilterDepartment(e.target.value)}
-              >
-                <option value="">Tất cả phòng ban</option>
-                {departmentOptions.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filterOwner}
-                onChange={(e) => setFilterOwner(e.target.value)}
-              >
-                <option value="">Tất cả người tạo</option>
-                {ownerOptions.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={filterLeadLink}
-                onChange={(e) => setFilterLeadLink(e.target.value)}
-              >
-                <option value="">Tất cả (Lead)</option>
-                <option value="yes">Có gắn Lead</option>
-                <option value="no">Không gắn Lead</option>
-              </select>
+              <SearchableMultiSelect placeholder="Tất cả trạng thái" selectedLabel="mục" options={statusOptions} values={filter} onChange={setFilter} />
+              <SearchableMultiSelect placeholder="Tất cả loại ưu tiên" selectedLabel="mục" options={PRIORITY_OPTIONS} values={filterUuTien} onChange={setFilterUuTien} />
+              <SearchableMultiSelect placeholder="Tất cả tỉnh/thành" selectedLabel="mục" options={provinceOptions} values={filterProvince} onChange={setFilterProvince} />
+              <SearchableMultiSelect placeholder="Tất cả vùng miền" selectedLabel="mục" options={regionOptions} values={filterRegion} onChange={setFilterRegion} />
+              <SearchableMultiSelect placeholder="Tất cả phòng ban" selectedLabel="mục" options={departmentOptions} values={filterDepartment} onChange={setFilterDepartment} />
+              <SearchableMultiSelect placeholder="Tất cả người tạo" selectedLabel="mục" options={ownerOptions.map((u) => ({ value: u.id, label: u.full_name }))} values={filterOwner} onChange={setFilterOwner} />
+              <SearchableMultiSelect placeholder="Tất cả (Lead)" selectedLabel="mục" options={[{ value: "yes", label: "Có gắn Lead" }, { value: "no", label: "Không gắn Lead" }]} values={filterLeadLink} onChange={setFilterLeadLink} />
               <div className="flex items-center gap-2">
                 <span className="text-xs text-base-content/60 whitespace-nowrap">
                   Thời gian
@@ -2290,7 +2218,7 @@ const AdminProposalsPage = () => {
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
               />
-              <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
+              {isDesktop && <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
                 <button
                   className="btn btn-primary btn-sm flex-1 gap-1"
                   onClick={() => loadProposals(1)}
@@ -2303,7 +2231,7 @@ const AdminProposalsPage = () => {
                 >
                   <RotateCcw size={14} /> Xóa lọc
                 </button>
-              </div>
+              </div>}
             </div>
           </FilterBody>
 
@@ -3337,6 +3265,7 @@ const AdminProposalsPage = () => {
               user?.role === "NPP" ? undefined : setSelectedIds
             }
             onColumnFiltersChange={handleColumnFiltersChange}
+            multiStatusFilter
             cellFooter={(row, colKey) =>
               colKey === "status" ? (
                 <DeadlineCountdown

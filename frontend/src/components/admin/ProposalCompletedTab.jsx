@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminProposalService, proposalRequestService } from '../../services/api';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
@@ -22,12 +22,13 @@ import {
 } from './ProposalTableCells';
 import { formatProposalScale } from '../../utils/proposalGrading';
 import { RotateCcw, Search } from 'lucide-react';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 
 const PROPOSALS_VIEW_ID = 8;
 const STATUS_VALUES = ['APPROVED', 'CANCELLED'];
 const EMPTY_FILTERS = {
-  proposalStatus: '', model: '', province: '', region: '',
-  ownerUserId: '', managerUserId: '', dateFrom: '', dateTo: ''
+  proposalStatus: [], model: [], province: [], region: [],
+  ownerUserId: [], managerUserId: [], dateFrom: '', dateTo: ''
 };
 
 const ProposalCompletedTab = ({ token }) => {
@@ -46,6 +47,9 @@ const ProposalCompletedTab = ({ token }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [columnStatus, setColumnStatus] = useState([]);
+  const tableRef = useRef(null);
+  const loadedRef = useRef(false);
   const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], provinces: [], models: [], regions: [] });
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -78,20 +82,22 @@ const ProposalCompletedTab = ({ token }) => {
     setError('');
     try {
       const params = new URLSearchParams();
-      params.set('statuses', filters.proposalStatus || STATUS_VALUES.join(','));
+      params.set('statuses', (filters.proposalStatus.length ? filters.proposalStatus : STATUS_VALUES).join(','));
+      appendMultiFilter(params, 'status', columnStatus);
       params.set('signed_approval_only', '1');
       params.set('page', String(targetPage));
       params.set('limit', String(pageSize));
       if (search) params.set('search', search);
-      if (filters.model) params.set('model', filters.model);
-      if (filters.province) params.set('province', filters.province);
-      if (filters.region) params.set('region', filters.region);
-      if (filters.ownerUserId) params.set('owner_user_id', filters.ownerUserId);
-      if (filters.managerUserId) params.set('manager_user_id', filters.managerUserId);
+      appendMultiFilter(params, 'model', filters.model);
+      appendMultiFilter(params, 'province', filters.province);
+      appendMultiFilter(params, 'region', filters.region);
+      appendMultiFilter(params, 'owner_user_id', filters.ownerUserId);
+      appendMultiFilter(params, 'manager_user_id', filters.managerUserId);
       if (filters.dateFrom) params.set('date_from', filters.dateFrom);
       if (filters.dateTo) params.set('date_to', filters.dateTo);
       params.set('date_field', 'created_at');
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
+      loadedRef.current = true;
       if (res?.success) {
         setItems(res.data || []);
         setPagination(res.pagination || { page: targetPage, limit: pageSize, total: 0, totalPages: 0 });
@@ -103,7 +109,7 @@ const ProposalCompletedTab = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, page, pageSize, search, filters]);
+  }, [token, page, pageSize, search, filters, columnStatus]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -135,10 +141,16 @@ const ProposalCompletedTab = ({ token }) => {
     setSearch('');
     setSearchInput('');
     setFilters(EMPTY_FILTERS);
+    setColumnStatus([]);
+    tableRef.current?.clearFilters();
     setPage(1);
   };
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount = Object.values(filters).filter(hasFilterValue).length;
+  const handleColumnStatusChange = useCallback((selected) => {
+    setColumnStatus((current) => JSON.stringify(current) === JSON.stringify(selected) ? current : selected);
+    setPage(1);
+  }, []);
 
   return (
     <div>
@@ -165,6 +177,7 @@ const ProposalCompletedTab = ({ token }) => {
         title="Bộ lọc đề xuất"
       >
         <ProposalAdvancedFilters
+          multiple
           values={filters}
           onChange={updateFilters}
           options={filterOptions}
@@ -184,12 +197,15 @@ const ProposalCompletedTab = ({ token }) => {
       </FilterBody>
       <div className="text-sm text-base-content/60 mb-3">{pagination.total} đề xuất</div>
       {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
-      {loading && items.length === 0 ? (
+      {loading && !loadedRef.current ? (
         <div className="text-center py-10 text-base-content/60">Đang tải...</div>
       ) : (
         <DynamicTable
+          ref={tableRef}
           entity="station_proposals"
           viewId={viewId}
+          multiStatusFilter
+          onStatusFilterChange={handleColumnStatusChange}
           showActions={false}
           columnLabelOverrides={{
             status: 'Trạng thái Quy trình',

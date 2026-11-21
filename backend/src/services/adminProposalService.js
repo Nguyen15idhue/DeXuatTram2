@@ -5,6 +5,7 @@ const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
+const { values, addInFilter } = require('../utils/multiValueFilter');
 
 const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note', 'review_level', 'quy_hoach_score', 'quy_hoach_note', 'phap_ly_score', 'phap_ly_note', 'ngay_du_kien_on'];
 
@@ -48,10 +49,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     params.push(Number(scope.userId));
   }
 
-  if (status) {
-    where.push('p.status = ?');
-    params.push(status);
-  }
+  addInFilter(where, params, 'p.status', status);
 
   if (Array.isArray(extra.statuses) && extra.statuses.length > 0) {
     where.push(`p.status IN (${extra.statuses.map(() => '?').join(',')})`);
@@ -61,10 +59,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     where.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)");
   }
 
-  if (uuTien) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) = ?");
-    params.push(String(uuTien));
-  }
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien'))", uuTien);
 
   if (search) {
     const like = `%${search}%`;
@@ -91,15 +86,18 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     params.push(...filterParams);
   }
 
-  if (extra.leadLink === 'yes') { where.push('p.journey_id IS NOT NULL'); }
-  else if (extra.leadLink === 'no') { where.push('p.journey_id IS NULL'); }
-  if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?"); params.push(extra.province); }
-  if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
-  if (extra.model) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?"); params.push(extra.model); }
-  if (extra.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) = ?"); params.push(extra.department); }
-  if (extra.ownerUserId) { where.push('p.user_id = ?'); params.push(Number(extra.ownerUserId)); }
-  if (extra.managerUserId) {
-    const branchIds = await require('./adminUserService').getBranchIds(Number(extra.managerUserId));
+  const leadLinks = values(extra.leadLink);
+  if (leadLinks.length === 1 && leadLinks[0] === 'yes') { where.push('p.journey_id IS NOT NULL'); }
+  else if (leadLinks.length === 1 && leadLinks[0] === 'no') { where.push('p.journey_id IS NULL'); }
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province'))", extra.province);
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien'))", extra.region);
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu'))", extra.model);
+  addInFilter(where, params, "JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department'))", extra.department);
+  addInFilter(where, params, 'p.user_id', extra.ownerUserId);
+  const managers = values(extra.managerUserId);
+  if (managers.length) {
+    const branches = await Promise.all(managers.map((id) => require('./adminUserService').getBranchIds(Number(id))));
+    const branchIds = [...new Set(branches.flat())];
     if (branchIds.length === 0) where.push('1 = 0');
     else {
       where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);

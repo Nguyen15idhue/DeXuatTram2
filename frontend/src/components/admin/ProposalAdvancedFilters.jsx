@@ -1,6 +1,7 @@
 import useFieldOptions from '../../hooks/useFieldOptions';
+import SearchableMultiSelect from '../ui/SearchableMultiSelect';
 
-const ProposalAdvancedFilters = ({ values, onChange, options = {}, dateLabel = 'Ngày tạo đề xuất', statusOptions: statusOptionsProp = null }) => {
+const ProposalAdvancedFilters = ({ values, onChange, options = {}, dateLabel = 'Ngày tạo đề xuất', statusOptions: statusOptionsProp = null, multiple = false }) => {
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status', 'mo_hinh_dau_tu', 'province', 'vung_mien']);
   const statuses = statusOptionsProp || getSelectOptions('status');
   const models = getSelectOptions('mo_hinh_dau_tu').length ? getSelectOptions('mo_hinh_dau_tu') : (options.models || []);
@@ -9,6 +10,23 @@ const ProposalAdvancedFilters = ({ values, onChange, options = {}, dateLabel = '
   const selectClass = 'select select-bordered select-sm w-full';
 
   const setValue = (key) => (event) => onChange({ ...values, [key]: event.target.value });
+  const renderMulti = (key, placeholder, items, valueKey = 'value', labelKey = 'label') => {
+    const unique = new Map();
+    items.forEach((item) => {
+      const value = item?.[valueKey] ?? item;
+      const label = item?.[labelKey] ?? item;
+      if (value !== null && value !== undefined && !unique.has(String(value))) {
+        unique.set(String(value), { value, label });
+      }
+    });
+    return <SearchableMultiSelect
+      placeholder={placeholder}
+      selectedLabel="mục"
+      options={[...unique.values()]}
+      values={values[key] || []}
+      onChange={(selected) => onChange({ ...values, [key]: selected })}
+    />;
+  };
   const renderOptions = (items, valueKey = 'value', labelKey = 'label') => {
     const uniqueItems = new Map();
     items.forEach((item) => {
@@ -25,6 +43,16 @@ const ProposalAdvancedFilters = ({ values, onChange, options = {}, dateLabel = '
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+      {multiple ? <>
+        {renderMulti('proposalStatus', 'Tất cả trạng thái đề xuất', statuses)}
+        {renderMulti('model', 'Tất cả mô hình đầu tư', models)}
+        {renderMulti('province', 'Tất cả tỉnh/thành', provinces)}
+        {renderMulti('region', 'Tất cả miền', regions.length ? regions : [
+          { value: 'Bac', label: 'Miền Bắc' }, { value: 'Trung', label: 'Miền Trung' }, { value: 'Nam', label: 'Miền Nam' }
+        ])}
+        {renderMulti('ownerUserId', 'Tất cả người đề xuất', options.owners || [], 'id', 'name')}
+        {renderMulti('managerUserId', 'Tất cả người phụ trách', options.managers || [], 'id', 'name')}
+      </> : <>
       <select className={selectClass} value={values.proposalStatus || ''} onChange={setValue('proposalStatus')}>
         <option value="">Tất cả trạng thái đề xuất</option>
         {renderOptions(statuses)}
@@ -54,6 +82,7 @@ const ProposalAdvancedFilters = ({ values, onChange, options = {}, dateLabel = '
         <option value="">Tất cả người phụ trách</option>
         {renderOptions(options.managers || [], 'id', 'name')}
       </select>
+      </>}
       <label className="form-control w-full">
         <span className="label-text text-xs mb-1">{dateLabel} — từ ngày</span>
         <input className="input input-bordered input-sm" type="date" value={values.dateFrom || ''} onChange={setValue('dateFrom')} />

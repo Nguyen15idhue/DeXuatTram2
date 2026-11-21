@@ -51,6 +51,22 @@ router.get('/', requireAuth, requireUserManager, proposalApprovalController.list
 
 /**
  * @swagger
+ * /api/admin/proposal-approvals/filter-options:
+ *   get:
+ *     tags: [Proposal Approvals]
+ *     summary: Tùy chọn bộ lọc trong phạm vi duyệt BCĐX
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Tùy chọn bộ lọc
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/filter-options', requireAuth, requireUserManager, proposalApprovalController.getFilterOptions);
+
+/**
+ * @swagger
  * /api/admin/proposal-approvals/{id}:
  *   get:
  *     tags: [Proposal Approvals]

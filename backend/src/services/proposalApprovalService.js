@@ -109,7 +109,7 @@ exports.REVIEWING_STATUS = REVIEWING_STATUS;
 exports.UPDATING_STATUS = UPDATING_STATUS;
 exports.TAB_STATUSES = TAB_STATUSES;
 
-exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit = 10 } = {}) => {
+exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit = 10, filters = {} } = {}) => {
   const safeTab = Object.prototype.hasOwnProperty.call(TAB_STATUSES, tab) ? tab : 'all';
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
@@ -141,6 +141,8 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
     params.push(like, like, like, like, like, like, like);
   }
 
+  const { addProposalAdvancedFilters, patternForNormalizedRegion } = require('../utils/proposalAdvancedFilters');
+  await addProposalAdvancedFilters(where, params, filters, value => patternForNormalizedRegion(normalizeText(value)));
   const whereClause = `WHERE ${where.join(' AND ')}`;
 
   const [countRows] = await pool.query(
@@ -193,6 +195,16 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
       department: scope.department
     }
   };
+};
+
+exports.getFilterOptions = async (user) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
+  return require('./proposalRequestService').getFilterOptions({
+    all: true,
+    proposalStatuses: TAB_STATUSES.all,
+    signedApprovalOnly: true
+  });
 };
 
 exports.getProposal = async ({ user, id } = {}) => {

@@ -16,7 +16,17 @@ exports.list = async (req, res) => {
       tab,
       search,
       page,
-      limit
+      limit,
+      filters: {
+        proposalStatus: req.query.proposal_status,
+        model: req.query.model,
+        province: req.query.province,
+        region: req.query.region,
+        ownerUserId: req.query.owner_user_id,
+        managerUserId: req.query.manager_user_id,
+        dateFrom: req.query.date_from,
+        dateTo: req.query.date_to
+      }
     });
     res.json({
       success: true,
@@ -24,6 +34,15 @@ exports.list = async (req, res) => {
       pagination: result.pagination,
       meta: result.meta
     });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.getFilterOptions = async (req, res) => {
+  try {
+    const data = await proposalApprovalService.getFilterOptions(req.user);
+    res.json({ success: true, data });
   } catch (error) {
     sendError(res, error);
   }

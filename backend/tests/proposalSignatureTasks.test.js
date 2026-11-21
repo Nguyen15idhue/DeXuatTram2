@@ -134,6 +134,8 @@ test('real SQL signature tabs split personal completion and chairman handoff wit
       (3,10,'SIGNED',4,104),(3,11,'PENDING',4,104),
       (4,11,'SIGNED',5,105),(5,10,'SIGNED',6,106),
       (7,10,'SIGNED',7,107),(7,10,'CANCELLED',8,108),(7,20,'SIGNED',7,107)`);
+    await connection.query(`UPDATE station_proposals SET custom_data = JSON_OBJECT('mo_hinh_dau_tu',
+      CASE WHEN id IN (1, 3) THEN 'NQ' ELSE 'LK' END)`);
     const ids = async (user, tab, extra = {}) => {
       const result = await service.listProposals({ user, tab, ...extra });
       assert.equal(result.pagination.total, result.proposals.length);
@@ -152,6 +154,12 @@ test('real SQL signature tabs split personal completion and chairman handoff wit
     assert.deepEqual(await ids(finance, 'all'), [1, 4, 5, 7]);
     assert.deepEqual(await ids(finance, 'pending', { myStatus: 'my_pending' }), [1]);
     assert.deepEqual(await ids(signer, 'all', { myStatus: 'my_signed' }), [3, 5, 7]);
+    assert.deepEqual(await ids(signer, 'all', { myStatus: ['my_pending', 'my_signed'] }), [1, 2, 3, 5, 7]);
+    assert.deepEqual(await ids(superAdmin, 'all', { myStatus: ['my_pending', 'my_signed'] }), []);
+    assert.deepEqual(await ids(signer, 'all', {
+      myStatus: ['my_pending', 'my_signed'], moHinh: ['NQ'], signStatus: ['PENDING', 'DOING']
+    }), [1, 3]);
+    assert.deepEqual(await ids(signer, 'all', { moHinh: ['NQ', 'LK'], myStatus: 'my_signed' }), [3, 5, 7]);
     assert.deepEqual(await ids(superAdmin, 'pending'), [5, 7]);
     assert.deepEqual(await ids(superAdmin, 'completed'), [4]);
     assert.deepEqual(await ids(superAdmin, 'chairman'), [5, 7]);

@@ -536,7 +536,11 @@ function getAllData(entity, filters = {}) {
         where.push(`p.user_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids);
       }
     }
-    if (status) { where.push('p.status = ?'); params.push(status); }
+    const statuses = require('../utils/multiValueFilter').values(status);
+    if (statuses.length) {
+      where.push(`p.status IN (${statuses.map(() => '?').join(',')})`);
+      params.push(...statuses);
+    }
     if (search) { where.push('(p.owner_name LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)'); params.push(like, like, like); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     const join = search ? 'JOIN users u ON p.user_id = u.id' : '';

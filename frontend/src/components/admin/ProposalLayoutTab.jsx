@@ -11,6 +11,7 @@ import ReviewActionDialog from './ReviewActionDialog';
 import ProposalLayoutUpdateModal from './ProposalLayoutUpdateModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
@@ -113,7 +114,7 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
         dateTo: 'date_to'
       };
       Object.entries(filterKeys).forEach(([key, queryKey]) => {
-        if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+        appendMultiFilter(params, queryKey, targetFilters[key]);
       });
       params.set('page', targetPage);
       params.set('limit', targetSize);
@@ -268,7 +269,7 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
     setShowFilter(false);
   };
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount = Object.values(filters).filter(hasFilterValue).length;
 
   return (
     <div className="space-y-2">
@@ -295,7 +296,7 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
         onReset={resetFilters}
         title="Bộ lọc đề xuất"
       >
-        <ProposalAdvancedFilters
+        <ProposalAdvancedFilters multiple
           values={filters}
           onChange={setFilters}
           options={filterOptions}

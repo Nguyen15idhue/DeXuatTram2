@@ -22,6 +22,8 @@ import {
 } from './ProposalTableCells';
 import { formatProposalScale } from '../../utils/proposalGrading';
 import { RotateCcw, Search } from 'lucide-react';
+import SearchableMultiSelect from '../ui/SearchableMultiSelect';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 
 const REQUEST_TYPES = [
   { value: 'UPDATE_INFO', label: 'Yêu cầu cập nhật thông tin' },
@@ -53,8 +55,8 @@ const formatDateTime = (value) => {
 };
 
 const EMPTY_FILTERS = {
-  proposalStatus: '', model: '', province: '', region: '',
-  ownerUserId: '', managerUserId: '', dateFrom: '', dateTo: ''
+  proposalStatus: [], model: [], province: [], region: [],
+  ownerUserId: [], managerUserId: [], dateFrom: '', dateTo: ''
 };
 
 const ProposalRequestsTab = ({ token }) => {
@@ -67,7 +69,7 @@ const ProposalRequestsTab = ({ token }) => {
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [type, setType] = useState('');
+  const [type, setType] = useState([]);
   const [workScope, setWorkScope] = useState('all');
   const [showFilter, setShowFilter] = useState(false);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -118,13 +120,13 @@ const ProposalRequestsTab = ({ token }) => {
         work_scope: workScope
       });
       if (search) params.set('search', search);
-      if (type) params.set('type', type);
-      if (filters.proposalStatus) params.set('proposal_status', filters.proposalStatus);
-      if (filters.model) params.set('model', filters.model);
-      if (filters.province) params.set('province', filters.province);
-      if (filters.region) params.set('region', filters.region);
-      if (filters.ownerUserId) params.set('owner_user_id', filters.ownerUserId);
-      if (filters.managerUserId) params.set('manager_user_id', filters.managerUserId);
+      appendMultiFilter(params, 'type', type);
+      appendMultiFilter(params, 'proposal_status', filters.proposalStatus);
+      appendMultiFilter(params, 'model', filters.model);
+      appendMultiFilter(params, 'province', filters.province);
+      appendMultiFilter(params, 'region', filters.region);
+      appendMultiFilter(params, 'owner_user_id', filters.ownerUserId);
+      appendMultiFilter(params, 'manager_user_id', filters.managerUserId);
       if (filters.dateFrom) params.set('date_from', filters.dateFrom);
       if (filters.dateTo) params.set('date_to', filters.dateTo);
       const res = await proposalRequestService.getAll(params.toString(), token);
@@ -156,7 +158,7 @@ const ProposalRequestsTab = ({ token }) => {
   const handleReset = () => {
     setSearch('');
     setSearchInput('');
-    setType('');
+    setType([]);
     setWorkScope('all');
     setFilters(EMPTY_FILTERS);
     setPage(1);
@@ -166,7 +168,7 @@ const ProposalRequestsTab = ({ token }) => {
     type,
     workScope !== 'all' ? workScope : '',
     ...Object.values(filters)
-  ].filter(Boolean).length;
+  ].filter(hasFilterValue).length;
 
   const openCompleteDialog = (row) => {
     setCompleteNote('');
@@ -268,14 +270,13 @@ const ProposalRequestsTab = ({ token }) => {
         title="Bộ lọc yêu cầu"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          <select
-            className="select select-bordered select-sm w-full"
-            value={type}
-            onChange={(event) => { setType(event.target.value); setPage(1); }}
-          >
-            <option value="">Tất cả loại yêu cầu</option>
-            {REQUEST_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
+          <SearchableMultiSelect
+            placeholder="Tất cả loại yêu cầu"
+            selectedLabel="mục"
+            options={REQUEST_TYPES}
+            values={type}
+            onChange={(selected) => { setType(selected); setPage(1); }}
+          />
           <select
             className="select select-bordered select-sm w-full"
             value={workScope}
@@ -286,6 +287,7 @@ const ProposalRequestsTab = ({ token }) => {
           </select>
         </div>
         <ProposalAdvancedFilters
+          multiple
           values={filters}
           options={filterOptions}
           dateLabel="Ngày tạo yêu cầu"

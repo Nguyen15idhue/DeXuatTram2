@@ -44,15 +44,16 @@ test('proposal page numbers status labels without changing API codes or other pa
   await expect(page.locator('tbody').getByText('1. Mới đề xuất', { exact: true })).toBeVisible({ timeout: 15000 });
   expect(proposalQueries.at(-1).get('prioritize_workflow')).toBe('1');
   const columnFilter = page.getByLabel('Lọc trạng thái quy trình');
-  const labels = await columnFilter.locator('option').allTextContents();
-  expect(labels.slice(1, 4)).toEqual(['1. Mới đề xuất', '2. Đang đánh giá quy hoạch và pháp lý', '3. GĐTTKD đánh giá']);
-  expect(labels[16]).toBe('16. Hoạt động');
-  expect(labels.slice(17)).toContain('Duyệt chủ trương');
+  await columnFilter.click();
+  const labels = (await page.locator('thead').getByRole('checkbox').locator('..').allTextContents()).filter(Boolean);
+  expect(labels.slice(0, 3)).toEqual(['1. Mới đề xuất', '2. Đang đánh giá quy hoạch và pháp lý', '3. GĐTTKD đánh giá']);
+  expect(labels[15]).toBe('16. Hoạt động');
+  expect(labels.slice(16)).toContain('Duyệt chủ trương');
   const request = page.waitForRequest(req => {
     const url = new URL(req.url());
     return url.pathname.endsWith('/admin/proposals') && url.searchParams.get('statuses') === 'GRADING';
   });
-  await columnFilter.selectOption('GRADING');
+  await page.locator('thead').getByText('2. Đang đánh giá quy hoạch và pháp lý', { exact: true }).click();
   await request;
   expect(proposalQueries.at(-1).get('prioritize_workflow')).toBe('1');
   await page.goto('/admin/proposals/view=77');

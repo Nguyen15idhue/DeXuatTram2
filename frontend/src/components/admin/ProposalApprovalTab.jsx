@@ -4,8 +4,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { proposalApprovalService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useMediaQuery from '../../hooks/useMediaQuery';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
+import { FilterBody, FilterToggle } from '../ui/FilterPanel';
+import ProposalAdvancedFilters from './ProposalAdvancedFilters';
+import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
@@ -23,7 +27,7 @@ import {
   getProposalLegalName,
   getProposalPhone
 } from '../../utils/proposalGrading';
-import { Eye, Search, X } from 'lucide-react';
+import { Eye, Search, X, RotateCcw } from 'lucide-react';
 
 const APPROVAL_COLUMNS = [
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
@@ -40,6 +44,7 @@ const APPROVAL_COLUMNS = [
 const ProposalApprovalTab = ({ tab }) => {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
 
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
@@ -56,6 +61,11 @@ const ProposalApprovalTab = ({ tab }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
+  const [showFilter, setShowFilter] = useState(false);
+  const [filters, setFilters] = useState({});
+  const [appliedFilters, setAppliedFilters] = useState({});
+  const [filterOptions, setFilterOptions] = useState({});
+  const [filterOptionsError, setFilterOptionsError] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
 
@@ -67,6 +77,11 @@ const ProposalApprovalTab = ({ tab }) => {
       const params = new URLSearchParams();
       params.set('tab', tab);
       if (targetSearch) params.set('search', targetSearch);
+      Object.entries({
+        proposalStatus: 'proposal_status', model: 'model', province: 'province', region: 'region',
+        ownerUserId: 'owner_user_id', managerUserId: 'manager_user_id',
+        dateFrom: 'date_from', dateTo: 'date_to'
+      }).forEach(([key, queryKey]) => appendMultiFilter(params, queryKey, appliedFilters[key]));
       params.set('page', targetPage);
       params.set('limit', targetSize);
       const res = await proposalApprovalService.getAll(params.toString(), token);
@@ -78,12 +93,39 @@ const ProposalApprovalTab = ({ tab }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, tab, pageSize, debouncedSearch]);
+  }, [token, tab, pageSize, debouncedSearch, appliedFilters]);
 
   useEffect(() => {
     setPage(1);
     loadItems(1);
-  }, [tab, debouncedSearch]);
+  }, [loadItems]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (token) proposalApprovalService.getFilterOptions(token)
+      .then((response) => {
+        if (!cancelled) {
+          setFilterOptions(response?.data || {});
+          setFilterOptionsError('');
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setFilterOptionsError(err?.message || 'Không tải được tùy chọn bộ lọc');
+      });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const applyFilters = () => {
+    setPage(1);
+    setAppliedFilters(filters);
+    setShowFilter(false);
+  };
+  const resetFilters = () => {
+    setSearch('');
+    setFilters({});
+    setAppliedFilters({});
+    setPage(1);
+  };
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => (
@@ -141,7 +183,17 @@ const ProposalApprovalTab = ({ tab }) => {
             </button>
           )}
         </label>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(value => !value)} count={Object.values(filters).filter(hasFilterValue).length} />
       </div>
+
+      <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={applyFilters} onReset={resetFilters} title="Bộ lọc đề xuất">
+        <ProposalAdvancedFilters multiple values={filters} onChange={setFilters} options={filterOptions} />
+        {isDesktop && <div className="flex justify-end gap-2">
+          <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={resetFilters}><RotateCcw size={14} /> Xóa lọc</button>
+          <button type="button" className="btn btn-primary btn-sm gap-1" onClick={applyFilters}><Search size={14} /> Áp dụng</button>
+        </div>}
+      </FilterBody>
+      {filterOptionsError && <div className="alert alert-warning py-2 text-sm">{filterOptionsError}</div>}
 
       {loading ? (
         <div className="flex justify-center py-8">

@@ -10,6 +10,8 @@ const SearchableMultiSelect = ({
   className = '',
   searchPlaceholder = 'Tìm kiếm...',
   noResultText = 'Không có kết quả',
+  selectedLabel = 'model',
+  ariaLabel,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -69,10 +71,20 @@ const SearchableMultiSelect = ({
         <div
           className="select select-bordered w-full flex items-center"
           style={{ cursor: disabled ? 'not-allowed' : 'pointer', minHeight: 32, fontSize: 12, opacity: disabled ? 0.6 : 1 }}
+          role="button"
+          tabIndex={disabled ? -1 : 0}
+          aria-label={ariaLabel || placeholder}
+          aria-expanded={open}
           onClick={() => !disabled && setOpen(!open)}
+          onKeyDown={(e) => {
+            if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              setOpen(!open);
+            }
+          }}
         >
           <span className={selected.length > 0 ? '' : 'text-gray-400'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selected.length > 0 ? `Đã chọn ${selected.length} model` : placeholder}
+            {selected.length > 0 ? `Đã chọn ${selected.length} ${selectedLabel}` : placeholder}
           </span>
           <span className="ml-auto text-[10px]">▼</span>
         </div>
@@ -146,7 +158,7 @@ const SearchableMultiSelect = ({
           {selected.map((v) => (
             <span key={v} className="badge badge-sm gap-1 max-w-full" title={v}>
               <span className="truncate max-w-[220px]">{labelOf(v)}</span>
-              <button type="button" className="btn btn-xs btn-ghost btn-circle" style={{ width: 16, height: 16, minHeight: 16 }} onClick={() => remove(v)} disabled={disabled}>✕</button>
+              <button type="button" aria-label={`Bỏ chọn ${labelOf(v)}`} className="btn btn-xs btn-ghost btn-circle" style={{ width: 16, height: 16, minHeight: 16 }} onClick={() => remove(v)} disabled={disabled}>✕</button>
             </span>
           ))}
         </div>
