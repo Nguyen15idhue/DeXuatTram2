@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import ViewBuilder from '../../components/admin/ViewBuilder';
+import ViewBuilder from '../../../../components/admin/ViewBuilder';
 import { ArrowLeft } from 'lucide-react';
 
 const AdminViewBuilderPage = () => {

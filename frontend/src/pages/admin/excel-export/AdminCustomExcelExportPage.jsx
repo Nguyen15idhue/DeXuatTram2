@@ -8,9 +8,9 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { excelService } from "../../services/api";
-import PageHeader from "../../components/ui/PageHeader";
+import { useAuth } from "../../../contexts/AuthContext";
+import { excelService } from "../../../services/api";
+import PageHeader from "../../../components/ui/PageHeader";
 
 const EMPTY_FILTERS = {
   search: "",

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import { dynamicService, adminProposalService, stationService, adminUserService } from '../../services/api';
-import FileViewer from '../../components/dynamic/FileViewer';
-import ErrorMessage from '../../components/ErrorMessage';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { dynamicService, adminProposalService, stationService, adminUserService } from '../../../../services/api';
+import FileViewer from '../../../../components/dynamic/FileViewer';
+import ErrorMessage from '../../../../components/ErrorMessage';
 import { ArrowLeft, Download, Image, Film, Music, FileText, File, Table, Eye, ExternalLink } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';

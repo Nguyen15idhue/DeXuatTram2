@@ -3,18 +3,18 @@ import {
   Plus, Search, Pencil, Trash2, Eye, Upload, Archive, RefreshCw, BookOpen, Film,
   Table as TableIcon, LayoutGrid, Bot,
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { adminHelpApi, clearHelpCache } from '../../services/helpApi';
-import { VideoBlock, Gallery } from '../../components/help/HelpMedia';
-import HelpEditor from '../../components/admin/HelpEditor';
-import HelpGuideBoard from '../../components/admin/HelpGuideBoard';
-import AssistantConfigPanel from '../../components/admin/AssistantConfigPanel';
-import PageHeader from '../../components/ui/PageHeader';
-import Badge from '../../components/ui/Badge';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import DataTable from '../../components/ui/DataTable';
-import Pagination from '../../components/Pagination';
+import { useAuth } from '../../../contexts/AuthContext';
+import useDebouncedValue from '../../../hooks/useDebouncedValue';
+import { adminHelpApi, clearHelpCache } from '../../../services/helpApi';
+import { VideoBlock, Gallery } from '../../../components/help/HelpMedia';
+import HelpEditor from '../../../components/admin/HelpEditor';
+import HelpGuideBoard from '../../../components/admin/HelpGuideBoard';
+import AssistantConfigPanel from '../../../components/admin/AssistantConfigPanel';
+import PageHeader from '../../../components/ui/PageHeader';
+import Badge from '../../../components/ui/Badge';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import DataTable from '../../../components/ui/DataTable';
+import Pagination from '../../../components/Pagination';
 
 const STATUS_LABEL = { draft: 'Nháp', published: 'Đã xuất bản', archived: 'Lưu trữ' };
 const STATUS_VARIANT = { draft: 'warning', published: 'success', archived: 'neutral' };

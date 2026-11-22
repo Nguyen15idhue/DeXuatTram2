@@ -1,4 +1,4 @@
-import FieldManager from '../../components/admin/FieldManager';
+import FieldManager from '../../../components/admin/FieldManager';
 
 const AdminFieldsPage = () => {
   return <FieldManager />;

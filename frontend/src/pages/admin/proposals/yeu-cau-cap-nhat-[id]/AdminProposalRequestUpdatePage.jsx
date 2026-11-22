@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, MapPinned } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { proposalRequestService } from "../../services/api";
-import DynamicForm from "../../components/dynamic/DynamicForm";
-import ProposalLocationMapButton from "../../components/admin/ProposalLocationMapButton";
-import { buildGoogleMapsHref as buildProposalGoogleMapsHref } from "../../components/admin/ProposalGoogleMapLink";
+import { useAuth } from "../../../../contexts/AuthContext";
+import { proposalRequestService } from "../../../../services/api";
+import DynamicForm from "../../../../components/dynamic/DynamicForm";
+import ProposalLocationMapButton from "../../../../components/admin/ProposalLocationMapButton";
+import { buildGoogleMapsHref as buildProposalGoogleMapsHref } from "../../../../components/admin/ProposalGoogleMapLink";
 
 const REQUEST_LABELS = {
   UPDATE_INFO: "Yêu cầu cập nhật thông tin",

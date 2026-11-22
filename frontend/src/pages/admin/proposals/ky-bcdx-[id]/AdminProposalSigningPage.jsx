@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import { proposalSignatureService } from '../../services/api';
-import { documentFile, ensureDocumentResponse, fileName, getDocumentSigners, isUnsupportedSigningFile } from '../../utils/proposalDocuments';
-import PageHeader from '../../components/ui/PageHeader';
-import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
-import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
-import { buildGoogleMapsHref } from '../../components/admin/ProposalGoogleMapLink';
-import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import Toast from '../../components/Toast';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { proposalSignatureService } from '../../../../services/api';
+import { documentFile, ensureDocumentResponse, fileName, getDocumentSigners, isUnsupportedSigningFile } from '../../../../utils/proposalDocuments';
+import PageHeader from '../../../../components/ui/PageHeader';
+import ProposalSigningDocument from '../../../../components/admin/ProposalSigningDocument';
+import ProposalLocationMapButton from '../../../../components/admin/ProposalLocationMapButton';
+import { buildGoogleMapsHref } from '../../../../components/admin/ProposalGoogleMapLink';
+import ConfirmDialog from '../../../../components/ui/ConfirmDialog';
+import Toast from '../../../../components/Toast';
 import {
   formatChotTotal,
   formatChotTruRows,
@@ -16,7 +16,7 @@ import {
   formatSignedTime,
   getSignStatusColor,
   getSignStatusLabel
-} from '../../utils/proposalSignature';
+} from '../../../../utils/proposalSignature';
 import { ArrowLeft, CheckCircle2, Crosshair, Download, MapPinned } from 'lucide-react';
 
 const AdminProposalSigningPage = () => {

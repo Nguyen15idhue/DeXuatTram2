@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import { formService } from '../../services/api';
-import Toast from '../../components/Toast';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import ErrorMessage from '../../components/ErrorMessage';
-import Dialog from '../../components/ui/Dialog';
+import { useAuth } from '../../../contexts/AuthContext';
+import { formService } from '../../../services/api';
+import Toast from '../../../components/Toast';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import ErrorMessage from '../../../components/ErrorMessage';
+import Dialog from '../../../components/ui/Dialog';
 import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, FileText, PenLine, Eye, Lock, Unlock, Star, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const ENTITIES = [

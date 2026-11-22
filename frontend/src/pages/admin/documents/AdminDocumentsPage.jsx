@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { documentService } from '../../services/api';
+import { useAuth } from '../../../contexts/AuthContext';
+import { documentService } from '../../../services/api';
 import { FileText, Plus, X, Trash2, Pencil, Network, LayoutTemplate } from 'lucide-react';
-import Loading from '../../components/Loading';
-import DocumentTemplateEditor from '../../components/admin/DocumentTemplateEditor';
-import DocumentLayoutEditor from '../../components/admin/DocumentLayoutEditor';
-import Toast from '../../components/Toast';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import ErrorMessage from '../../components/ErrorMessage';
+import Loading from '../../../components/Loading';
+import DocumentTemplateEditor from '../../../components/admin/DocumentTemplateEditor';
+import DocumentLayoutEditor from '../../../components/admin/DocumentLayoutEditor';
+import Toast from '../../../components/Toast';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import ErrorMessage from '../../../components/ErrorMessage';
 
 const emptyForm = { name: '', entity: 'station_proposals', model: '', file_id: '', status: 'active', is_default: false };
 

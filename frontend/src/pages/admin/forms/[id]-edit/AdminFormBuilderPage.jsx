@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import FormBuilder from '../../components/admin/FormBuilder';
+import FormBuilder from '../../../../components/admin/FormBuilder';
 import { ArrowLeft } from 'lucide-react';
 
 const AdminFormBuilderPage = () => {

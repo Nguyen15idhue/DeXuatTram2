@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
-import { TILE_PROVIDER_CATALOG } from '../../utils/tileProviderCatalog';
-import { loadTileProviders, getProviderById, TILE_CATEGORIES } from '../../utils/tileProviders';
-import { isValidTileUrl } from '../../utils/mapTile';
-import { MAP_MODES, DEFAULT_MODE } from '../../utils/mapModes';
-import { buildMapStyle } from '../../utils/mapStyles';
-import { listRenderers } from '../../components/map/renderers';
-import MapCanvas from '../../components/map/MapCanvas';
-import { CLUSTER_DEFAULTS, CLUSTER_LIMITS, normalizeClusterOptions } from '../../utils/mapCluster';
-import { useAuth } from '../../contexts/AuthContext';
-import Toast from '../../components/Toast';
-import GeocodeConfigPanel from '../../components/admin/GeocodeConfigPanel';
-import { API_URL } from '../../services/api';
+import { TILE_PROVIDER_CATALOG } from '../../../utils/tileProviderCatalog';
+import { loadTileProviders, getProviderById, TILE_CATEGORIES } from '../../../utils/tileProviders';
+import { isValidTileUrl } from '../../../utils/mapTile';
+import { MAP_MODES, DEFAULT_MODE } from '../../../utils/mapModes';
+import { buildMapStyle } from '../../../utils/mapStyles';
+import { listRenderers } from '../../../components/map/renderers';
+import MapCanvas from '../../../components/map/MapCanvas';
+import { CLUSTER_DEFAULTS, CLUSTER_LIMITS, normalizeClusterOptions } from '../../../utils/mapCluster';
+import { useAuth } from '../../../contexts/AuthContext';
+import Toast from '../../../components/Toast';
+import GeocodeConfigPanel from '../../../components/admin/GeocodeConfigPanel';
+import { API_URL } from '../../../services/api';
 import { Settings, Save, Wifi, WifiOff } from 'lucide-react';
 
 const FALLBACK_TILE = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';

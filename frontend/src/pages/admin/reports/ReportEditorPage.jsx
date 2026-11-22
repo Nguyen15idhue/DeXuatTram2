@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Settings, Database, PanelRightOpen } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-import { builderService } from '../../services/api';
-import useReportEditor from '../../hooks/useReportEditor';
-import useReportPreviews from '../../hooks/useReportPreviews';
-import PageHeader from '../../components/ui/PageHeader';
-import ReportToolbar from '../../components/report/ReportToolbar';
-import ReportTabs from '../../components/report/ReportTabs';
-import ReportCanvas from '../../components/report/ReportCanvas';
-import ReportDataSourcePanel from '../../components/report/ReportDataSourcePanel';
-import ReportConfigPanel from '../../components/report/ReportConfigPanel';
-import Loading from '../../components/Loading';
-import ErrorMessage from '../../components/ErrorMessage';
-import Toast from '../../components/Toast';
-import ConfirmDialog from '../../components/ConfirmDialog';
+import { useAuth } from '../../../contexts/AuthContext';
+import { builderService } from '../../../services/api';
+import useReportEditor from '../../../hooks/useReportEditor';
+import useReportPreviews from '../../../hooks/useReportPreviews';
+import PageHeader from '../../../components/ui/PageHeader';
+import ReportToolbar from '../../../components/report/ReportToolbar';
+import ReportTabs from '../../../components/report/ReportTabs';
+import ReportCanvas from '../../../components/report/ReportCanvas';
+import ReportDataSourcePanel from '../../../components/report/ReportDataSourcePanel';
+import ReportConfigPanel from '../../../components/report/ReportConfigPanel';
+import Loading from '../../../components/Loading';
+import ErrorMessage from '../../../components/ErrorMessage';
+import Toast from '../../../components/Toast';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
 export default function ReportEditorPage() {
   const { token, user } = useAuth();

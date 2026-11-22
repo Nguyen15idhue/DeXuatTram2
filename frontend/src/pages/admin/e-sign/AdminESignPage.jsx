@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "../../contexts/AuthContext";
-import { api, API_URL, adminUserService } from "../../services/api";
+import { useAuth } from "../../../contexts/AuthContext";
+import { api, API_URL, adminUserService } from "../../../services/api";
 import { AlertCircle, Image as ImageIcon, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import Button from "../../components/ui/Button";
-import Dialog from "../../components/ui/Dialog";
-import PageHeader from "../../components/ui/PageHeader";
-import ConfirmDialog from "../../components/ConfirmDialog";
-import SearchableSelect from "../../components/ui/SearchableSelect";
-import Toast from "../../components/Toast";
+import Button from "../../../components/ui/Button";
+import Dialog from "../../../components/ui/Dialog";
+import PageHeader from "../../../components/ui/PageHeader";
+import ConfirmDialog from "../../../components/ConfirmDialog";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
+import Toast from "../../../components/Toast";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
