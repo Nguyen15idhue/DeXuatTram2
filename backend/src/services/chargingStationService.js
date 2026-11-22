@@ -53,6 +53,10 @@ const FIELD_LABELS = {
   contract_effective_date: 'Ngày hiệu lực hợp đồng',
   contract_expiry_date: 'Ngày hết hạn hợp đồng',
   contract_note: 'Ghi chú hợp đồng',
+  ngay_du_kien_on: 'Ngày dự kiến ON',
+  expected_on_days: 'Số ngày dự kiến ON',
+  infra_delivery_confirmation: 'Xác nhận điều kiện đi trụ',
+  infra_delivery_confirmation_note: 'Ghi chú xác nhận điều kiện đi trụ',
   infra_power_status: 'Hạ tầng điện',
   infra_site_status: 'Hạ tầng mặt bằng',
   infra_power_date: 'Ngày thực hiện hạ tầng điện',
@@ -149,11 +153,15 @@ const selectChargingStations = (extraColumns = '', extraJoins = '') => `SELECT c
     cs.contract_number, DATE_FORMAT(cs.contract_signed_date, '%Y-%m-%d') AS contract_signed_date,
     DATE_FORMAT(cs.contract_effective_date, '%Y-%m-%d') AS contract_effective_date,
     DATE_FORMAT(cs.contract_expiry_date, '%Y-%m-%d') AS contract_expiry_date,
-    cs.contract_note,
+    cs.contract_note, cs.expected_on_days,
     cs.infra_power_status, cs.infra_site_status, cs.payment_status, cs.deposit_status, cs.deposit_refund_required,
     DATE_FORMAT(cs.infra_power_date, '%Y-%m-%d') AS infra_power_date,
     DATE_FORMAT(cs.infra_site_date, '%Y-%m-%d') AS infra_site_date,
     cs.infra_power_note, cs.infra_site_note,
+    cs.infra_delivery_confirmation, cs.infra_delivery_confirmation_note,
+    cs.infra_delivery_confirmation_by, cs.infra_delivery_confirmation_at, cs.infra_delivery_confirmation_model,
+    cs.infra_delivery_legacy_exempt,
+    cs.infra_delivery_legacy_exempt AS infra_delivery_confirmation_exempt,
     DATE_FORMAT(cs.contract_deadline_at, '%Y-%m-%d %H:%i:%s') AS contract_deadline_at,
     DATE_FORMAT(cs.infra_deadline_at, '%Y-%m-%d %H:%i:%s') AS infra_deadline_at,
     DATE_FORMAT(cs.finance_deadline_at, '%Y-%m-%d %H:%i:%s') AS finance_deadline_at,
@@ -343,6 +351,7 @@ const withReadiness = (row) => {
     requires_deposit: result.requirements.requiresDeposit,
     requires_payment: result.requirements.requiresPayment,
     delivery_ready: result.ready,
+    delivery_eligible: readiness.isDeliveryEligible(row, row.mo_hinh_dau_tu, Number(row.early_delivery_requested)),
     delivery_missing_items: result.missingLabels,
     deadline_active: readiness.isDeadlineActive(row)
   };
@@ -459,13 +468,43 @@ const notifySetupOperations = async (connection, station, ctx = {}, actionLabel 
   }
 };
 
-const advanceToDeliveryIfReady = async (connection, stationRef, ctx = {}) => {
-  const [rows] = await connection.query('SELECT * FROM charging_stations WHERE id = ?', [stationRef.id]);
+const revokeInvalidInfrastructureConfirmation = async (connection, station, ctx = {}) => {
+  if (station.infra_delivery_confirmation !== 'CONFIRMED') return;
+  const [rows] = await connection.query(
+    `SELECT ${stationWork.earlyDeliveryRequested} AS early_delivery_requested
+       FROM charging_stations cs WHERE cs.id = ?`,
+    [station.id]
+  );
+  const earlyValid = station.contract_status === 'DONE' && Number(rows[0]?.early_delivery_requested);
+  if (readiness.confirmationCanBeGranted(station, earlyValid)) return;
+  await connection.query(
+    `UPDATE charging_stations SET infra_delivery_confirmation = 'NOT_CONFIRMED',
+       infra_delivery_confirmation_by = NULL, infra_delivery_confirmation_at = NULL,
+       infra_delivery_confirmation_model = NULL WHERE id = ?`,
+    [station.id]
+  );
+  await writeActivity(connection, {
+    chargingStationId: station.id, action: 'infrastructure_confirmation_changed',
+    changedFields: {
+      infra_delivery_confirmation: { label: FIELD_LABELS.infra_delivery_confirmation, old: 'CONFIRMED', new: 'NOT_CONFIRMED' }
+    },
+    reason: 'Điều kiện xác nhận không còn hợp lệ',
+    actorId: ctx.actorId, actorRole: ctx.actorRole, source: 'system_auto', ip: ctx.ip
+  });
+};
+
+const advanceToDeliveryIfReady = async (connection, stationRef, ctx = {}, { notifyAlreadyDelivering = false, earlyDetails } = {}) => {
+  const [rows] = await connection.query(`${CS_SELECT} WHERE cs.id = ?`, [stationRef.id]);
   const station = rows[0];
   if (station && station.status !== 'CANCELLED') await advanceProposalToDeploying(station.proposal_id, ctx, connection);
-  if (!station || station.status !== STATUS.ONBOARDING) return stationRef;
-  const model = await loadInvestmentModel(connection, station.proposal_id);
-  if (!readiness.evaluateDeliveryReadiness(station, model).ready) return station;
+  if (!station || ![STATUS.ONBOARDING, STATUS.DELIVERING].includes(station.status)) return stationRef;
+  if (!readiness.isDeliveryEligible(station, station.mo_hinh_dau_tu, Number(station.early_delivery_requested))) return station;
+  if (station.status === STATUS.DELIVERING) {
+    if (notifyAlreadyDelivering && !Number(station.delivery_complete)) {
+      await notifyBackOfficeDeliveryReady(connection, station, ctx, earlyDetails);
+    }
+    return station;
+  }
 
   const nextStatus = STATUS.DELIVERING;
   const nextSubStatus = INITIAL_SUB_STATUS[nextStatus];
@@ -486,7 +525,7 @@ const advanceToDeliveryIfReady = async (connection, stationRef, ctx = {}) => {
     ip: ctx.ip
   });
   const updatedStation = { ...station, status: nextStatus, sub_status: nextSubStatus };
-  await notifyBackOfficeDeliveryReady(connection, updatedStation, ctx);
+  await notifyBackOfficeDeliveryReady(connection, updatedStation, ctx, earlyDetails);
   return updatedStation;
 };
 
@@ -597,9 +636,10 @@ const listChargingStations = async ({
         can_extend_deadline: deadlineActive
           && Number(record.deadline_extension_count || 0) < readiness.MAX_DEADLINE_EXTENSIONS
           && user?.role !== 'ADMIN' && ownerMatcher(record.proposal_user_id),
-        can_request_early_delivery: record.status === STATUS.ONBOARDING
+        can_request_early_delivery: [STATUS.ONBOARDING, STATUS.DELIVERING].includes(record.status)
           && record.contract_status === 'DONE'
-          && !record.delivery_ready
+          && readiness.evaluateDeliveryReadiness(record, record.mo_hinh_dau_tu).missing
+            .some(item => item !== 'infrastructure_confirmation')
           && !Number(record.early_delivery_requested)
           && !Number(record.delivery_complete)
           && earlyOwnerMatcher(record.proposal_user_id, record.proposal_assignee_id, record.proposal_manager_id),
@@ -682,7 +722,7 @@ const getChargingStationActivity = async (id, user, { step, page = 1, limit = 20
   };
   const actionsByStep = {
     'khoi-tao-hop-dong': ['contract_status_changed', 'contract_note_updated', 'contract_completed'],
-    'xay-dung-ha-tang': ['infrastructure_status_changed'],
+    'xay-dung-ha-tang': ['infrastructure_status_changed', 'infrastructure_confirmation_changed'],
     'giao-tru': ['shipment_created', 'shipment_status_changed', 'shipment_received', 'shipment_return_requested',
       'shipment_return_confirmed', 'shipment_failed', 'early_delivery_requested', 'delivery_completed_manually'],
     'lap-tru': ['installation_updated', 'installation_started', 'installation_completed',
@@ -1174,7 +1214,7 @@ const startContractSigning = async (id, user, ctx = {}, body = {}) => {
     await connection.beginTransaction();
     transactionStarted = true;
     const [rows] = await connection.query(
-      'SELECT id, status, contract_status, contract_note FROM charging_stations WHERE id = ? FOR UPDATE',
+      'SELECT id, status, contract_status, contract_note, infra_power_status, infra_site_status, infra_delivery_confirmation FROM charging_stations WHERE id = ? FOR UPDATE',
       [stationId]
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
@@ -1192,6 +1232,7 @@ const startContractSigning = async (id, user, ctx = {}, body = {}) => {
       'UPDATE charging_stations SET contract_status = ?, contract_note = ? WHERE id = ?',
       [target, nextNote, stationId]
     );
+    if (backwards) await revokeInvalidInfrastructureConfirmation(connection, { ...current, contract_status: target }, ctx);
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: target !== current.contract_status ? 'contract_status_changed' : 'contract_note_updated',
@@ -1239,6 +1280,19 @@ const completeContract = async (id, body, user, ctx = {}) => {
   }
   const contractNote = (body.contract_note || '').trim();
   if (Buffer.byteLength(contractNote, 'utf8') > 65535) throw err('Ghi chú hợp đồng quá dài', 400);
+  let expectedOnDate;
+  if (body.expected_on_days !== undefined) {
+    if (!Number.isSafeInteger(body.expected_on_days) || body.expected_on_days < 0) {
+      throw err('Số ngày dự kiến ON phải là số nguyên không âm', 400);
+    }
+    const [year, month, day] = contractDates.contract_effective_date.split('-').map(Number);
+    const date = new Date(`${contractDates.contract_effective_date}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + body.expected_on_days);
+    if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999 || year < 1 || month < 1 || day < 1) {
+      throw err('Ngày dự kiến ON không hợp lệ', 400);
+    }
+    expectedOnDate = date.toISOString().slice(0, 10);
+  }
   const normalizedFileId = fileIds[0];
   await assertCanViewChargingStation(stationId, user);
   const connection = await pool.getConnection();
@@ -1249,7 +1303,7 @@ const completeContract = async (id, body, user, ctx = {}) => {
     transactionStarted = true;
     const [rows] = await connection.query(
       `SELECT id, proposal_id, ma_tram, status, contract_status, contract_file_id, infra_power_status,
-              infra_site_status, payment_status, contract_effective_date, contract_expiry_date, contract_note
+              infra_site_status, payment_status, contract_effective_date, contract_expiry_date, contract_note, expected_on_days
          FROM charging_stations
         WHERE id = ? FOR UPDATE`,
       [stationId]
@@ -1262,6 +1316,15 @@ const completeContract = async (id, body, user, ctx = {}) => {
     }
     if (current.status === 'CANCELLED' || !['NOT', 'DOING', 'DONE'].includes(current.contract_status)) {
       throw err('Không thể hoàn tất hợp đồng của trạm đã hủy', 400);
+    }
+    let previousExpectedOnDate = null;
+    if (expectedOnDate !== undefined) {
+      const [proposals] = await connection.query(
+        "SELECT DATE_FORMAT(ngay_du_kien_on, '%Y-%m-%d') AS ngay_du_kien_on FROM station_proposals WHERE id = ? FOR UPDATE",
+        [proposalId]
+      );
+      if (!proposals.length) throw err('Không tìm thấy đề xuất liên quan đến ON trạm', 404);
+      previousExpectedOnDate = proposals[0].ngay_du_kien_on || null;
     }
 
     const [existingFiles] = await connection.query(
@@ -1290,6 +1353,13 @@ const completeContract = async (id, body, user, ctx = {}) => {
        payment_status=CASE WHEN payment_status='NOT' THEN 'DOING' ELSE payment_status END WHERE id = ?`,
       [normalizedFileId, contractDates.contract_effective_date, contractDates.contract_expiry_date, contractNote || null, stationId]
     );
+    if (expectedOnDate !== undefined) {
+      await connection.query('UPDATE charging_stations SET expected_on_days = ? WHERE id = ?', [body.expected_on_days, stationId]);
+      await connection.query(
+        'UPDATE station_proposals SET ngay_du_kien_on = ? WHERE id = ?',
+        [expectedOnDate, proposalId]
+      );
+    }
     await connection.query('DELETE FROM charging_station_contract_files WHERE charging_station_id = ?', [stationId]);
     await connection.query(
       'INSERT INTO charging_station_contract_files (charging_station_id, file_id, sort_order) VALUES ?',
@@ -1306,6 +1376,14 @@ const completeContract = async (id, body, user, ctx = {}) => {
     contractChanges.contract_files = { label: FIELD_LABELS.contract_files, old: '', new: fileIds.join(', ') };
     for (const [key, value] of Object.entries({ ...contractDates, contract_note: contractNote })) {
       contractChanges[key] = { label: FIELD_LABELS[key], old: toText(current[key]), new: value };
+    }
+    if (expectedOnDate !== undefined) {
+      contractChanges.expected_on_days = {
+        label: FIELD_LABELS.expected_on_days, old: current.expected_on_days ?? null, new: body.expected_on_days
+      };
+      contractChanges.ngay_du_kien_on = {
+        label: FIELD_LABELS.ngay_du_kien_on, old: previousExpectedOnDate, new: expectedOnDate
+      };
     }
     if (current.payment_status === 'NOT') {
       contractChanges.payment_status = { label: FIELD_LABELS.payment_status, old: 'NOT', new: 'DOING' };
@@ -1415,6 +1493,9 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
       `UPDATE charging_stations SET ${field} = ?, ${dateField} = ?, ${noteField} = ? WHERE id = ?`,
       [next, nextDate, nextNote, stationId]
     );
+    if (backwards && next !== 'DONE') {
+      await revokeInvalidInfrastructureConfirmation(connection, { ...current, [field]: next }, ctx);
+    }
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'infrastructure_status_changed',
@@ -1440,6 +1521,77 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
     connection.release();
   }
   if (next === 'DONE') await advanceProposalToDeploying(proposalId, ctx);
+  return getChargingStationDetail(stationId, user);
+};
+
+const updateInfrastructureConfirmation = async (id, body = {}, user, ctx = {}) => {
+  await stationAccess.assertSetup(user);
+  const stationId = normalizeId(id, 'Mã bản ghi');
+  const statuses = ['NOT_CONFIRMED', 'CONFIRMED'];
+  if (!statuses.includes(body.status) || !statuses.includes(body.expected_status)) {
+    throw err('Trạng thái xác nhận không hợp lệ', 400);
+  }
+  if (body.note != null && typeof body.note !== 'string') throw err('Ghi chú phải là văn bản', 400);
+  const note = (body.note || '').trim();
+  if (Buffer.byteLength(note, 'utf8') > 65535) throw err('Ghi chú quá dài', 400);
+  await assertCanViewChargingStation(stationId, user);
+
+  const connection = await pool.getConnection();
+  let started = false;
+  try {
+    await connection.beginTransaction();
+    started = true;
+    const [rows] = await connection.query(
+      `SELECT cs.*,
+              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
+              ${stationWork.earlyDeliveryRequested} AS early_delivery_requested
+         FROM charging_stations cs JOIN station_proposals p ON p.id = cs.proposal_id
+        WHERE cs.id = ? FOR UPDATE`,
+      [stationId]
+    );
+    if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
+    const current = rows[0];
+    if (current.status === 'CANCELLED') throw err('Không thể xác nhận ON trạm đã hủy', 409);
+    if (!readiness.requiresSetupConfirmation(current, current.mo_hinh_dau_tu)) {
+      throw err('Trạm này không cần xác nhận điều kiện đi trụ', 409);
+    }
+    if (current.infra_delivery_confirmation !== body.expected_status) {
+      throw err('Xác nhận đã thay đổi; vui lòng tải lại danh sách', 409);
+    }
+    if (body.status === 'CONFIRMED' && !readiness.confirmationCanBeGranted(
+      current, current.contract_status === 'DONE' && Number(current.early_delivery_requested)
+    )) {
+      throw err('Cần hoàn thành cả điện và mặt bằng hoặc có đề xuất giao trụ sớm', 409);
+    }
+    const model = readiness.normalizeInvestmentModel(current.mo_hinh_dau_tu);
+    if (body.status === 'CONFIRMED' && !model) throw err('Mô hình đầu tư chưa hợp lệ', 409);
+    await connection.query(
+      `UPDATE charging_stations SET infra_delivery_confirmation = ?,
+        infra_delivery_confirmation_note = ?, infra_delivery_confirmation_by = ?,
+        infra_delivery_confirmation_at = ${body.status === 'CONFIRMED' ? 'NOW()' : 'NULL'},
+        infra_delivery_confirmation_model = ? WHERE id = ?`,
+      [body.status, note || null, body.status === 'CONFIRMED' ? user.id : null,
+        body.status === 'CONFIRMED' ? model : null, stationId]
+    );
+    await writeActivity(connection, {
+      chargingStationId: stationId, action: 'infrastructure_confirmation_changed',
+      changedFields: {
+        infra_delivery_confirmation: { label: FIELD_LABELS.infra_delivery_confirmation, old: current.infra_delivery_confirmation, new: body.status },
+        infra_delivery_confirmation_note: { label: FIELD_LABELS.infra_delivery_confirmation_note, old: current.infra_delivery_confirmation_note || '', new: note }
+      },
+      actorId: ctx.actorId, actorRole: ctx.actorRole, source: 'user', ip: ctx.ip
+    });
+    if (body.status === 'CONFIRMED' && current.infra_delivery_confirmation !== 'CONFIRMED') {
+      await advanceToDeliveryIfReady(connection, { id: stationId }, ctx, { notifyAlreadyDelivering: true });
+    }
+    await connection.commit();
+    started = false;
+  } catch (error) {
+    if (started) await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
   return getChargingStationDetail(stationId, user);
 };
 
@@ -1627,7 +1779,10 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
     await connection.beginTransaction();
     transactionStarted = true;
     const [rows] = await connection.query(
-      `SELECT cs.*, p.chot_so_luong_tru, p.user_id AS proposal_user_id,
+      `SELECT cs.*, p.chot_so_luong_tru, p.tong_gia_tri_chot AS contract_amount, p.user_id AS proposal_user_id,
+              (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'DEPOSIT' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS deposit_total,
+              (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'PAYMENT' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS payment_total,
+              (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'REFUND' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS refund_total,
               JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS proposal_assignee_id,
               JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS proposal_manager_id,
               ${stationWork.earlyDeliveryRequested} AS early_delivery_requested,
@@ -1643,11 +1798,14 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
     if (!ownerMatcher(current.proposal_user_id, current.proposal_assignee_id, current.proposal_manager_id)) {
       throw err('Chỉ người đề xuất, người phụ trách hoặc quản lý cấp trên hợp lệ được đề xuất giao trụ sớm', 403);
     }
-    if (current.status !== STATUS.ONBOARDING || current.contract_status !== 'DONE' || Number(current.early_delivery_requested)) {
+    if (![STATUS.ONBOARDING, STATUS.DELIVERING].includes(current.status) || current.contract_status !== 'DONE' || Number(current.early_delivery_requested)) {
       throw err('Chỉ đề xuất giao trụ sớm khi đã ký hợp đồng và trạm chưa vào hàng chờ giao', 409);
     }
     const deliveryReadiness = readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu);
     if (deliveryReadiness.ready) throw err('Trạm đã đủ điều kiện giao theo luồng thường', 409);
+    if (!deliveryReadiness.missing.some(item => item !== 'infrastructure_confirmation')) {
+      throw err('Trạm chỉ còn chờ Setup/Vận hành xác nhận điều kiện đi trụ', 409);
+    }
 
     const shipping = require('./chargingStationShippingService');
     await shipping.ensureCommitments(connection, stationId);
@@ -1658,19 +1816,12 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
 
     const { missingLabels: missingItems } = deliveryReadiness;
 
-    const nextStatus = STATUS.DELIVERING;
-    const nextSubStatus = INITIAL_SUB_STATUS[nextStatus];
-    await connection.query(
-      'UPDATE charging_stations SET status = ?, sub_status = ? WHERE id = ?',
-      [nextStatus, nextSubStatus, stationId]
-    );
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'early_delivery_requested',
       fromStatus: current.status,
-      toStatus: nextStatus,
+      toStatus: current.status,
       changedFields: {
-        ...diffFields(current, { status: nextStatus, sub_status: nextSubStatus }),
         desired_delivery_date: { label: 'Ngày mong muốn nhận hàng', old: '', new: deliveryDate },
         missing_items: { label: 'Hạng mục chưa hoàn thành', old: '', new: missingItems.join(', ') }
       },
@@ -1680,12 +1831,10 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
       source: 'user',
       ip: ctx.ip
     });
-    await notifyBackOfficeDeliveryReady(
-      connection,
-      { ...current, status: nextStatus, sub_status: nextSubStatus },
-      ctx,
-      { earlyRequest: true, desiredDate: deliveryDate, reason: cleanReason }
-    );
+    await advanceToDeliveryIfReady(connection, { id: stationId }, ctx, {
+      notifyAlreadyDelivering: true,
+      earlyDetails: { earlyRequest: true, desiredDate: deliveryDate, reason: cleanReason }
+    });
     await connection.commit();
     transactionStarted = false;
   } catch (error) {
@@ -2392,6 +2541,8 @@ exports.updatePaymentStatus = updatePaymentStatus;
 exports.startContractSigning = startContractSigning;
 exports.completeContract = completeContract;
 exports.updateInfrastructureStatus = updateInfrastructureStatus;
+exports.updateInfrastructureConfirmation = updateInfrastructureConfirmation;
+exports.revokeInvalidInfrastructureConfirmation = revokeInvalidInfrastructureConfirmation;
 exports.requestEarlyDelivery = requestEarlyDelivery;
 exports.createDeliveryExport = (...args) => require('./chargingStationShippingService').createExport(...args);
 exports.confirmDelivery = confirmDelivery;

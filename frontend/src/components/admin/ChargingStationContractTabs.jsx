@@ -6,7 +6,7 @@ import ChargingStationStepHistory from './ChargingStationStepHistory';
 import { api, chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { canOperateStation } from '../../utils/chargingFulfillment';
-import { calculateContractExpiry, getContractTermYears } from '../../utils/contractDates';
+import { calculateContractExpiry, calculateExpectedOnDate, getContractTermYears } from '../../utils/contractDates';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationExportButton from './ChargingStationExportButton';
@@ -58,6 +58,7 @@ const ChargingStationContractTabs = () => {
   const [uploadedContractIds, setUploadedContractIds] = useState([]);
   const [contractEffectiveDate, setContractEffectiveDate] = useState('');
   const [contractTermYears, setContractTermYears] = useState('');
+  const [expectedOnDays, setExpectedOnDays] = useState('90');
   const [contractNote, setContractNote] = useState('');
   const [contractStatus, setContractStatus] = useState('NOT');
   const [modalError, setModalError] = useState('');
@@ -74,6 +75,7 @@ const ChargingStationContractTabs = () => {
   const contractExpiryDate = preserveLegacyExpiry
     ? uploadStation.contract_expiry_date
     : calculateContractExpiry(contractEffectiveDate, contractTermYears);
+  const expectedOnDate = calculateExpectedOnDate(contractEffectiveDate, expectedOnDays);
 
   const load = useCallback(async (targetPage) => {
     if (!token) return;
@@ -115,6 +117,7 @@ const ChargingStationContractTabs = () => {
     setContractStatus(row.contract_status || 'NOT');
     setContractEffectiveDate(row.contract_effective_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
     setContractTermYears(getContractTermYears(row.contract_effective_date, row.contract_expiry_date));
+    setExpectedOnDays(String(row.expected_on_days ?? 90));
     setContractNote(row.contract_note || '');
     setModalError('');
     setUploadStation(row);
@@ -248,6 +251,10 @@ const ChargingStationContractTabs = () => {
       setModalError('Vui lòng nhập ngày hiệu lực hợp lệ và thời hạn hợp đồng là số năm nguyên dương');
       return;
     }
+    if (!expectedOnDate) {
+      setModalError('Vui lòng nhập số ngày dự kiến ON trạm là số nguyên không âm và ngày dự kiến hợp lệ');
+      return;
+    }
 
     saving.current = true;
     setUploading(true);
@@ -270,6 +277,7 @@ const ChargingStationContractTabs = () => {
         file_ids: fileIds,
         contract_effective_date: contractEffectiveDate,
         contract_expiry_date: contractExpiryDate,
+        expected_on_days: Number(expectedOnDays),
         contract_note: contractNote.trim(),
         expected_status: uploadStation.contract_status
       }, token);
@@ -409,6 +417,16 @@ const ChargingStationContractTabs = () => {
               ? `Thời hạn cũ không tròn năm; giữ ngày hết hạn ${uploadStation.contract_expiry_date} nếu để trống.`
               : 'Ngày hết hạn được tính tự động từ ngày hiệu lực và số năm.'} />
           {contractExpiryDate && <p className="text-sm">Ngày hết hạn hợp đồng: {contractExpiryDate.split('-').reverse().join('/')}</p>}
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <label htmlFor="contract-expected-on-days">Dự kiến sẽ ON trạm sau</label>
+            <input id="contract-expected-on-days" aria-label="Số ngày dự kiến ON trạm" type="number" min="0" step="1"
+              required className="input input-bordered w-24" value={expectedOnDays} disabled={uploading}
+              onChange={event => setExpectedOnDays(event.target.value)} />
+            <span>ngày kể từ ngày hiệu lực hợp đồng, tức là ngày</span>
+            <output htmlFor="contract-expected-on-days" aria-label="Ngày dự kiến ON trạm" className="font-medium">
+              {expectedOnDate ? expectedOnDate.split('-').reverse().join('/') : '—'}
+            </output>
+          </div>
           </>}
           <ChargingStationStepHistory stationId={uploadStation?.id} step="khoi-tao-hop-dong" />
           <div className="flex justify-end gap-2">

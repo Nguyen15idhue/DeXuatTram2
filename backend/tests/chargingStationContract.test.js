@@ -17,7 +17,8 @@ test('requires files and valid dates, with expiry strictly after effective date'
     { contract_effective_date: '' }, { contract_expiry_date: '' },
     { contract_effective_date: '2026-02-30' }, { contract_expiry_date: 'invalid' },
     { contract_expiry_date: '2026-11-12' }, { contract_expiry_date: '2026-11-11' },
-    { contract_note: {} }
+    { contract_note: {} }, { expected_on_days: -1 }, { expected_on_days: 1.5 },
+    { expected_on_days: '90' }, { expected_on_days: Number.MAX_SAFE_INTEGER }
   ]) {
     await assert.rejects(service.completeContract(1, { ...body, ...changes }, user), { statusCode: 400 });
   }
@@ -40,6 +41,7 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
     query: async (sql, params) => {
       calls.push([sql, params]);
       if (sql.includes('FROM files')) return [files];
+      if (sql.includes('DATE_FORMAT(ngay_du_kien_on')) return [[{ ngay_du_kien_on: '2027-01-01' }]];
       if (sql.includes('WHERE id = ? FOR UPDATE')) return [[record]];
       if (sql.includes('SELECT p.status')) return [[{ status: 'ACTIVE' }]];
       return [[]];
@@ -113,6 +115,21 @@ test('completes with multiple files, dates, trimmed note and audit in the same t
   assert.equal(calls.some(([sql]) => sql === 'rollback'), false);
 });
 
+test('stores expected ON date from effective date and days in the contract transaction', async t => {
+  const { calls } = setup(t);
+  await service.completeContract(1, {
+    ...body, contract_effective_date: '2024-02-28', contract_expiry_date: '2025-02-28', expected_on_days: 2
+  }, user, { actorId: 1, actorRole: 'SUPER_ADMIN' });
+  const update = calls.find(([sql]) => sql.startsWith('UPDATE station_proposals SET ngay_du_kien_on'));
+  assert.deepEqual(update[1], ['2024-03-01', 2]);
+  assert.deepEqual(calls.find(([sql]) => sql.startsWith('UPDATE charging_stations SET expected_on_days'))[1], [2, 1]);
+  const audit = calls.find(([sql]) => sql.includes('INSERT INTO charging_station_activity_logs'));
+  assert.deepEqual(JSON.parse(audit[1][4]).ngay_du_kien_on, {
+    label: 'Ngày dự kiến ON', old: '2027-01-01', new: '2024-03-01'
+  });
+  assert.ok(calls.indexOf(update) < calls.findIndex(([sql]) => sql === 'commit'));
+});
+
 for (const [label, overrides, statusCode] of [
   ['another uploader', { uploaded_by: 9 }, 403],
   ['unsupported format', { mime_type: 'text/plain' }, 400]
@@ -125,6 +142,68 @@ for (const [label, overrides, statusCode] of [
     assert.equal(calls.some(([sql]) => sql === 'commit'), false);
   });
 }
+
+test('setup can revoke an existing confirmation and stale or exempt changes are rejected', async t => {
+  const { calls, connection } = setup(t);
+  const query = connection.query;
+  const current = {
+    id: 1, proposal_id: 2, status: 'DELIVERING', contract_status: 'DONE',
+    mo_hinh_dau_tu: 'LK', infra_delivery_legacy_exempt: 0,
+    infra_delivery_confirmation: 'CONFIRMED', infra_delivery_confirmation_note: 'Đã kiểm tra',
+    infra_power_status: 'DONE', infra_site_status: 'DONE', early_delivery_requested: 0
+  };
+  connection.query = async (sql, params) => {
+    if (sql.includes('SELECT cs.*') && sql.includes('early_delivery_requested')) {
+      calls.push([sql, params]);
+      return [[{ ...current }]];
+    }
+    return query(sql, params);
+  };
+  t.mock.method(access, 'assertSetup', async () => {});
+  await service.updateInfrastructureConfirmation(1, {
+    status: 'NOT_CONFIRMED', expected_status: 'CONFIRMED', note: 'Kiểm tra lại'
+  }, user, { actorId: 1 });
+  const update = calls.find(([sql]) => sql.includes('SET infra_delivery_confirmation = ?'));
+  assert.deepEqual(update[1], ['NOT_CONFIRMED', 'Kiểm tra lại', null, null, 1]);
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+  calls.length = 0;
+  await assert.rejects(service.updateInfrastructureConfirmation(1, {
+    status: 'NOT_CONFIRMED', expected_status: 'NOT_CONFIRMED'
+  }, user), { statusCode: 409 });
+  current.mo_hinh_dau_tu = 'NQ';
+  await assert.rejects(service.updateInfrastructureConfirmation(1, {
+    status: 'NOT_CONFIRMED', expected_status: 'CONFIRMED'
+  }, user), { statusCode: 409 });
+  assert.equal(calls.some(([sql]) => sql.includes('SET infra_delivery_confirmation = ?')), false);
+});
+
+test('setup confirmation requires both infrastructure items or an early request', async t => {
+  const { calls, connection } = setup(t);
+  const query = connection.query;
+  const current = {
+    id: 1, proposal_id: 2, status: 'ONBOARDING', contract_status: 'DONE',
+    mo_hinh_dau_tu: 'LK', infra_delivery_legacy_exempt: 0,
+    infra_delivery_confirmation: 'NOT_CONFIRMED',
+    infra_power_status: 'DONE', infra_site_status: 'NOT', early_delivery_requested: 0
+  };
+  connection.query = async (sql, params) => {
+    if (sql.includes('SELECT cs.*') && sql.includes('early_delivery_requested')) {
+      calls.push([sql, params]);
+      return [[{ ...current }]];
+    }
+    return query(sql, params);
+  };
+  t.mock.method(access, 'assertSetup', async () => {});
+  const request = { status: 'CONFIRMED', expected_status: 'NOT_CONFIRMED', note: '' };
+  await assert.rejects(service.updateInfrastructureConfirmation(1, request, user), { statusCode: 409 });
+  assert.equal(calls.some(([sql]) => sql.includes('SET infra_delivery_confirmation = ?')), false);
+  calls.length = 0;
+  current.early_delivery_requested = 1;
+  await service.updateInfrastructureConfirmation(1, request, user);
+  assert.deepEqual(calls.find(([sql]) => sql.includes('SET infra_delivery_confirmation = ?'))[1],
+    ['CONFIRMED', null, 1, 'LK', 1]);
+  assert.ok(calls.some(([sql]) => sql === 'commit'));
+});
 
 test('can confirm DONE again with files already attached by another uploader', async t => {
   const { calls, connection } = setup(t, { uploaded_by: 9 }, 'DONE');

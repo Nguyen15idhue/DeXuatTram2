@@ -184,6 +184,9 @@ const update = async (id, body, ctx) => {
     if (!keys.length && !Object.keys(collections).length && !body.deployment_updates && !deliveryOnly) throw fail('Không có dữ liệu cập nhật');
     if (keys.length) await connection.query(`UPDATE charging_stations SET ${keys.map(key => `${key}=?`).join(',')} WHERE id=?`,
       [...keys.map(key => key === 'workflow_override' ? JSON.stringify(patch[key]) : patch[key]), id]);
+    if (['infra_power_status', 'infra_site_status', 'contract_status'].some(key => key in patch)) {
+      await require('./chargingStationService').revokeInvalidInfrastructureConfirmation(connection, { ...current, ...patch }, ctx);
+    }
     if (keys.length || Object.keys(collections).length || body.deployment_updates) {
       await writeLog(connection, id, body.delivery_completed === true ? 'delivery_completed_manually' : 'overview_overridden',
         current, patch, ctx, reason, collections);

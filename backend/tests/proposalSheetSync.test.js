@@ -88,11 +88,12 @@ test('Data_QT1 validates the requested headers and writes only A:CZ regardless o
   const proposals = new Map([
     [1, record(1, {
       area: '200 m²', description: 'Mô tả thử', quy_hoach_note: 'QH thử', phap_ly_note: 'PL thử',
+      ngay_du_kien_on: '2026-02-01', actual_on_date: '2026-02-03',
       custom_data: { ma_tinh: 'TEST', ghi_chu: 'Ghi chú thử', mo_hinh_dau_tu: 'NQ',
         loai_tru_nq: [{ loai_tru: 'AC 7 kW', so_luong: 2 }] },
       chot_so_luong_tru: [{ loai_tru: 'AC 7 kW', so_luong: 1 }]
     })],
-    [3, record(3)]
+    [3, record(3, { actual_on_date: '2026-12-31' })]
   ]);
   await service.writeSheetRows(sheet.sheets, qtConfig, [
     { proposal_id: 1, operation: 'UPSERT' }, { proposal_id: 2, operation: 'DELETE' },
@@ -101,10 +102,13 @@ test('Data_QT1 validates the requested headers and writes only A:CZ regardless o
   const at = (col) => sheet.cells[1][columnIndex(col)];
   assert.deepEqual([at('U'), at('AH'), at('BF'), at('BG'), at('BH'), at('BJ'), at('CY'), at('CZ'), at('DA')],
     [2, 1, '200 m²', 'Mô tả thử', 'TEST', 'Ghi chú thử', 'QH thử', 'PL thử', 'Giữ nguyên khi cập nhật']);
+  assert.equal(at('BB'), '01/02/2026');
+  assert.equal(at('BC'), '02/03/2026');
   assert.ok(sheet.cells[2].slice(0, 104).every((value) => value === ''));
   assert.equal(sheet.cells[2][104], 'Giữ nguyên khi xóa');
   assert.equal(sheet.cells[3].length, 104);
   assert.equal(sheet.cells[3][1], '3');
+  assert.equal(sheet.cells[3][columnIndex('BC')], '12/31/2026');
 });
 
 test('TEST_Data_QT1 uses the same fixed columns and log query as Data_QT1', async t => {
@@ -171,7 +175,12 @@ test('exports the selected GĐKV department and independent status and actual ON
   assert.equal(columns[54].key, '__actual_on_date');
   assert.equal(row[6], 'Phòng Bắc');
   assert.equal(row[48], '02/01/2026 10:04');
-  assert.equal(row[54], '03/02/2026');
+  assert.equal(row[53], '01/02/2026');
+  assert.equal(row[54], '02/03/2026');
+  const dateObject = service.mapProposalToRow(record(3, {
+    actual_on_date: new Date('2026-02-02T17:00:00Z')
+  }), [], 1);
+  assert.equal(dateObject[54], '02/03/2026');
   const noManager = service.mapProposalToRow(record(2, { actual_on_date: null }), [], 1);
   assert.equal(noManager[6], '');
   assert.equal(noManager[48], '');

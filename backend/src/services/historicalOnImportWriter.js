@@ -253,6 +253,12 @@ const writeRow = async (connection, raw, item, snapshot, actor, context) => {
       `UPDATE charging_stations SET status=?,sub_status=?,cms_station_code=?,contract_status=?,infra_power_status=?,infra_site_status=?,deposit_status=?,payment_status=?,contract_number=?,contract_signed_date=?,note=?,on_date=? WHERE id=?`,
       [...Object.values(stationFields), stationId]
     );
+    if (oldStation.infra_delivery_confirmation === 'CONFIRMED') {
+      const [[current]] = await connection.query('SELECT * FROM charging_stations WHERE id=?', [stationId]);
+      await require('./chargingStationService').revokeInvalidInfrastructureConfirmation(
+        connection, current, { actorId: actor.id, actorRole: actor.role }
+      );
+    }
   }
   const commitments = [...(snapshot?.commitments || [])];
   const createdExports = [];

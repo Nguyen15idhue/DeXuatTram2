@@ -530,6 +530,10 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *                 description: Phải sau ngày hiệu lực hợp đồng
  *               contract_note:
  *                 type: string
+ *               expected_on_days:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Số ngày tính từ ngày hiệu lực; khi truyền sẽ cập nhật ngày dự kiến ON của đề xuất.
  *     responses:
  *       200:
  *         description: File hợp đồng đã lưu, contract_status chuyển DONE; trạm tự chuyển sang Giao trụ nếu đủ điều kiện theo mô hình đầu tư (TĐT không cần cọc/thanh toán)
@@ -656,6 +660,37 @@ router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, 
  *         description: Trạng thái đã thay đổi, cần tải lại
  */
 router.post('/:id/infrastructure/:type/status', requireChargingStationViewer, chargingStationController.updateInfrastructure);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/infrastructure-confirmation:
+ *   put:
+ *     tags: [Charging Stations]
+ *     summary: Setup/Vận hành xác nhận điều kiện đi trụ
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status, expected_status]
+ *             properties:
+ *               status: { type: string, enum: [NOT_CONFIRMED, CONFIRMED] }
+ *               expected_status: { type: string, enum: [NOT_CONFIRMED, CONFIRMED] }
+ *               note: { type: string, nullable: true }
+ *     responses:
+ *       200: { description: Đã lưu xác nhận }
+ *       400: { description: Dữ liệu không hợp lệ }
+ *       403: { description: Không có quyền xác nhận }
+ *       409: { description: Điều kiện chưa đủ hoặc dữ liệu đã thay đổi }
+ */
+router.put('/:id/infrastructure-confirmation', requireChargingStationViewer, chargingStationController.updateInfrastructureConfirmation);
 
 /**
  * @swagger

@@ -281,14 +281,19 @@ const formatStatusChangeTime = (value) => {
   return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
 };
 
-const formatDate = (value) => {
+const formatDate = (value, { monthFirst = false } = {}) => {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    if (monthFirst) {
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(value);
+    }
     return new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short' }).format(value);
   }
   const text = String(value).slice(0, 10);
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : text;
+  return match ? `${monthFirst ? match[2] : match[3]}/${monthFirst ? match[3] : match[2]}/${match[1]}` : text;
 };
 
 const formatMoney = (value) => {
@@ -611,7 +616,7 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
     }),
     __proposal_note: noteLabel,
     __expected_on_date: formatDate(proposal.ngay_du_kien_on),
-    __actual_on_date: formatDate(proposal.actual_on_date),
+    __actual_on_date: formatDate(proposal.actual_on_date, { monthFirst: true }),
     __updated_at: formatDateTime(proposal.updated_at),
     __map_url: mapUrl
   };

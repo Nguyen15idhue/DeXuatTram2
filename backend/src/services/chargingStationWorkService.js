@@ -19,8 +19,24 @@ const deliveryComplete = `(${overridden} OR (${committed}>0 AND cs.fulfillment_r
   OR (${noCommitments} AND cs.fulfillment_review_required=0 AND cs.status IN ('INSTALLING','ACCEPTANCE','CONFIGURING','OPERATING')))`;
 const earlyDeliveryRequested = `EXISTS(SELECT 1 FROM charging_station_activity_logs delivery_log
   WHERE delivery_log.charging_station_id=cs.id AND delivery_log.action='early_delivery_requested')`;
+const infrastructureIncomplete = `(COALESCE(cs.infra_power_status,'NOT')<>'DONE'
+  OR COALESCE(cs.infra_site_status,'NOT')<>'DONE')`;
+const infrastructureBothDone = `(cs.infra_power_status='DONE' AND cs.infra_site_status='DONE')`;
+const setupConfirmationRequired = readiness.requiresSetupConfirmationSql('cs', 'p');
+const infrastructureSetupConfirmationTask = `(NOT ${deliveryComplete}
+  AND ${setupConfirmationRequired}
+  AND (${infrastructureBothDone} OR (cs.contract_status='DONE' AND ${earlyDeliveryRequested})))`;
+const infrastructureCompleted = `(${infrastructureBothDone}
+  AND (
+    ${readiness.modelSql('p')} = 'NQ'
+    OR COALESCE(cs.infra_delivery_legacy_exempt, 0) = 1
+    OR (
+      cs.infra_delivery_confirmation = 'CONFIRMED'
+      AND UPPER(TRIM(COALESCE(cs.infra_delivery_confirmation_model, ''))) = ${readiness.modelSql('p')}
+    )
+  ))`;
 const deliveryTask = `(NOT ${deliveryComplete}
-  AND (NOT ${readiness.deliveryMissingSql('cs', 'p')} OR ${earlyDeliveryRequested}))`;
+  AND ${readiness.deliveryEligibleSql('cs', 'p', earlyDeliveryRequested)})`;
 const canReceiveDeliveryTask = (user, permissions) => user?.role === 'SUPER_ADMIN' || permissions.back_office;
 const allOperating = `(${overridden} OR (${committed}>0 AND cs.fulfillment_review_required=0
   AND (SELECT COUNT(*) FROM charging_station_commitments c WHERE c.charging_station_id=cs.id)=JSON_LENGTH(p.chot_so_luong_tru)
@@ -66,8 +82,8 @@ const stageFilters = {
     completed: "cs.contract_status='DONE'", all: '1=1'
   },
   'xay-dung-ha-tang': {
-    need: "(cs.contract_status='DONE' AND (COALESCE(cs.infra_power_status,'NOT')<>'DONE' OR COALESCE(cs.infra_site_status,'NOT')<>'DONE'))",
-    completed: "(cs.infra_power_status='DONE' AND cs.infra_site_status='DONE')", all: '1=1'
+    need: `(${infrastructureIncomplete} AND cs.contract_status='DONE')`,
+    completed: infrastructureCompleted, all: '1=1'
   },
   'giao-tru': {
     need: deliveryTask,
@@ -101,7 +117,8 @@ const actionable = async (user) => {
   const infrastructureScope = await access.buildInfrastructureTaskScope(user, permissions);
   const expressions = {
     contract: permissions.back_office ? stageFilters['khoi-tao-hop-dong'].need : '0',
-    infrastructure: `(${stageFilters['xay-dung-ha-tang'].need} AND (${infrastructureScope.sql}))`,
+    infrastructure: `((${stageFilters['xay-dung-ha-tang'].need} AND (${infrastructureScope.sql}))
+      OR (${permissions.setup ? infrastructureSetupConfirmationTask : '0'}))`,
     delivery: canReceiveDeliveryTask(user, permissions) ? deliveryTask : '0',
     installation: permissions.setup ? stageFilters['lap-tru'].need : '0',
     acceptance: permissions.setup ? stageFilters['nghiem-thu'].need : '0',
@@ -122,8 +139,15 @@ const getFilter = async (stage, tab, user) => {
   if (!definition) throw Object.assign(new Error('Bước ON trạm không hợp lệ'), { statusCode: 400 });
   const sql = definition[tab];
   if (stage === 'xay-dung-ha-tang' && tab === 'need') {
-    const scope = await access.buildInfrastructureTaskScope(user);
-    return { sql: `cs.status<>'CANCELLED' AND (${sql}) AND (${scope.sql})`, params: scope.params };
+    const permissions = await access.permissions(user);
+    const scope = await access.buildInfrastructureTaskScope(user, permissions);
+    return {
+      sql: `cs.status<>'CANCELLED' AND (
+        ((${sql}) AND (${scope.sql}))
+        OR (${permissions.setup ? infrastructureSetupConfirmationTask : '0'})
+      )`,
+      params: scope.params
+    };
   }
   if (stage === 'giao-tru' && tab === 'need' && !canReceiveDeliveryTask(user, await access.permissions(user))) {
     return { sql: '0', params: [] };
@@ -131,4 +155,16 @@ const getFilter = async (stage, tab, user) => {
   return { sql: tab === 'all' ? sql : `cs.status<>'CANCELLED' AND (${sql})`, params: [] };
 };
 
-module.exports = { getFilter, actionable, stageFilters, allOperating, complete, earlyDeliveryRequested, deliveryComplete };
+module.exports = {
+  getFilter,
+  actionable,
+  stageFilters,
+  allOperating,
+  complete,
+  earlyDeliveryRequested,
+  deliveryComplete,
+  infrastructureSetupConfirmationTask,
+  infrastructureCompleted,
+  deliveryTask,
+  setupConfirmationRequired
+};

@@ -31,6 +31,10 @@ const INFRASTRUCTURE_ITEMS = [
   { type: 'power', field: 'infra_power_status', label: 'hạ tầng điện', columnLabel: 'Hạ tầng điện' },
   { type: 'site', field: 'infra_site_status', label: 'mặt bằng', columnLabel: 'Hạ tầng mặt bằng' }
 ];
+const CONFIRMATION_LABELS = {
+  NOT_CONFIRMED: 'Chưa xác nhận',
+  CONFIRMED: 'Đủ điều kiện đi trụ'
+};
 
 const formatDateTime = (value) => {
   if (!value) return '—';
@@ -55,6 +59,9 @@ const ChargingStationInfrastructureTabs = () => {
   const [status, setStatus] = useState('NOT');
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
+  const [confirmationEditing, setConfirmationEditing] = useState(null);
+  const [confirmationStatus, setConfirmationStatus] = useState('NOT_CONFIRMED');
+  const [confirmationNote, setConfirmationNote] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   const load = useCallback(async (targetPage) => {
@@ -161,6 +168,38 @@ const ChargingStationInfrastructureTabs = () => {
         );
       }
     })),
+    {
+      key: 'infra_delivery_confirmation',
+      label: 'Xác nhận điều kiện đi trụ',
+      width: 200,
+      render: (value, row) => {
+        const isNq = String(row.mo_hinh_dau_tu || '').trim().toUpperCase() === 'NQ';
+        const exempt = isNq || row.infra_delivery_confirmation_exempt === true
+          || row.infra_delivery_confirmation_exempt === 1 || row.infra_delivery_confirmation_exempt === '1';
+        const current = value || 'NOT_CONFIRMED';
+        const label = exempt ? (isNq ? 'Không cần xác nhận' : 'Áp dụng quy định cũ')
+          : (CONFIRMATION_LABELS[current] || current);
+        const editable = !exempt && row.status !== 'CANCELLED'
+          && (user?.role === 'SUPER_ADMIN' || row.permissions?.setup === true || row.permissions?.setup === 1);
+        return editable ? (
+          <button type="button" aria-label={`Xác nhận điều kiện đi trụ: ${label}`}
+            aria-haspopup="dialog" disabled={busyAction !== null}
+            title={row.infra_delivery_confirmation_note || ''}
+            className="inline-flex w-full items-center justify-between gap-2 rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-medium hover:brightness-95 disabled:opacity-50"
+            onClick={() => {
+              setConfirmationEditing({ station: row, expectedStatus: current });
+              setConfirmationStatus(current);
+              setConfirmationNote(row.infra_delivery_confirmation_note || '');
+            }}>
+            {label}<ChevronDown size={14} />
+          </button>
+        ) : (
+          <span title={row.infra_delivery_confirmation_note || ''}>
+            <Badge variant={current === 'CONFIRMED' && !exempt ? 'success' : 'ghost'} size="sm" outline>{label}</Badge>
+          </span>
+        );
+      }
+    },
     { key: 'ngay_du_kien_on', label: 'Ngày ON dự kiến', render: (value) => formatCsDate(value) },
 
   ], [location.pathname, location.search, user, busyAction]);
@@ -190,6 +229,29 @@ const ChargingStationInfrastructureTabs = () => {
       await load(page);
     } catch (error) {
       setToast({ message: error?.message || 'Không cập nhật được hạ tầng', type: 'error' });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const updateConfirmation = async () => {
+    if (!confirmationEditing) return;
+    const { station, expectedStatus } = confirmationEditing;
+    setBusyAction(`${station.id}:confirmation`);
+    try {
+      const response = await chargingStationService.updateInfrastructureConfirmation(station.id, {
+        status: confirmationStatus, expected_status: expectedStatus, note: confirmationNote.trim()
+      }, token);
+      if (!response?.success) {
+        setConfirmationEditing(null);
+        await load(page);
+        throw new Error(response?.message || 'Không cập nhật được xác nhận điều kiện đi trụ');
+      }
+      setToast({ message: response.message || 'Đã cập nhật xác nhận điều kiện đi trụ', type: 'success' });
+      setConfirmationEditing(null);
+      await load(page);
+    } catch (error) {
+      setToast({ message: error?.message || 'Không cập nhật được xác nhận điều kiện đi trụ', type: 'error' });
     } finally {
       setBusyAction(null);
     }
@@ -277,6 +339,27 @@ const ChargingStationInfrastructureTabs = () => {
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={!!busyAction} onClick={() => setEditing(null)}>Hủy</Button>
             <Button variant="primary" loading={!!busyAction} disabled={!!busyAction} onClick={updateInfrastructure}>Xác nhận</Button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog isOpen={!!confirmationEditing} title="Xác nhận điều kiện đi trụ"
+        onClose={() => { if (!busyAction) setConfirmationEditing(null); }} size="md">
+        <div className="space-y-4">
+          <label className="block text-sm font-medium">Trạng thái xác nhận
+            <select className="select select-bordered mt-2 w-full" value={confirmationStatus}
+              disabled={!!busyAction} onChange={event => setConfirmationStatus(event.target.value)}>
+              {Object.entries(CONFIRMATION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-medium">Ghi chú (không bắt buộc)
+            <textarea className="textarea textarea-bordered mt-2 w-full" rows={3}
+              value={confirmationNote} disabled={!!busyAction} onChange={event => setConfirmationNote(event.target.value)} />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={!!busyAction} onClick={() => setConfirmationEditing(null)}>Hủy</Button>
+            <Button variant="primary" loading={!!busyAction} disabled={!!busyAction} onClick={updateConfirmation}>Xác nhận</Button>
           </div>
         </div>
       </Dialog>
