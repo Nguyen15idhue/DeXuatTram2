@@ -12,6 +12,35 @@ const superUser = { id: 1, role: 'SUPER_ADMIN' };
 const ctx = { actorId: 1, actorRole: 'SUPER_ADMIN' };
 test.after(() => pool.end());
 
+test('new shipments enforce readiness but idempotent retries remain valid', async t => {
+  const access = require('../src/services/chargingStationAccessService');
+  t.mock.method(access, 'assertBackOffice', async () => {});
+  t.mock.method(access, 'assertView', async () => {});
+  const request = {
+    request_id: 'delivery-1', carrier_id: 1, export_date: '2026-11-12',
+    items: [{ commitment_id: 3, quantity: 1 }]
+  };
+  const payload = {
+    items: request.items, carrier_id: 1, export_date: '2026-11-12',
+    transport_code: null, reason: null, total_amount: null
+  };
+  let event = null;
+  const queries = [];
+  const connection = { query: async sql => {
+    queries.push(sql);
+    if (sql.startsWith('SELECT * FROM charging_stations')) return [[{ id: 1 }]];
+    if (sql.includes('FROM charging_station_fulfillment_events')) return [event ? [event] : []];
+    if (sql.includes(' AS eligible')) return [[{ status: 'DELIVERING', eligible: 0, infra_delivery_legacy_exempt: 0 }]];
+    throw new Error('Unexpected query');
+  } };
+  await assert.rejects(shipping.createExportWithinTransaction(connection, 1, request, superUser), { statusCode: 409 });
+  assert.ok(queries.some(sql => sql.includes(' AS eligible')));
+  event = { operation: 'SHIPPING_CREATE_EXPORT', payload: JSON.stringify(payload), result: JSON.stringify({ id: 9 }) };
+  queries.length = 0;
+  assert.deepEqual(await shipping.createExportWithinTransaction(connection, 1, request, superUser), { id: 9 });
+  assert.equal(queries.some(sql => sql.includes(' AS eligible')), false);
+});
+
 test('installation aggregation uses all committed poles, and explicit overrides stay distinct', () => {
   const items = [{ commitment_id: 1, committed_quantity: 2 }];
   const portions = [{ commitment_id: 1, quantity: 1, installation_status: 'DONE' }];

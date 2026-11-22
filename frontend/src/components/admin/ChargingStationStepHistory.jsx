@@ -9,6 +9,9 @@ const STATUS_FIELDS = {
   contract_status: ['Hợp đồng', CS_CONTRACT_LABELS],
   infra_power_status: ['Hạ tầng điện', CS_FLOW_LABELS],
   infra_site_status: ['Hạ tầng mặt bằng', CS_FLOW_LABELS],
+  infra_delivery_confirmation: ['Xác nhận điều kiện đi trụ', {
+    NOT_CONFIRMED: 'Chưa xác nhận', CONFIRMED: 'Đủ điều kiện đi trụ'
+  }],
   installation_status: ['Lắp trụ', { NOT: 'Chưa lắp trụ', DOING: 'Đang lắp trụ', DONE: 'Đã lắp xong' }],
   acceptance_status: ['Nghiệm thu', ACCEPTANCE_LABELS],
   transport_status: ['Vận chuyển', SHIPMENT_STATUS_LABELS],
@@ -16,7 +19,8 @@ const STATUS_FIELDS = {
 };
 const ACTION_LABELS = {
   contract_completed: 'Đã ký hợp đồng', contract_note_updated: 'Cập nhật ghi chú hợp đồng',
-  infrastructure_status_changed: 'Cập nhật hạ tầng', shipment_created: 'Tạo chuyến giao',
+  infrastructure_status_changed: 'Cập nhật hạ tầng',
+  infrastructure_confirmation_changed: 'Xác nhận điều kiện đi trụ', shipment_created: 'Tạo chuyến giao',
   shipment_received: 'Nhận trụ', shipment_return_requested: 'Yêu cầu hoàn hàng',
   shipment_return_confirmed: 'Xác nhận hoàn hàng', shipment_failed: 'Giao hàng thất bại',
   early_delivery_requested: 'Đề xuất giao sớm', installation_started: 'Bắt đầu lắp đặt',

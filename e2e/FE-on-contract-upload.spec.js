@@ -73,7 +73,8 @@ test(`contract modal calculates expiry from the term and uploads multiple files$
   expect(uploaded).toBe(2);
   expect(completed).toEqual([{
     file_ids: [101, 102], contract_effective_date: '2024-02-29',
-    contract_expiry_date: '2025-02-28', contract_note: 'Hợp đồng và phụ lục', expected_status: 'DOING'
+    contract_expiry_date: '2025-02-28', contract_note: 'Hợp đồng và phụ lục', expected_status: 'DOING',
+    expected_on_days: 90
   }]);
   expect(errors).toEqual([]);
 });

@@ -100,12 +100,15 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const showShipping = !stage || stage === "giao-tru";
   const showPortions = !stage || stage !== "giao-tru";
   const shippingOptions = fulfillment.shipping_options || [];
+  const deliveryBlocked = record?.delivery_eligible === false && Number(record?.infra_delivery_confirmation_exempt) !== 1;
   const shippingDisabled =
-    loading || loadError || !shippingOptions.length || fulfillment.needs_review;
+    loading || loadError || deliveryBlocked || !shippingOptions.length || fulfillment.needs_review;
   const shippingDisabledReason = loading
     ? "Đang tải dữ liệu"
     : loadError
       ? "Không tải được dữ liệu"
+      : deliveryBlocked
+        ? "Trạm chưa đủ điều kiện giao trụ hoặc chưa được Setup/Vận hành xác nhận"
       : fulfillment.needs_review
         ? "Dữ liệu trụ cần đối soát"
         : !Number(fulfillment.totals?.remaining)

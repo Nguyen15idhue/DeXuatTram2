@@ -179,6 +179,17 @@ exports.updateInfrastructure = async (req, res) => {
   }
 };
 
+exports.updateInfrastructureConfirmation = async (req, res) => {
+  try {
+    const data = await chargingStationService.updateInfrastructureConfirmation(
+      req.params.id, req.body || {}, req.user, actorOf(req)
+    );
+    res.json({ success: true, data, message: 'Đã cập nhật xác nhận điều kiện đi trụ' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.completeInfrastructure = async (req, res) => {
   try {
     const data = await chargingStationService.updateInfrastructureStatus(
@@ -202,7 +213,7 @@ exports.requestEarlyDelivery = async (req, res) => {
       req.user,
       actorOf(req)
     );
-    res.json({ success: true, data, message: 'Đã gửi đề xuất giao trụ sớm cho Back Office' });
+    res.json({ success: true, data, message: 'Đã gửi đề xuất giao trụ sớm' });
   } catch (error) {
     sendError(res, error);
   }

@@ -248,8 +248,8 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
         source: 'user',
         ip: ctx.ip
       });
-      await chargingStationService.advanceToDeliveryIfReady(connection, { id }, ctx);
     }
+    await chargingStationService.advanceToDeliveryIfReady(connection, { id }, ctx);
     await chargingStationService.advanceProposalToDeploying(proposalId, ctx, connection);
     if (invoiceType === 'DEPOSIT' && station.status !== 'CANCELLED') {
       await require('./chargingStationDeploymentService').refreshStationProgress(connection, id, ctx);

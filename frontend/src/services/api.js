@@ -872,6 +872,9 @@ export const chargingStationService = {
   updateInfrastructure(id, type, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/status`, data, token));
   },
+  updateInfrastructureConfirmation(id, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/infrastructure-confirmation`, data, token));
+  },
   completeInfrastructure(id, type, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/complete`, {}, token));
   },

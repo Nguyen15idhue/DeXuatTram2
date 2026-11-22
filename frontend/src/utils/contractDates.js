@@ -19,6 +19,16 @@ export const calculateContractExpiry = (effectiveDate, years) => {
   return `${year}-${String(date.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
+export const calculateExpectedOnDate = (effectiveDate, days) => {
+  const date = parseDate(effectiveDate);
+  if (!date || !/^\d+$/.test(String(days))) return '';
+  const count = Number(days);
+  if (!Number.isSafeInteger(count)) return '';
+  const expected = new Date(Date.UTC(date.year, date.month - 1, date.day) + count * 86400000);
+  if (Number.isNaN(expected.getTime()) || expected.getUTCFullYear() > 9999) return '';
+  return expected.toISOString().slice(0, 10);
+};
+
 export const getContractTermYears = (effectiveDate, expiryDate) => {
   const start = parseDate(effectiveDate);
   const end = parseDate(expiryDate);

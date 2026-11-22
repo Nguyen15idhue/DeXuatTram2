@@ -288,6 +288,17 @@ const writeStationExport = async (connection, stationId, body, actor, ctx = {}) 
   }
   const existing = await eventForRequest(connection, stationId, requestId, 'SHIPPING_CREATE_EXPORT', payload);
   if (existing) return existing;
+  const readiness = require('./chargingStationReadiness');
+  const [deliveryRows] = await connection.query(
+    `SELECT cs.status, cs.infra_delivery_legacy_exempt, ${readiness.deliveryEligibleSql('cs', 'p')} AS eligible
+       FROM charging_stations cs JOIN station_proposals p ON p.id = cs.proposal_id
+      WHERE cs.id = ?`,
+    [stationId]
+  );
+  if (!deliveryRows.length || deliveryRows[0].status === 'CANCELLED'
+    || (Number(deliveryRows[0].infra_delivery_legacy_exempt) !== 1 && Number(deliveryRows[0].eligible) !== 1)) {
+    throw fail('Trạm chưa đủ điều kiện giao trụ hoặc chưa được Setup/Vận hành xác nhận', 409);
+  }
   const carrier = await require('./shippingCarrierService').resolve(connection, payload.carrier_id);
 
   await ensureCommitments(connection, stationId);
