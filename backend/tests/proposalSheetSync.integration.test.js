@@ -61,7 +61,9 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
         try {
           const rows = await m.exports.loadProposals(${JSON.stringify(ids)}, ${JSON.stringify(tabName)});
           console.log(JSON.stringify(rows.map(r => ({ id: r.id, status_changed_at: r.status_changed_at,
-            status_log_id: r.status_log_id, formatted: m.exports.__formatStatusChangeTime(r.status_changed_at) }))));
+            status_log_id: r.status_log_id, formatted: m.exports.__formatStatusChangeTime(r.status_changed_at),
+            on_station_id: r.on_station_id, contract_status: r.contract_status,
+            deposit_total: r.deposit_total, payment_total: r.payment_total, refund_total: r.refund_total }))));
         } finally { await require('/app/src/utils/db').end(); }
       })().catch(e => { console.error(e.message); process.exitCode = 1; });
     `;
@@ -102,7 +104,11 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
       CREATE TABLE users (id INT PRIMARY KEY, full_name VARCHAR(100), parent_id INT NULL, custom_data JSON);
       CREATE TABLE station_proposals (id INT PRIMARY KEY, user_id INT NULL, status VARCHAR(30),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
-      CREATE TABLE charging_stations (id INT PRIMARY KEY, proposal_id INT NOT NULL, on_date DATE NULL);
+      CREATE TABLE charging_stations (id INT PRIMARY KEY, proposal_id INT NOT NULL, on_date DATE NULL,
+        contract_status VARCHAR(20), infra_power_status VARCHAR(20), infra_site_status VARCHAR(20),
+        deposit_status VARCHAR(20), payment_status VARCHAR(20), deposit_refund_required BOOLEAN);
+      CREATE TABLE charging_station_invoices (id INT PRIMARY KEY, charging_station_id INT,
+        invoice_type VARCHAR(20), amount DECIMAL(12,2));
       CREATE TABLE proposal_activity_logs (id INT PRIMARY KEY, proposal_id INT, action VARCHAR(50),
         from_status VARCHAR(30), to_status VARCHAR(30), created_at TIMESTAMP);
       CREATE TABLE proposal_sheet_sync_queue (proposal_id INT PRIMARY KEY, operation VARCHAR(10),
@@ -145,7 +151,7 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
       SELECT requested_version FROM proposal_sheet_sync_queue WHERE proposal_id=10;
       UPDATE users SET custom_data='{"department":"South","chuc_vu":"GDKV"}' WHERE id=1;
       SELECT requested_version FROM proposal_sheet_sync_queue WHERE proposal_id=10;
-      INSERT INTO charging_stations VALUES (1,10,'2026-01-01');
+      INSERT INTO charging_stations (id,proposal_id,on_date) VALUES (1,10,'2026-01-01');
       SELECT requested_version FROM proposal_sheet_sync_queue WHERE proposal_id=10;
       UPDATE charging_stations SET on_date='2026-01-02' WHERE id=1;
       SELECT requested_version FROM proposal_sheet_sync_queue WHERE proposal_id=10;
@@ -216,6 +222,21 @@ test('status timestamps and related ON/user changes enqueue proposals transactio
     finishJob(false, 3);
     assert.deepEqual(run(`SELECT CONCAT(status,':',attempt_count,':',next_attempt_at IS NULL)
       FROM proposal_sheet_sync_queue WHERE proposal_id=10;`), ['FAILED:8:1']);
+    run(`
+      INSERT INTO charging_stations (id,proposal_id,contract_status,infra_power_status,infra_site_status,
+        deposit_status,payment_status,deposit_refund_required) VALUES (2,10,'DONE','DONE','DOING','RECEIVED','DOING',0);
+      INSERT INTO charging_station_invoices VALUES (1,2,'DEPOSIT',30), (2,2,'PAYMENT',65),
+        (3,2,'REFUND',5), (4,2,'PAYMENT',10);
+    `);
+    const withInvoices = loadProposals([10, 11], 'Data_QT1');
+    assert.equal(withInvoices.length, 2);
+    const on = withInvoices.find(row => row.id === 10);
+    assert.equal(on.on_station_id, 2);
+    assert.equal(on.contract_status, 'DONE');
+    assert.equal(Number(on.deposit_total), 30);
+    assert.equal(Number(on.payment_total), 75);
+    assert.equal(Number(on.refund_total), 5);
+    assert.equal(withInvoices.find(row => row.id === 11).on_station_id, null);
   } finally {
     if (created) mysql(`DROP DATABASE \`${database}\`;`);
   }

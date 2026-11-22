@@ -1,5 +1,6 @@
 const ExcelJS = require('exceljs');
 const stationService = require('./chargingStationService');
+const { CONTRACT_LABELS: CONTRACT, INFRA_LABELS: INFRA, financeLabel } = require('./chargingStationDisplay');
 
 const STAGES = ['khoi-tao-hop-dong', 'xay-dung-ha-tang', 'giao-tru', 'lap-tru', 'nghiem-thu'];
 const COLUMNS = [
@@ -13,8 +14,6 @@ const COLUMNS = [
 ];
 const MODELS = { NQ: 'Nhượng quyền', LK: 'Liên kết', TDT: 'Tự đầu tư', NQ_LK: 'Nhượng quyền + Liên kết' };
 const REGIONS = { Bac: 'Miền Bắc', Trung: 'Miền Trung', Nam: 'Miền Nam' };
-const CONTRACT = { NOT: 'Chưa ký hợp đồng', DOING: 'Đang ký hợp đồng', DONE: 'Đã ký hợp đồng', CANCELLED: 'Đã hủy' };
-const INFRA = { NOT: 'Chưa làm', DOING: 'Đang làm', DONE: 'Đã làm' };
 const localDateTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'medium'
 });
@@ -32,23 +31,6 @@ const cost = (value) => {
   return number(amount);
 };
 const label = (options, value) => Object.hasOwn(options, value) ? options[value] : '';
-
-const financeLabel = (row) => {
-  if (row.requires_deposit === false || (row.deposit_status === 'NOT_REQUIRED' && row.payment_status === 'NOT_REQUIRED')) {
-    return 'Không yêu cầu';
-  }
-  const deposit = Number(row.deposit_total || 0);
-  const payment = Number(row.payment_total || 0);
-  const refund = Number(row.refund_total || 0);
-  const amount = Number(row.contract_amount || 0);
-  const paid = amount > 0 ? deposit + payment - refund >= amount : row.payment_status === 'DONE';
-  if (!paid) {
-    if (payment > 0 || refund > 0) return 'Đang thanh toán';
-    return deposit > 0 ? 'Đã nhận cọc' : 'Chưa nhận cọc';
-  }
-  if (refund > 0 && deposit > 0 && refund >= deposit) return 'Đã thanh toán - Đã hoàn cọc';
-  return isFlag(row.deposit_refund_required) ? 'Đã thanh toán - Chờ hoàn cọc' : 'Đã thanh toán toàn bộ';
-};
 
 const deliveryLabel = (row) => {
   if (isFlag(row.shipment_return_pending)) return 'Có chuyến chờ hoàn hàng';

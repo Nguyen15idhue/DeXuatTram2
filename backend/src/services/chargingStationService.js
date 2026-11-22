@@ -12,6 +12,7 @@ const {
   isBackward
 } = require('../constants/chargingStations');
 const readiness = require('./chargingStationReadiness');
+const { paidPercent } = require('./chargingStationDisplay');
 const stationAccess = require('./chargingStationAccessService');
 const stationWork = require('./chargingStationWorkService');
 
@@ -624,14 +625,7 @@ const listChargingStations = async ({
         contract_amount: Number(record.contract_amount) || 0,
         paid_total: (Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0),
         remaining_amount: Math.max(0, (Number(record.contract_amount) || 0) - ((Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0))),
-        paid_percent: (() => {
-          const model = String(record.mo_hinh_dau_tu || '').toUpperCase();
-          if (!['LK', 'NQ', 'NQ_LK'].includes(model)) return null;
-          const contract = Number(record.contract_amount) || 0;
-          const paid = (Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0);
-          if (contract <= 0) return 0;
-          return Math.min(100, Math.max(0, Math.round((paid / contract) * 100)));
-        })(),
+        paid_percent: paidPercent(record),
         deadline_active: deadlineActive,
         can_extend_deadline: deadlineActive
           && Number(record.deadline_extension_count || 0) < readiness.MAX_DEADLINE_EXTENSIONS
