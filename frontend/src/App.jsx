@@ -44,7 +44,7 @@ const HelpPage = lazy(() => import("./pages/public/HelpPage"));
 const AdminDashboard = lazy(
   () => import("./pages/admin/dashboard/AdminDashboard"),
 );
-const AdminUsersPage = lazy(() => import("./pages/admin/users/AdminUsersPage.jsx"));
+const AdminUsersPage = lazy(() => import("./pages/admin/users/AdminUsersPage"));
 const AdminLeadsPage = lazy(() => import("./pages/admin/leads/AdminLeadsPage"));
 const AdminBusinessCalendarPage = lazy(
   () => import("./pages/admin/dashboard/AdminBusinessCalendarPage"),
@@ -116,9 +116,12 @@ const AdminProposalDetailPage = lazy(
   () => import("./pages/admin/proposals/chi-tiet/AdminProposalDetailPage"),
 );
 const AdminProposalRequestUpdatePage = lazy(
-  () => import("./pages/admin/proposals/yeu-cau-cap-nhat-[id]/AdminProposalRequestUpdatePage"),
+  () =>
+    import("./pages/admin/proposals/yeu-cau-cap-nhat-[id]/AdminProposalRequestUpdatePage"),
 );
-const AdminESignPage = lazy(() => import("./pages/admin/e-sign/AdminESignPage"));
+const AdminESignPage = lazy(
+  () => import("./pages/admin/e-sign/AdminESignPage"),
+);
 const AdminEvReportsPage = lazy(
   () => import("./pages/admin/ev-reports/AdminEvReportsPage"),
 );
@@ -128,7 +131,9 @@ const AdminCmsReportsPage = lazy(
 const AdminCustomExcelExportPage = lazy(
   () => import("./pages/admin/excel-export/AdminCustomExcelExportPage"),
 );
-const AdminFieldsPage = lazy(() => import("./pages/admin/fields/AdminFieldsPage"));
+const AdminFieldsPage = lazy(
+  () => import("./pages/admin/fields/AdminFieldsPage"),
+);
 const AdminFormsPage = lazy(() => import("./pages/admin/forms/AdminFormsPage"));
 const AdminFormBuilderPage = lazy(
   () => import("./pages/admin/forms/[id]-edit/AdminFormBuilderPage"),

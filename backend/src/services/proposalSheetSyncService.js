@@ -2,6 +2,8 @@ const fs = require('fs');
 const { google } = require('googleapis');
 const pool = require('../utils/db');
 const proposalGradingService = require('./proposalGradingService');
+const readiness = require('./chargingStationReadiness');
+const stationDisplay = require('./chargingStationDisplay');
 const { isGdkv, isGdtt } = require('../constants/salesRanks');
 const ttlCache = require('../utils/ttlCache');
 
@@ -111,6 +113,14 @@ const DATA_QT1_FIELDS = [
   ['email', 'Email'],
   ['quy_hoach_note', 'Quy hoạch đánh giá'],
   ['phap_ly_note', 'Pháp lý đánh giá']
+];
+
+const ON_STATION_COLUMNS = [
+  { kind: 'onContract', key: '__on_contract', header: 'Trạng thái hợp đồng' },
+  { kind: 'onPower', key: '__on_power', header: 'Trạng thái hạ tầng điện' },
+  { kind: 'onSite', key: '__on_site', header: 'Trạng thái hạ tầng mặt bằng' },
+  { kind: 'onFinance', key: '__on_finance', header: 'Trạng thái tài chính' },
+  { kind: 'onPaidPercent', key: '__on_paid_percent', header: 'Phần trăm đã thanh toán' }
 ];
 
 const EXPLICIT_FIELD_KEYS = new Set([
@@ -458,10 +468,12 @@ const isDataQt1Tab = (tabName) => tabName === 'Data_QT1' || tabName === 'TEST_Da
 
 const buildColumns = (fields, tabName) => {
   if (isDataQt1Tab(tabName)) {
+    const base = BASE_COLUMNS.map((column) => column.key.startsWith('__proposed_') && column.kind === 'poleCount'
+      ? { ...column, header: `ĐX_${column.header}` }
+      : column);
+    base.splice(base.findIndex((column) => column.kind === 'actualOnDate') + 1, 0, ...ON_STATION_COLUMNS);
     return [
-      ...BASE_COLUMNS.map((column) => column.key.startsWith('__proposed_') && column.kind === 'poleCount'
-        ? { ...column, header: `ĐX_${column.header}` }
-        : column),
+      ...base,
       ...DATA_QT1_FIELDS.map(([key, header]) => ({ kind: 'field', key, header }))
     ];
   }
@@ -474,7 +486,8 @@ const buildColumns = (fields, tabName) => {
 const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}) => {
   const columns = buildColumns(fields, config.tabName);
   const addedKinds = new Set(['areaDepartment', 'statusChangedAt', 'actualOnDate']);
-  const layouts = [columns, columns.filter((column) => !addedKinds.has(column.kind))]
+  const withoutOnColumns = columns.filter((column) => !ON_STATION_COLUMNS.some((item) => item.kind === column.kind));
+  const layouts = [columns, withoutOnColumns].flatMap((layout) => [layout, layout.filter((column) => !addedKinds.has(column.kind))])
     .map((layout) => ({
       expected: layout.map((column) => column.header),
       previous: layout.filter((column) => column.kind !== 'poleCount').map((column) => column.header)
@@ -664,9 +677,31 @@ const resolveFieldValue = (proposal, custom, key, definitions, usersById) => {
 const mapProposalToRow = (proposal, fields, serial = '', usersById = new Map(), definitions = [], tabName) => {
   const custom = parseObject(proposal.custom_data);
   const values = resolveBaseRowValues(proposal, definitions, serial);
+  if (isDataQt1Tab(tabName) && proposal.on_station_id != null) {
+    const displayLabel = (labels, value, field) => {
+      if (value == null || value === '') return '—';
+      if (!Object.hasOwn(labels, value)) throw new Error(`Đề xuất ${proposal.id}: ${field} không hợp lệ`);
+      return labels[value];
+    };
+    const model = scalarValue(custom.mo_hinh_dau_tu);
+    const station = {
+      ...proposal,
+      mo_hinh_dau_tu: model,
+      contract_amount: proposal.tong_gia_tri_chot,
+      requires_deposit: readiness.getFinanceRequirements(model).requiresDeposit
+    };
+    const percent = stationDisplay.paidPercent(station);
+    Object.assign(values, {
+      __on_contract: displayLabel(stationDisplay.CONTRACT_LABELS, proposal.contract_status, 'trạng thái hợp đồng'),
+      __on_power: displayLabel(stationDisplay.INFRA_LABELS, proposal.infra_power_status, 'trạng thái hạ tầng điện'),
+      __on_site: displayLabel(stationDisplay.INFRA_LABELS, proposal.infra_site_status, 'trạng thái hạ tầng mặt bằng'),
+      __on_finance: stationDisplay.financeLabel(station),
+      __on_paid_percent: percent === null ? '' : percent / 100
+    });
+  }
   return buildColumns(fields, tabName).map(({ kind, key }) => kind === 'field'
     ? resolveFieldValue(proposal, custom, key, definitions, usersById)
-    : values[key]);
+    : ON_STATION_COLUMNS.some((column) => column.kind === kind) ? (values[key] ?? '') : values[key]);
 };
 
 const columnName = (columnNumber) => {
@@ -741,8 +776,14 @@ const loadProposals = async (proposalIds, tabName) => {
           ORDER BY l.created_at DESC, l.id DESC LIMIT 1
        )`
     : '';
+  const onColumns = useStatusLog ? `,
+            cs.id AS on_station_id, cs.contract_status, cs.infra_power_status, cs.infra_site_status,
+            cs.deposit_status, cs.payment_status, cs.deposit_refund_required,
+            (SELECT COALESCE(SUM(i.amount), 0) FROM charging_station_invoices i WHERE i.charging_station_id = cs.id AND i.invoice_type = 'DEPOSIT') AS deposit_total,
+            (SELECT COALESCE(SUM(i.amount), 0) FROM charging_station_invoices i WHERE i.charging_station_id = cs.id AND i.invoice_type = 'PAYMENT') AS payment_total,
+            (SELECT COALESCE(SUM(i.amount), 0) FROM charging_station_invoices i WHERE i.charging_station_id = cs.id AND i.invoice_type = 'REFUND') AS refund_total` : '';
   const [rows] = await pool.query(
-    `SELECT p.*, cs.on_date AS actual_on_date, ${statusTime} AS status_changed_at,
+    `SELECT p.*, cs.on_date AS actual_on_date${onColumns}, ${statusTime} AS status_changed_at,
             ${useStatusLog ? 'status_log.id' : 'NULL'} AS status_log_id,
             u.full_name AS submitter_name,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS submitter_department,
@@ -853,6 +894,25 @@ const assertHeader = async (sheets, config, fields) => {
   const existing = (response.data.values?.[0] || []).map((value) => String(value || '').trim());
   const expected = columns.map((column) => column.header);
   if (expected.every((header, index) => existing[index] === header)) return;
+  const firstOnColumn = columns.findIndex((column) => column.kind === 'onContract');
+  if (firstOnColumn >= 0
+      && ON_STATION_COLUMNS.every((_, offset) => !existing[firstOnColumn + offset])
+      && expected.every((header, index) => (index >= firstOnColumn && index < firstOnColumn + ON_STATION_COLUMNS.length)
+        || existing[index] === header)) {
+    const first = columnName(firstOnColumn + 1);
+    const last = columnName(firstOnColumn + ON_STATION_COLUMNS.length);
+    const cells = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId, range: `${tab}!${first}2:${last}`, valueRenderOption: 'FORMULA'
+    });
+    if ((cells.data.values || []).some((row) => row.some((value) => String(value ?? '').trim()))) {
+      throw new Error('Không thể đặt header ON trạm vì các cột mới đã có dữ liệu. Hãy sao lưu và kiểm tra Sheet.');
+    }
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId, range: `${tab}!${first}1:${last}1`,
+      valueInputOption: 'RAW', requestBody: { values: [expected.slice(firstOnColumn, firstOnColumn + ON_STATION_COLUMNS.length)] }
+    });
+    return;
+  }
   const statusTimeIndex = columns.findIndex((column) => column.kind === 'statusChangedAt');
   if (!existing[statusTimeIndex]
       && expected.every((header, index) => index === statusTimeIndex || existing[index] === header)) {
@@ -889,6 +949,24 @@ const assertHeader = async (sheets, config, fields) => {
     return;
   }
   throw new Error('Header Google Sheet không khớp cấu hình hiện tại. Hãy sao lưu và đối chiếu cấu trúc trước khi đồng bộ.');
+};
+
+const ensurePaidPercentFormat = async (sheets, config, fields) => {
+  if (!isDataQt1Tab(config.tabName)) return;
+  const index = buildColumns(fields, config.tabName).findIndex((column) => column.kind === 'onPaidPercent');
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId: config.spreadsheetId, fields: 'sheets(properties(sheetId,title))'
+  });
+  const sheet = (metadata.data.sheets || []).find((item) => item.properties?.title === config.tabName);
+  if (!sheet || !Number.isInteger(sheet.properties.sheetId)) throw new Error('Không tìm thấy tab Google Sheet cần định dạng phần trăm');
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.spreadsheetId,
+    requestBody: { requests: [{ repeatCell: {
+      range: { sheetId: sheet.properties.sheetId, startRowIndex: 1, startColumnIndex: index, endColumnIndex: index + 1 },
+      cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0%' } } },
+      fields: 'userEnteredFormat.numberFormat'
+    } }] }
+  });
 };
 
 const refreshManualRun = async (runId) => {
@@ -1053,6 +1131,7 @@ const processBatch = async (limit = BATCH_SIZE) => {
     const sheets = await createSheetsClient(config);
     await assertHeader(sheets, config, fields);
     await writeSheetRows(sheets, config, claimedJobs, proposalsById, fields, definitions, usersById);
+    await ensurePaidPercentFormat(sheets, config, fields);
 
     for (const job of claimedJobs) await updateSuccessfulJob(job);
     await refreshRunsForJobs(claimedJobs);
@@ -1213,6 +1292,7 @@ exports.processBatch = processBatch;
 exports.mapProposalToRow = mapProposalToRow;
 exports.getExportFields = getExportFields;
 exports.buildColumns = buildColumns;
+exports.ensurePaidPercentFormat = ensurePaidPercentFormat;
 exports.getAllFieldDefinitions = getAllFieldDefinitions;
 exports.assertHeader = assertHeader;
 exports.writeSheetRows = writeSheetRows;

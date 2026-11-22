@@ -64,20 +64,20 @@ const createSheet = (header, rows = []) => {
   return { sheets, cells, calls };
 };
 
-test('Data_QT1 validates the requested headers and writes only A:CZ regardless of field-definition order', async () => {
+test('Data_QT1 validates the requested headers and preserves columns after the managed range', async () => {
   const qtConfig = { ...config, tabName: 'Data_QT1' };
   const requested = [
     'STT|ID đề xuất|Mã đề xuất|Ngày tạo|Người đề xuất|GĐKV quản lý|Phòng ban|Giám đốc TTKD|Pháp nhân / Chủ trạm|SĐT liên hệ|Mô hình đầu tư|Địa chỉ|Vĩ độ|Kinh độ|Phường/Xã|Tỉnh/Thành phố|Miền|Loại đất|Diện tích mặt bằng|Quy mô trụ đề xuất',
     'ĐX_AC 7 kW|ĐX_AC 22 kW|ĐX_DC 20 kW|ĐX_DC 30 kW|ĐX_DC 60 kW|ĐX_DC 120 kW|ĐX_DC 240 kW|ĐX_DC 320 kW|ĐX_DC 400 kW|ĐX_DC 480 kW|ĐX_DC 960 kW|ĐX_GBT 60 kW',
     'Quy mô trụ chốt|AC 7 kW|AC 22 kW|DC 20 kW|DC 30 kW|DC 60 kW|DC 120 kW|DC 240 kW|DC 320 kW|DC 400 kW|DC 480 kW|DC 960 kW|GBT 60 kW',
-    'Tổng chi phí|Tổng giá trị trụ chốt|Trạng thái đề xuất|Thời gian cập nhật trạng thái|Mức độ xem xét|Trạng thái Quy hoạch|Trạng thái Pháp lý|Ghi chú trạng thái|Ngày dự kiến ON|Ngày ON thực tế|Ngày cập nhật|Google Maps',
+    'Tổng chi phí|Tổng giá trị trụ chốt|Trạng thái đề xuất|Thời gian cập nhật trạng thái|Mức độ xem xét|Trạng thái Quy hoạch|Trạng thái Pháp lý|Ghi chú trạng thái|Ngày dự kiến ON|Ngày ON thực tế|Trạng thái hợp đồng|Trạng thái hạ tầng điện|Trạng thái hạ tầng mặt bằng|Trạng thái tài chính|Phần trăm đã thanh toán|Ngày cập nhật|Google Maps',
     'Diện tích (dạng chữ)|Mô tả|Mã tỉnh|Pháp lý đất|Ghi chú|Tổng cộng chi phí|Địa chỉ ĐKKD|SĐT CĐT|Giá niêm yết|Giá ưu đãi|Tên khách hàng|MST|Số tài khoản|Kiểm tra quy hoạch|Loại ưu tiên|Tên ngân hàng|Chính sách Nhượng quyền',
     'Chi phí vận chuyển|Chi phí trạm biến áp|Chi phí hạ tầng|Chi phí thuê vị trí|Đặt cọc|Ghi chú về khoản cọc|Ảnh toàn mặt bằng|Video mặt bằng (nếu có)|Người liên hệ|Hợp đồng thuê đất (Nếu có)|Quan hệ với mặt bằng|Thời hạn sử dụng/thuê|Độ rộng lối ra, vào (m)|Phân loại khách hàng',
     'Ghi chú về hồ sơ pháp lý|Ghi chú về Quy hoạch|Ghi chú về Tài chính|Nhóm mặt bằng|Ảnh vị trí dự kiến lắp đặt trụ sạc|Chính sách Liên kết|CCCD người đại diện|Bản vẽ tay|Chiều rộng mặt tiền(m)|Bề rộng lòng đường phía trc lô đất(m)|Điện ba pha|Trạm biến áp|Công suất khả dụng của trạm biến áp để làm trạm sạc (kW).|Email|Quy hoạch đánh giá|Pháp lý đánh giá'
   ].join('|').split('|');
   const sheet = createSheet([...requested, 'Cột riêng'], [
-    [1, '1', ...Array(102).fill(''), 'Giữ nguyên khi cập nhật'],
-    [2, '2', ...Array(102).fill('Dữ liệu cũ'), 'Giữ nguyên khi xóa']
+    [1, '1', ...Array(requested.length - 2).fill(''), 'Giữ nguyên khi cập nhật'],
+    [2, '2', ...Array(requested.length - 2).fill('Dữ liệu cũ'), 'Giữ nguyên khi xóa']
   ]);
   const old = createSheet(requested.map((title) => title.replace(/^ĐX_/, '')));
   await assert.rejects(service.assertHeader(old.sheets, qtConfig, fields), /Header Google Sheet không khớp/);
@@ -100,15 +100,86 @@ test('Data_QT1 validates the requested headers and writes only A:CZ regardless o
     { proposal_id: 3, operation: 'UPSERT' }
   ], proposals, fields, definitions);
   const at = (col) => sheet.cells[1][columnIndex(col)];
-  assert.deepEqual([at('U'), at('AH'), at('BF'), at('BG'), at('BH'), at('BJ'), at('CY'), at('CZ'), at('DA')],
+  assert.deepEqual([at('U'), at('AH'), at('BK'), at('BL'), at('BM'), at('BO'), at('DD'), at('DE'), at('DF')],
     [2, 1, '200 m²', 'Mô tả thử', 'TEST', 'Ghi chú thử', 'QH thử', 'PL thử', 'Giữ nguyên khi cập nhật']);
   assert.equal(at('BB'), '01/02/2026');
   assert.equal(at('BC'), '02/03/2026');
-  assert.ok(sheet.cells[2].slice(0, 104).every((value) => value === ''));
-  assert.equal(sheet.cells[2][104], 'Giữ nguyên khi xóa');
-  assert.equal(sheet.cells[3].length, 104);
+  assert.ok(sheet.cells[2].slice(0, requested.length).every((value) => value === ''));
+  assert.equal(sheet.cells[2][requested.length], 'Giữ nguyên khi xóa');
+  assert.equal(sheet.cells[3].length, requested.length);
   assert.equal(sheet.cells[3][1], '3');
   assert.equal(sheet.cells[3][columnIndex('BC')], '12/31/2026');
+});
+
+test('Data_QT1 maps ON status and numeric percentage using existing finance rules', () => {
+  const columns = service.buildColumns(fields, 'Data_QT1');
+  const map = (extra) => {
+    const row = service.mapProposalToRow(record(1, extra), fields, 1, new Map(), definitions, 'Data_QT1');
+    return Object.fromEntries(columns.map((column, index) => [column.key, row[index]]));
+  };
+  const on = {
+    on_station_id: 4, contract_status: 'DONE', infra_power_status: 'DONE', infra_site_status: 'DOING',
+    deposit_status: 'RECEIVED', payment_status: 'DOING', deposit_refund_required: 0,
+    tong_gia_tri_chot: '100.00', deposit_total: '30.00', payment_total: '65.00', refund_total: '5.00',
+    custom_data: { mo_hinh_dau_tu: 'NQ' }
+  };
+  const result = map(on);
+  assert.deepEqual(
+    [result.__on_contract, result.__on_power, result.__on_site, result.__on_finance, result.__on_paid_percent],
+    ['Đã ký hợp đồng', 'Đã làm', 'Đang làm', 'Đang thanh toán', 0.9]
+  );
+  assert.equal(map({ ...on, payment_total: 250 }).__on_paid_percent, 1);
+  assert.equal(map({ ...on, payment_total: 64.99 }).__on_paid_percent, 0.9);
+  assert.equal(map({ ...on, payment_total: 0, refund_total: 50 }).__on_paid_percent, 0);
+  assert.equal(map({ ...on, tong_gia_tri_chot: 0 }).__on_paid_percent, 0);
+  assert.equal(map({ ...on, payment_total: 75 }).__on_finance, 'Đã thanh toán toàn bộ');
+  assert.equal(map({ ...on, tong_gia_tri_chot: 0, payment_status: 'DONE' }).__on_finance, 'Đã thanh toán toàn bộ');
+  assert.equal(map({ ...on, contract_status: null }).__on_contract, '—');
+  const tdt = map({ ...on, custom_data: { mo_hinh_dau_tu: 'TDT' } });
+  assert.equal(tdt.__on_paid_percent, '');
+  assert.equal(tdt.__on_finance, 'Không yêu cầu');
+  const absent = map({});
+  assert.deepEqual(ON_KEYS.map((key) => absent[key]), ['', '', '', '', '']);
+  assert.throws(() => map({ ...on, contract_status: 'UNKNOWN' }), /trạng thái hợp đồng không hợp lệ/);
+});
+
+const ON_KEYS = ['__on_contract', '__on_power', '__on_site', '__on_finance', '__on_paid_percent'];
+
+test('prepared empty ON columns receive headers only when all new cells are empty', async () => {
+  const qtConfig = { ...config, tabName: 'Data_QT1' };
+  const requested = service.buildColumns(fields, qtConfig.tabName).map(column => column.header);
+  const prepared = requested.slice();
+  prepared.splice(columnIndex('BD'), 5, '', '', '', '', '');
+  const sheet = createSheet(prepared, [[1, '1']]);
+  await service.assertHeader(sheet.sheets, qtConfig, fields);
+  assert.deepEqual(sheet.cells[0], requested);
+  assert.deepEqual(sheet.calls, [['update', "'Data_QT1'!BD1:BH1"]]);
+  const row = Array(requested.length).fill('');
+  row[columnIndex('BH')] = '=1+1';
+  const occupied = createSheet(prepared, [row]);
+  await assert.rejects(service.assertHeader(occupied.sheets, qtConfig, fields), /các cột mới đã có dữ liệu/);
+  assert.deepEqual(occupied.calls, []);
+  const incorrect = prepared.slice();
+  incorrect[columnIndex('BI')] = 'Sai cột';
+  const mismatched = createSheet(incorrect);
+  await assert.rejects(service.assertHeader(mismatched.sheets, qtConfig, fields), /Header Google Sheet không khớp/);
+  assert.deepEqual(mismatched.calls, []);
+});
+
+test('Data_QT1 formats only its percentage data column as a percentage', async () => {
+  const calls = [];
+  const sheets = { spreadsheets: {
+    get: async () => ({ data: { sheets: [{ properties: { title: 'Data_QT1', sheetId: 7 } }] } }),
+    batchUpdate: async (request) => calls.push(request)
+  } };
+  await service.ensurePaidPercentFormat(sheets, { ...config, tabName: 'Data_QT1' }, fields);
+  assert.deepEqual(calls[0].requestBody.requests[0].repeatCell, {
+    range: { sheetId: 7, startRowIndex: 1, startColumnIndex: columnIndex('BH'), endColumnIndex: columnIndex('BI') },
+    cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0%' } } },
+    fields: 'userEnteredFormat.numberFormat'
+  });
+  await service.ensurePaidPercentFormat(sheets, config, fields);
+  assert.equal(calls.length, 1);
 });
 
 test('TEST_Data_QT1 uses the same fixed columns and log query as Data_QT1', async t => {
