@@ -73,3 +73,106 @@ test('proposal page numbers status labels without changing API codes or other pa
   await expect(page.locator('tbody').getByText('1. Mới đề xuất', { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('proposal tables show the selected proposer before the account owner', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const fields = [
+    { id: 1, key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', type: 'text', visible: true },
+    { id: 2, key: 'nguoi_de_xuat', field_key: 'nguoi_de_xuat', label: 'Người đề xuất', type: 'user', visible: true }
+  ];
+  const records = [
+    { id: 77, ma_de_xuat: 'DX-77', user_id: 1, user_name: 'Admin', nguoi_de_xuat: { id: 42, label: 'Người được chọn' } },
+    { id: 78, ma_de_xuat: 'DX-78', user_id: 1, user_name: 'Admin', nguoi_de_xuat: null },
+    { id: 79, ma_de_xuat: 'DX-79', user_id: null, nguoi_de_xuat: null }
+  ];
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.includes('/field-definitions/entity/')) data = fields;
+    else if (path.includes('/dynamic/station_proposals/view/')) data = { fields, allFields: fields };
+    else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
+    else if (path.endsWith('/admin/proposals')) data = records;
+    else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], workScopes: [] };
+    else if (path.includes('/countdown') || path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ json: { success: true, data, pagination: { page: 1, total: 3, totalPages: 1, limit: 20 } } });
+  });
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  for (const tab of ['all', 'completed']) {
+    await page.goto(`/admin/proposals?tab=${tab}`);
+    const rows = page.locator('tbody tr');
+    await expect(rows.filter({ hasText: 'DX-77' }).getByRole('button', { name: 'Người được chọn' })).toBeVisible({ timeout: 15000 });
+    await expect(rows.filter({ hasText: 'DX-77' }).getByText('Admin', { exact: true })).toHaveCount(0);
+    await expect(rows.filter({ hasText: 'DX-78' }).getByText('Admin', { exact: true })).toBeVisible();
+    await expect(rows.filter({ hasText: 'DX-79' }).getByText('Khách', { exact: true })).toBeVisible();
+    const userRequest = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/admin/users/42'));
+    await rows.filter({ hasText: 'DX-77' }).getByRole('button', { name: 'Người được chọn' }).click();
+    await userRequest;
+  }
+  expect(errors).toEqual([]);
+});
+
+test('proposal legal name column stays narrow and exposes the full value', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const label = 'Tên pháp nhân (Tên công ty/ Hộ kinh doanh)';
+  const longName = 'Công ty Cổ phần Kinh doanh và Phát triển Hạ tầng Trạm sạc Việt Nam';
+  const longWord = 'CONGTY' + 'A'.repeat(100);
+  const fields = [
+    { id: 1, key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', type: 'text', visible: true, width: 140 },
+    { id: 2, key: 'owner_name', field_key: 'owner_name', label, type: 'text', visible: true, width: 100, filterable: true }
+  ];
+  const records = [
+    { id: 77, ma_de_xuat: 'DX-77', owner_name: longName, address: 'Địa chỉ đầy đủ để kiểm tra' },
+    { id: 78, ma_de_xuat: 'DX-78', owner_name: 'Tên ngắn' },
+    { id: 79, ma_de_xuat: 'DX-79', owner_name: longWord },
+    { id: 80, ma_de_xuat: 'DX-80', owner_name: '' }
+  ];
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.includes('/field-definitions/entity/')) data = fields;
+    else if (path.includes('/dynamic/station_proposals/view/')) data = { fields, allFields: fields };
+    else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
+    else if (path.endsWith('/admin/proposals')) data = records;
+    else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], workScopes: [] };
+    else if (path.includes('/countdown') || path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ json: { success: true, data, pagination: { page: 1, total: 4, totalPages: 1, limit: 20 } } });
+  });
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const tab of ['all', 'completed']) {
+      await page.goto(`/admin/proposals?tab=${tab}`);
+      const header = page.getByRole('columnheader', { name: label });
+      await expect(header).toBeVisible({ timeout: 15000 });
+      const headerDetails = await header.evaluate(el => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return { width: el.getBoundingClientRect().width, lines: range.getClientRects().length, whiteSpace: getComputedStyle(el).whiteSpace };
+      });
+      expect(headerDetails.width).toBeLessThanOrEqual(181);
+      expect(headerDetails.whiteSpace).toBe('normal');
+      expect(headerDetails.lines).toBeGreaterThan(1);
+      const name = page.getByLabel(`Tên pháp nhân: ${longName}`);
+      const truncated = await name.evaluate(el => el.scrollWidth > el.clientWidth);
+      expect(truncated).toBe(true);
+      await name.hover();
+      await expect(page.getByRole('tooltip')).toHaveText(longName);
+      await name.focus();
+      await expect(page.getByRole('tooltip')).toHaveText(longName);
+      await name.blur();
+      await expect(page.getByRole('tooltip')).toHaveCount(0);
+      await expect(page.getByLabel('Tên pháp nhân: Tên ngắn')).toBeVisible();
+      expect(await page.getByLabel(`Tên pháp nhân: ${longWord}`).evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+      await expect(page.locator('tbody tr').filter({ hasText: 'DX-80' }).getByText('-', { exact: true }).first()).toBeVisible();
+      const address = page.getByLabel('Địa chỉ chi tiết: Địa chỉ đầy đủ để kiểm tra');
+      await address.focus();
+      await expect(page.getByRole('tooltip')).toHaveText('Địa chỉ đầy đủ để kiểm tra');
+      await address.blur();
+    }
+  }
+  expect(errors).toEqual([]);
+});

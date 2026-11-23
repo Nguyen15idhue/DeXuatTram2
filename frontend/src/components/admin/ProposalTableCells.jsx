@@ -49,6 +49,10 @@ export const PROPOSAL_MONEY_COLUMN_KEYS = [
   'tong_gia_tri_chot'
 ];
 
+export const PROPOSAL_LEGAL_NAME_COLUMN_STYLES = {
+  owner_name: { width: 180, minWidth: 180, maxWidth: 180, whiteSpace: 'normal', overflowWrap: 'anywhere' }
+};
+
 export const ProposalManagerCell = ({ row }) => (
   <ProposalPersonLink id={row.manager_user_id} name={row.manager_name} />
 );
@@ -60,8 +64,7 @@ export const ProposalRegionCell = ({ value }) => {
 
 export const ProposalProvinceCell = ({ value }) => <span>{value || '-'}</span>;
 
-export const ProposalAddressCell = ({ row, value }) => {
-  const address = value || getProposalAddress(row);
+const ProposalTextTooltip = ({ text, label, className }) => {
   const tooltipId = useId();
   const triggerRef = useRef(null);
   const [active, setActive] = useState(false);
@@ -91,24 +94,24 @@ export const ProposalAddressCell = ({ row, value }) => {
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [active, address]);
+  }, [active, text]);
 
-  if (!address || address === '-') return <span className="text-base-content/50">-</span>;
+  if (!text || text === '-') return <span className="text-base-content/50">-</span>;
 
   return (
     <>
       <span
         ref={triggerRef}
-        className="block max-w-[220px] truncate"
+        className={className}
         tabIndex={0}
-        aria-label={`Địa chỉ chi tiết: ${address}`}
+        aria-label={`${label}: ${text}`}
         aria-describedby={active ? tooltipId : undefined}
         onMouseEnter={() => setActive(true)}
         onMouseLeave={() => setActive(false)}
         onFocus={() => setActive(true)}
         onBlur={() => setActive(false)}
       >
-        {address}
+        {text}
       </span>
       {active && position && createPortal(
         <span
@@ -117,10 +120,18 @@ export const ProposalAddressCell = ({ row, value }) => {
           className="proposal-address-tooltip"
           style={position}
         >
-          {address}
+          {text}
         </span>,
         document.body
       )}
     </>
   );
 };
+
+export const ProposalAddressCell = ({ row, value }) => (
+  <ProposalTextTooltip text={value || getProposalAddress(row)} label="Địa chỉ chi tiết" className="block max-w-[220px] truncate" />
+);
+
+export const ProposalLegalNameCell = ({ value }) => (
+  <ProposalTextTooltip text={value} label="Tên pháp nhân" className="block max-w-[148px] truncate" />
+);

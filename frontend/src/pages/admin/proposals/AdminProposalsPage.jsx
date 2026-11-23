@@ -26,17 +26,19 @@ import ProposalRequestsTab from "../../../components/admin/ProposalRequestsTab";
 import ProposalCompletedTab from "../../../components/admin/ProposalCompletedTab";
 import {
   ProposalCodeLink,
-  ProposalPersonLink,
+  ProposalProposerCell,
 } from "../../../components/admin/ProposalLinkCells";
 import ProposalFlowInfo from "../../../components/admin/ProposalFlowInfo";
 import HistoricalOnImportModal from "../../../components/admin/HistoricalOnImportModal";
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_LEGAL_NAME_COLUMN_STYLES,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
   PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
+  ProposalLegalNameCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell,
@@ -3187,6 +3189,7 @@ const AdminProposalsPage = () => {
             ref={tableRef}
             entity="station_proposals"
             viewId={proposalsViewId}
+            columnStyleOverrides={PROPOSAL_LEGAL_NAME_COLUMN_STYLES}
             columnLabelOverrides={{
               status: "Trạng thái Quy trình",
               manager_name: "Người phụ trách",
@@ -3233,15 +3236,10 @@ const AdminProposalsPage = () => {
               ma_de_xuat: (row, value) => (
                 <ProposalCodeLink id={row.id} code={value} />
               ),
-              nguoi_de_xuat: (row, value) =>
-                row.user_id ? (
-                  <ProposalPersonLink
-                    id={row.user_id}
-                    name={row.user_name || value}
-                  />
-                ) : (
-                  <span>{value || "Khách"}</span>
-                ),
+              owner_name: (row, value) => <ProposalLegalNameCell value={value} />,
+              nguoi_de_xuat: (row, value) => (
+                <ProposalProposerCell row={row} value={value} />
+              ),
               manager_name: (row) => <ProposalManagerCell row={row} />,
               vung_mien: (row, value) => (
                 <ProposalRegionCell value={value || row.vung_mien} />

@@ -25,7 +25,7 @@ router.get('/status', requireAuth, requireAdmin, controller.status);
  *   post:
  *     tags: [Admin - Proposals]
  *     summary: Xếp toàn bộ trạm ON hiện có vào hàng đợi đồng bộ Google Sheet
- *     description: Đồng bộ cột A–T, dùng Mã BCĐX ở R làm khóa cập nhật/thêm. E giống S, F giống T; giữ nguyên U trở đi. Tab đã có dữ liệu phải có header R là Mã BCĐX, không tự chuyển bố cục cũ.
+ *     description: Đồng bộ cột A–T, dùng Mã trạm CMS ở B làm khóa cập nhật/thêm. E giống S, F giống T; giữ nguyên U trở đi. Mã cũ khi đổi được giữ lại và cảnh báo xử lý thủ công.
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -56,5 +56,25 @@ router.post('/daily', requireAuth, requireAdmin, controller.dailySync);
  *         description: Chỉ ADMIN và SUPER_ADMIN
  */
 router.post('/cancel', requireAuth, requireAdmin, controller.cancel);
+
+/**
+ * @swagger
+ * /api/admin/on-station-sheet-sync/warnings/{id}/resolve:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Xác nhận đã xử lý thủ công cảnh báo mã CMS cũ, không thay đổi Sheet
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Đã xác nhận }
+ *       403: { description: Chỉ ADMIN và SUPER_ADMIN }
+ *       404: { description: Không tìm thấy cảnh báo chưa xử lý }
+ */
+router.post('/warnings/:id/resolve', requireAuth, requireAdmin, controller.resolveWarning);
 
 module.exports = router;

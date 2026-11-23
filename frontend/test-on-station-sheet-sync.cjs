@@ -9,10 +9,14 @@ async function main() {
   let failStatus = false;
   let failSync = false;
   let syncCalls = 0;
+  let resolveCalls = 0;
   const status = {
     configured: true, activeProposals: 3, tabName: 'ON',
     queue: { pending: 0, processing: 0, failed: 2 },
     recentErrors: [{ proposal_id: 800, last_error: 'Đề xuất 800: thiếu bảng trụ chốt BCĐX' }],
+    errors: [{ proposal_id: 801, message: 'Đề xuất 801: thiếu mã trạm CMS để đối soát' }],
+    warningCount: 1,
+    warnings: [{ id: 11, proposal_id: 801, old_cms_code: 'OLD', new_cms_code: 'NEW' }]
   };
   try {
     await server.listen();
@@ -26,6 +30,12 @@ async function main() {
         return route.fulfill({ json: { success: true, data: { user: { id: 7, full_name: 'Sheet fixture', role } } } });
       }
       if (path.includes('/on-station-sheet-sync/')) {
+        if (path.endsWith('/warnings/11/resolve')) {
+          resolveCalls++;
+          status.warningCount = 0;
+          status.warnings = [];
+          return route.fulfill({ json: { success: true, message: 'Đã xác nhận xử lý cảnh báo; dữ liệu Sheet không thay đổi' } });
+        }
         if (route.request().method() === 'POST') {
           syncCalls++;
           return route.fulfill({ json: failSync
@@ -62,7 +72,14 @@ async function main() {
     await fixture.getByRole('button', { name: 'Đồng bộ Sheet trạm ON', exact: true }).waitFor();
     await fixture.getByRole('alert').filter({ hasText: 'Có 2 mục đồng bộ chưa thành công' }).waitFor();
     assert.equal(await fixture.getByText('Đề xuất 800', { exact: false }).count(), 0);
-    await fixture.getByRole('button').click();
+    await fixture.getByText('Đề xuất 801: thiếu mã trạm CMS để đối soát').waitFor();
+    await fixture.getByText('Đề xuất 801: OLD → NEW').waitFor();
+    await fixture.getByRole('button', { name: 'Đã xử lý' }).click();
+    await page.getByText('Xác nhận đã kiểm tra và xử lý thủ công mã OLD', { exact: false }).waitFor();
+    await fixture.locator('.modal-box').getByRole('button', { name: 'Đã xử lý' }).click();
+    await fixture.getByText('Đã xác nhận xử lý cảnh báo; dữ liệu Sheet không thay đổi').waitFor();
+    assert.equal(resolveCalls, 1);
+    await fixture.getByRole('button', { name: 'Đồng bộ Sheet trạm ON', exact: true }).click();
     await fixture.getByText('Đã xếp đồng bộ Sheet trạm ON', { exact: true }).waitFor();
     assert.equal(syncCalls, 1);
     failSync = true;

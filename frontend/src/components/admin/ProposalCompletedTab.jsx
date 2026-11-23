@@ -7,15 +7,17 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
-import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import { ProposalCodeLink, ProposalProposerCell } from './ProposalLinkCells';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_LEGAL_NAME_COLUMN_STYLES,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
   PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
+  ProposalLegalNameCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell
@@ -115,9 +117,8 @@ const ProposalCompletedTab = ({ token }) => {
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => <ProposalCodeLink id={row.id} code={value} />,
-    nguoi_de_xuat: (row, value) => (
-      row.user_id ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} /> : <span>{value || 'Khách'}</span>
-    ),
+    owner_name: (row, value) => <ProposalLegalNameCell value={value} />,
+    nguoi_de_xuat: (row, value) => <ProposalProposerCell row={row} value={value} />,
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
     scale: (row) => formatProposalScale(row),
     manager_name: (row) => <ProposalManagerCell row={row} />,
@@ -204,6 +205,7 @@ const ProposalCompletedTab = ({ token }) => {
           ref={tableRef}
           entity="station_proposals"
           viewId={viewId}
+          columnStyleOverrides={PROPOSAL_LEGAL_NAME_COLUMN_STYLES}
           multiStatusFilter
           onStatusFilterChange={handleColumnStatusChange}
           showActions={false}

@@ -64,6 +64,67 @@ const createSheet = (header, rows = []) => {
   return { sheets, cells, calls };
 };
 
+test('proposal submitter column prefers the selected user and falls back to the creator', () => {
+  const users = new Map([[42, { id: 42, full_name: 'Người được chọn' }]]);
+  const map = (customData, tab = 'Data_QT1') => {
+    const row = service.mapProposalToRow(record(1, {
+      submitter_name: 'Admin', custom_data: customData
+    }), fields, 1, users, definitions, tab);
+    return row[service.buildColumns(fields, tab).findIndex(column => column.key === '__submitter_name')];
+  };
+  assert.equal(map({ nguoi_de_xuat: { id: 42 } }), 'Người được chọn');
+  assert.equal(map({ nguoi_de_xuat: 42 }, 'Đề xuất'), 'Người được chọn');
+  assert.equal(map({ nguoi_de_xuat: 'Tên cũ' }), 'Tên cũ');
+  assert.equal(map({ nguoi_de_xuat: null }), 'Admin');
+  assert.throws(() => map({ nguoi_de_xuat: { id: 99 } }), /không tìm thấy người đề xuất #99/);
+});
+
+test('worker loads the selected proposer even when it is not an export field', async (t) => {
+  const { google } = require('googleapis');
+  const env = {
+    GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    PROPOSAL_GOOGLE_SHEETS_SPREADSHEET_ID: process.env.PROPOSAL_GOOGLE_SHEETS_SPREADSHEET_ID,
+    PROPOSAL_GOOGLE_SHEETS_TAB_NAME: process.env.PROPOSAL_GOOGLE_SHEETS_TAB_NAME
+  };
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = __filename;
+  process.env.PROPOSAL_GOOGLE_SHEETS_SPREADSHEET_ID = 'fixture';
+  process.env.PROPOSAL_GOOGLE_SHEETS_TAB_NAME = 'fixture';
+  t.after(() => {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    require('../src/utils/ttlCache').del('fielddefs:all:station_proposals');
+  });
+  const sheet = createSheet(service.buildColumns([], 'fixture').map(column => column.header));
+  t.mock.method(google.auth.GoogleAuth.prototype, 'getClient', async () => ({}));
+  t.mock.method(google, 'sheets', () => sheet.sheets);
+  t.mock.method(pool, 'getConnection', async () => ({
+    query: async sql => sql.includes('GET_LOCK') ? [[{ acquired: 1 }]] : [[]],
+    release: () => {}
+  }));
+  let fetchedIds;
+  t.mock.method(pool, 'query', async (sql, params) => {
+    if (sql.includes("updated_at < DATE_SUB")) return [{ affectedRows: 0 }];
+    if (sql.includes('SELECT proposal_id, operation')) return [[{ proposal_id: 1, operation: 'UPSERT', requested_version: 1 }]];
+    if (sql.includes("SET status = 'PROCESSING'")) return [{ affectedRows: 1 }];
+    if (sql.includes('FROM station_proposals p')) return [[record(1, {
+      submitter_name: 'Admin', custom_data: { nguoi_de_xuat: { id: 42 } }
+    })]];
+    if (sql.includes('FROM field_definitions')) return [[]];
+    if (sql.includes('FROM users WHERE id IN')) {
+      fetchedIds = params;
+      return [[{ id: 42, full_name: 'Người được chọn' }]];
+    }
+    if (sql.includes('SET synced_version')) return [{ affectedRows: 1 }];
+    if (sql.includes('SELECT DISTINCT manual_run_id')) return [[]];
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  assert.deepEqual(await service.processBatch(), { processed: 1 });
+  assert.deepEqual(fetchedIds, [42]);
+  assert.equal(sheet.cells[1][4], 'Người được chọn');
+});
+
 test('Data_QT1 validates the requested headers and preserves columns after the managed range', async () => {
   const qtConfig = { ...config, tabName: 'Data_QT1' };
   const requested = [

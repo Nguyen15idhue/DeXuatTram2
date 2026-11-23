@@ -1,6 +1,7 @@
 node_modules
 .git
 .env
+.env.on-sheet-test
 storage/uploads
 dist
 test-results
