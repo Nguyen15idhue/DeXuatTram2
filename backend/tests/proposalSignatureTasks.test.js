@@ -12,6 +12,38 @@ const profile = user => ({
   department: user.id === 20 ? 'Phòng Tài chính và Kế toán' : user.id === 30 ? 'Back Office' : ''
 });
 
+test('signature detail returns the proposal creator name without replacing owner or selected proposer', async t => {
+  const proposal = {
+    id: 501, status: 'SIGNATURE_PENDING', user_id: 7, user_name: 'Creator',
+    owner_name: 'Contact', ma_de_xuat: 'DX-501',
+    custom_data: { nguoi_de_xuat: { id: 8 } }
+  };
+  t.mock.method(reports, 'resolveScope', async user => profile(user));
+  t.mock.method(service, 'canReadChairmanProposal', async () => false);
+  t.mock.method(require('../src/services/proposalReportDocumentService'), 'getSigningDocuments', async () => []);
+  t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({ requests: [], activity: [] }));
+  t.mock.method(require('../src/services/proposalChairmanFileService'), 'list', async () => []);
+  t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => []);
+  t.mock.method(dynamic, 'mergeData', row => row);
+  t.mock.method(dynamic, 'enrichUserFields', async row => row);
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('FROM station_proposals p')) {
+      assert.match(sql, /LEFT JOIN users u ON u\.id = p\.user_id/);
+      assert.match(sql, /u\.full_name AS user_name/);
+      return [[proposal]];
+    }
+    if (sql.includes('FROM proposal_signature_configs')
+      || sql.includes('FROM proposal_requests')
+      || sql.includes('FROM signatures WHERE user_id')) return [[]];
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const detail = await service.getDetail({ user: { id: 1, role: 'SUPER_ADMIN' }, id: 501 });
+  assert.equal(detail.user_id, 7);
+  assert.equal(detail.user_name, 'Creator');
+  assert.equal(detail.owner_name, 'Contact');
+  assert.deepEqual(detail.custom_data.nguoi_de_xuat, { id: 8 });
+});
+
 test('chairman upload allows Back Office and Finance but denies MKT/CTV department-based upload', async t => {
   t.mock.method(reports, 'resolveScope', async user => profile(user));
   t.mock.method(pool, 'getConnection', async () => { throw new Error('Must not acquire lock'); });

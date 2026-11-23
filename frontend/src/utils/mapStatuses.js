@@ -1,4 +1,4 @@
-import { getStatusOptions, PRIORITY_MARKER_COLORS } from './mapMarkerIcons';
+import { getStatusOptions, PRIORITY_MARKER_COLORS, MAP_SHARED_STATION_STATUSES } from './mapMarkerIcons';
 
 export const STATION_STATUSES = [
   { value: 'PLANNING', label: 'Quy hoạch', color: '#a855f7' },
@@ -95,7 +95,7 @@ export const getProposalMapStatuses = () => {
   const seen = new Set();
   const result = [];
   all.forEach((s) => {
-    if (HIDDEN_PROPOSAL_MAP_STATUSES.has(s.value)) return;
+    if (HIDDEN_PROPOSAL_MAP_STATUSES.has(s.value) || MAP_SHARED_STATION_STATUSES.has(s.value)) return;
     const value = getProposalMapStatus(s.value);
     if (seen.has(value)) return;
     seen.add(value);
@@ -108,6 +108,25 @@ export const getProposalMapStatuses = () => {
 };
 
 export const getProposalMapLegendStatuses = () => getProposalMapStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
+
+export const filterMapProposals = (proposals, filters, user, proposalLegendStatuses) => {
+  if (!filters) return proposals;
+  const mapStatuses = new Set((proposalLegendStatuses || []).map((status) => status.value));
+  return proposals.filter((proposal) => {
+    if (filters.scope === 'mine' && user && Number(proposal.user_id) !== Number(user.id)) return false;
+    if (MAP_SHARED_STATION_STATUSES.has(proposal.status)) {
+      if (filters.hideStations) return false;
+      const statuses = filters.stationStatuses || [];
+      return statuses.length === 0 || statuses.includes(proposal.status);
+    }
+    if (filters.hideProposals || proposal.status === 'CONTRACT_SIGNED') return false;
+    const status = getProposalMapStatus(proposal.status);
+    if (mapStatuses.size > 0 && !mapStatuses.has(status)) return false;
+    const statuses = filters.proposalStatuses || [];
+    return statuses.length === 0 || statuses.includes(status);
+  });
+};
+
 export const getEvReportStatuses = () => withDynamicFallback('ev_report', EV_REPORT_STATUSES);
 export const getEvReportLegendStatuses = () => getEvReportStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
 

@@ -3,12 +3,13 @@ const { test, expect } = require('@playwright/test');
 test.use({ baseURL: 'http://127.0.0.1:5174' });
 
 for (const renderer of ['leaflet', 'maplibre']) {
-  for (const role of ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT']) {
-    test(`${renderer}: ${role} sees permitted proposal fields on both maps`, async ({ page }) => {
+  for (const { role, status } of ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT']
+    .flatMap(role => ['PENDING', 'ACTIVE'].map(status => ({ role, status })))) {
+    test(`${renderer}: ${role} sees permitted ${status} proposal fields on both maps`, async ({ page }) => {
       test.setTimeout(90000);
       const proposal = {
         id: 501, user_id: 1, latitude: 21.03, longitude: 105.85,
-        status: 'PENDING', ma_de_xuat: 'DX-TEST', address: 'Địa chỉ đề xuất riêng',
+        status, ma_de_xuat: 'DX-TEST', address: 'Địa chỉ đề xuất riêng',
         mo_hinh_dau_tu: 'NQ_LK', loai_tru_nq: [{ loai_tru: 'DC 30', so_luong: 1 }],
         loai_tru_lk: [{ loai_tru: 'DC 60', so_luong: 2 }],
         map_pole_summary: '1× DC 30 + 2× DC 60 (tổng 3 trụ)',

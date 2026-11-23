@@ -4,7 +4,7 @@ import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService, evReportService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getMarkerColor, getMapMarkerStyle } from '../utils/mapHelpers';
-import { getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
+import { filterMapProposals, getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import { getProposalDisplayName, getProposalDisplayPhone, canShowProposalMapField } from '../utils/proposalDisplay';
@@ -354,23 +354,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
         nearStations = nearStations.filter((s) => s.status === 'PLANNING' || statuses.includes(s.status));
       }
     }
-    if (filters.hideProposals) {
-      nearProposals = [];
-    } else {
-      nearProposals = nearProposals.filter((p) => p.status !== 'CONTRACT_SIGNED');
-      const mapSet = new Set((proposalLegendStatuses || []).map((s) => s.value));
-      if (mapSet.size > 0) {
-        nearProposals = nearProposals.filter((p) => mapSet.has(getProposalMapStatus(p.status)));
-      }
-      if (filters.scope === 'mine' && user) {
-        const uid = Number(user.id);
-        nearProposals = nearProposals.filter((p) => Number(p.user_id) === uid);
-      }
-      const statuses = filters.proposalStatuses || [];
-      if (statuses.length > 0) {
-        nearProposals = nearProposals.filter((p) => statuses.includes(getProposalMapStatus(p.status)));
-      }
-    }
+    nearProposals = filterMapProposals(nearProposals, filters, user, proposalLegendStatuses);
     if (filters.hideEvReports) {
       nearEvReports = [];
     }

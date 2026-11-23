@@ -12,8 +12,6 @@ const DEFAULT_PROPOSAL_STATUSES = [
   "PENDING",
   "REVIEWING",
   "APPROVED",
-  "DEPLOYING",
-  "ACTIVE",
 ];
 const DEFAULT_PLANNING_PRIORITIES = PRIORITY_OPTIONS.map((option) => option.value);
 
