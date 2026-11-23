@@ -27,6 +27,8 @@ test('snapshot deletion and concurrent queue versions survive reconciliation', {
       [creator.insertId, JSON.stringify({ ma_de_xuat: code, nguoi_phu_trach: { id: assignee.insertId } })]
     );
     id = insert.insertId;
+    await connection.query('INSERT INTO charging_stations (proposal_id, cms_station_code) VALUES (?,?)',
+      [id, `${code}_CMS`]);
     const proposals = await service.loadProposals([id]);
     assert.equal(proposals.length, 1);
     assert.equal(proposals[0].creator_name, 'Creator fixture');
@@ -44,7 +46,7 @@ test('snapshot deletion and concurrent queue versions survive reconciliation', {
       get: async () => ({ data: { values: [service.HEADER_ROW, service.buildRow(proposals[0], 1)] } }),
       batchUpdate: async request => {
         assert.equal(request.requestBody.data[1].range, "'ON'!A2:T2");
-        assert.equal(request.requestBody.data[1].values[0][1], null);
+        assert.equal(request.requestBody.data[1].values[0][1], `${code}_CMS`);
         assert.equal(request.requestBody.data[1].values[0][17], code);
       }
     } } };
@@ -65,9 +67,11 @@ test('snapshot deletion and concurrent queue versions survive reconciliation', {
     );
     assert.equal(done[0].status, 'DONE');
     assert.equal(Number(done[0].synced_version), 2);
+    await connection.query('DELETE FROM charging_stations WHERE proposal_id=?', [id]);
     await connection.query('DELETE FROM station_proposals WHERE id=?', [id]);
     const deletedKeys = await service.loadProposalKeys([id]);
     assert.equal(deletedKeys.get(id).code, code);
+    assert.equal(deletedKeys.get(id).lastCms, `${code}_CMS`);
     const [deleted] = await connection.query(
       'SELECT operation,sheet_proposal_code FROM on_station_sheet_sync_queue WHERE proposal_id=?', [id]
     );

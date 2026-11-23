@@ -7,7 +7,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
-import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import { ProposalCodeLink, ProposalProposerCell } from './ProposalLinkCells';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
@@ -115,9 +115,7 @@ const ProposalCompletedTab = ({ token }) => {
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => <ProposalCodeLink id={row.id} code={value} />,
-    nguoi_de_xuat: (row, value) => (
-      row.user_id ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} /> : <span>{value || 'Khách'}</span>
-    ),
+    nguoi_de_xuat: (row, value) => <ProposalProposerCell row={row} value={value} />,
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
     scale: (row) => formatProposalScale(row),
     manager_name: (row) => <ProposalManagerCell row={row} />,

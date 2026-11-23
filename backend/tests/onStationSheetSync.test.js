@@ -126,9 +126,9 @@ const sheetMock = (rows, readError) => {
 };
 const config = { spreadsheetId: 'test-only', tabName: 'ON stations' };
 const jobs = [{ proposal_id: 1, operation: 'UPSERT', requested_version: 1 }];
-const keys = () => new Map([[1, { code: 'LK_HNO_0001', cms: 'EMS001' }]]);
+const keys = () => new Map([[1, { code: 'LK_HNO_0001', cms: 'EMS001', snapshot: 'EMS001' }]]);
 
-test('sheet updates, inserts and clears A-T using the code in R while preserving existing serials', async () => {
+test('sheet updates, inserts and clears A-T using the CMS code in B while preserving serials', async () => {
   const originalQuery = pool.query;
   const queries = [];
   pool.query = async (...args) => { queries.push(args); return [[]]; };
@@ -156,10 +156,11 @@ test('sheet updates, inserts and clears A-T using the code in R while preserving
   } finally { pool.query = originalQuery; }
 });
 
-test('duplicate salesperson names in S do not affect matching by the proposal code in R', async (t) => {
+test('CMS key wins even when R contains a different proposal code', async (t) => {
   t.mock.method(pool, 'query', async () => [[]]);
   const first = service.buildRow(proposal(), 1);
-  const second = service.buildRow(proposal({ ma_de_xuat_gen: 'OTHER_CODE' }), 2);
+  const second = service.buildRow(proposal({ ma_de_xuat_gen: 'OTHER_CODE', cms_station_code: 'EMS002' }), 2);
+  first[17] = 'OLD_CODE';
   first[18] = second[18] = 'Shared salesperson';
   const sheet = sheetMock([service.HEADER_ROW, first, second]);
   await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys());
@@ -180,11 +181,11 @@ test('duplicates on Sheet, in a batch and in DB fail before writes', async () =>
     await assert.rejects(service.writeSheetRows(sheet, config, [...jobs, { ...jobs[0], proposal_id: 2 }],
       new Map([[1, proposal()], [2, proposal({ id: 2 })]]), new Map()), /trùng/);
     assert.deepEqual(sheet.calls, []);
-    pool.query = async (sql) => sql.includes('SELECT')
-      ? [[{ id: 1, proposal_code: 'LK_HNO_0001', cms_station_code: '' }]] : [[]];
-    assert.deepEqual((await service.loadProposalKeys([1])).get(1), { code: 'LK_HNO_0001', cms: '' });
-    pool.query = async () => [[{ id: 1, proposal_code: 'DX1', code_count: 2 }]];
-    await assert.rejects(service.loadProposalKeys([1]), /trùng trong DB/);
+    pool.query = async () => [[{ id: 1, proposal_code: 'DX1', cms_station_code: 'EMS001', code_count: 2 }]];
+    const dupKeys = await service.loadProposalKeys([1]);
+    const dupDb = sheetMock([service.HEADER_ROW]);
+    await assert.rejects(service.writeSheetRows(dupDb, config, jobs, new Map([[1, proposal()]]), dupKeys), /trùng trong DB/);
+    assert.deepEqual(dupDb.calls, []);
   } finally { pool.query = originalQuery; }
 });
 
@@ -275,7 +276,7 @@ test('worker exports a claimed job without an assignee but skips a job cancelled
     assert.equal(sheet.calls[0].requestBody.data.length, 2);
     assert.equal(sheet.calls[0].requestBody.data[1].values[0][1], 'EMS002');
     assert.equal(updates.some(update => update.sql.includes("status = 'FAILED'")), false);
-    assert.deepEqual(updates.filter(update => update.sql.includes("'DONE', 'PENDING'")).map(update => update.params[3]), [2]);
+    assert.deepEqual(updates.filter(update => update.sql.includes("'DONE', 'PENDING'")).map(update => update.params[5]), [2]);
   } finally {
     pool.query = original.query;
     pool.getConnection = original.connection;
@@ -298,7 +299,29 @@ test('cancellation targets pending and failed jobs only and leaves their error h
   assert.deepEqual(await service.cancelQueuedJobs(), { cancelled: 65 });
 });
 
-test('R locates rows without CMS, clears stale E/F/S/T and preserves other missing cells', async (t) => {
+test('status exposes actionable CMS errors and warnings without leaking provider errors', async t => {
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('GROUP BY status')) return [[{ status: 'FAILED', n: 2 }]];
+    if (sql.includes('FROM station_proposals')) return [[{ n: 1 }]];
+    if (sql.includes('MAX(last_synced_at)')) return [[{ last_synced_at: null }]];
+    if (sql.includes('SELECT proposal_id, last_error')) return [[
+      { proposal_id: 1, last_error: 'Đề xuất 1: thiếu mã trạm CMS để đối soát' },
+      { proposal_id: 2, last_error: 'sensitive Google diagnostic' }
+    ]];
+    if (sql.includes('SELECT id, proposal_id, old_cms_code')) return [[
+      { id: 8, proposal_id: 1, old_cms_code: 'OLD', new_cms_code: 'NEW' }
+    ]];
+    if (sql.includes('COUNT(*) AS n FROM on_station_sheet_sync_warnings')) return [[{ n: 1 }]];
+    throw new Error('Unexpected query');
+  });
+  const status = await service.getStatus();
+  assert.equal(status.errors[0].message, 'Đề xuất 1: thiếu mã trạm CMS để đối soát');
+  assert.doesNotMatch(status.errors[1].message, /sensitive/);
+  assert.equal(status.warningCount, 1);
+  assert.equal(status.warnings[0].old_cms_code, 'OLD');
+});
+
+test('CMS matches B, clears stale E/F/S/T and preserves other missing cells', async (t) => {
   t.mock.method(pool, 'query', async () => [[]]);
   const existing = service.buildRow(proposal(), 9);
   existing[4] = 'Keep assigned person';
@@ -308,14 +331,14 @@ test('R locates rows without CMS, clears stale E/F/S/T and preserves other missi
   existing[16] = 'External investor';
   const sheet = sheetMock([service.HEADER_ROW, existing]);
   const updated = proposal({
-    cms_station_code: '', creator_name: null, assignee_name: null, creator_custom_data: {},
+    creator_name: null, assignee_name: null, creator_custom_data: {},
     latitude: 0, longitude: 0, chot_so_luong_tru: [],
   });
   await service.writeSheetRows(sheet, config, jobs, new Map([[1, updated]]),
-    new Map([[1, { code: 'LK_HNO_0001', cms: '' }]]));
+    keys());
   const data = sheet.calls[0].requestBody.data[1];
   assert.equal(data.range, "'ON stations'!A2:T2");
-  assert.equal(data.values[0][1], null);
+  assert.equal(data.values[0][1], 'EMS001');
   for (const index of [4, 5, 18, 19]) assert.equal(data.values[0][index], '');
   assert.equal(data.values[0][17], 'LK_HNO_0001');
   assert.equal(data.values[0][7], '0');
@@ -323,35 +346,67 @@ test('R locates rows without CMS, clears stale E/F/S/T and preserves other missi
   assert.equal(data.values[0][14], 4);
 });
 
-test('new rows use R without CMS; missing keys never write and CMS or S never match existing rows', async (t) => {
+test('missing CMS is rejected and changed CMS adds a row and warns without deleting the old row', async (t) => {
   t.mock.method(pool, 'query', async () => [[]]);
   const sheet = sheetMock([service.HEADER_ROW]);
-  await service.writeSheetRows(sheet, config, jobs,
-    new Map([[1, proposal({ cms_station_code: '' })]]),
-    new Map([[1, { code: 'LK_HNO_0001', cms: '' }]]));
-  assert.equal(sheet.calls[0].requestBody.data[1].values[0][1], '');
-  assert.equal(sheet.calls[0].requestBody.data[1].values[0][17], 'LK_HNO_0001');
-  assert.equal(sheet.calls[0].requestBody.data[1].values[0][18], 'Creator sales');
-  const noKey = sheetMock([service.HEADER_ROW]);
-  await assert.rejects(service.writeSheetRows(noKey, config, jobs,
-    new Map([[1, proposal({ ma_de_xuat_gen: '' })]]), new Map()), /thiếu mã BCĐX/);
-  assert.deepEqual(noKey.calls, []);
-  const first = service.buildRow(proposal({ ma_de_xuat_gen: 'OTHER_CODE' }), 1);
-  first[18] = 'LK_HNO_0001';
-  const second = service.buildRow(proposal({ ma_de_xuat_gen: '' }), 2);
-  const duplicateCms = sheetMock([service.HEADER_ROW, first, second]);
-  await service.writeSheetRows(duplicateCms, config, jobs, new Map([[1, proposal()]]), keys());
-  const insert = duplicateCms.calls[0].requestBody.data[1];
-  assert.equal(insert.range, "'ON stations'!A4:T4");
-  assert.equal(insert.values[0][0], 3);
-  assert.equal(insert.values[0][17], 'LK_HNO_0001');
-  const deletion = sheetMock([service.HEADER_ROW, first, second]);
-  await service.writeSheetRows(deletion, config, [{ ...jobs[0], operation: 'DELETE' }], new Map(), keys());
-  assert.equal(deletion.calls.length, 1);
-  assert.equal(deletion.calls[0].requestBody.data.length, 1);
+  await assert.rejects(service.writeSheetRows(sheet, config, jobs,
+    new Map([[1, proposal({ cms_station_code: '' })]]), keys()), /thiếu mã trạm CMS/);
+  assert.deepEqual(sheet.calls, []);
+  const old = service.buildRow(proposal({ cms_station_code: 'OLD' }), 1);
+  const changed = sheetMock([service.HEADER_ROW, old]);
+  const queries = [];
+  pool.query.mock.mockImplementation(async (...args) => { queries.push(args); return [[]]; });
+  await service.writeSheetRows(changed, config, jobs, new Map([[1, proposal()]]),
+    new Map([[1, { code: 'LK_HNO_0001', lastCms: 'OLD' }]]));
+  assert.equal(changed.calls[0].requestBody.data[1].range, "'ON stations'!A3:T3");
+  assert.equal(changed.calls.length, 1);
+  assert.deepEqual(queries[0][1], [1, 'OLD', 'EMS001']);
 });
 
-test('wrong or missing R headers fail before Sheet writes or queue completion', async t => {
+test('delete uses last successful CMS and refuses to clear a row owned by another proposal', async t => {
+  t.mock.method(pool, 'query', async () => [[]]);
+  const row = service.buildRow(proposal({ cms_station_code: 'OLD' }), 1);
+  const deletionKeys = new Map([[1, {
+    code: 'LK_HNO_0001', snapshot: 'NEW', lastCms: 'OLD', lastCode: 'LK_HNO_0001'
+  }]]);
+  const sheet = sheetMock([service.HEADER_ROW, row]);
+  await service.writeSheetRows(sheet, config, [{ ...jobs[0], operation: 'DELETE' }], new Map(), deletionKeys);
+  assert.equal(sheet.calls[1].range, "'ON stations'!A2:T2");
+  row[17] = 'ANOTHER_PROPOSAL';
+  const reassigned = sheetMock([service.HEADER_ROW, row]);
+  await assert.rejects(service.writeSheetRows(reassigned, config,
+    [{ ...jobs[0], operation: 'DELETE' }], new Map(), deletionKeys), /không thể xác minh/);
+  assert.deepEqual(reassigned.calls, []);
+  const collision = sheetMock([service.HEADER_ROW, row]);
+  deletionKeys.get(1).otherCodeCount = 1;
+  await assert.rejects(service.writeSheetRows(collision, config,
+    [{ ...jobs[0], operation: 'DELETE' }], new Map(), deletionKeys), /ACTIVE khác/);
+  assert.deepEqual(collision.calls, []);
+});
+
+test('legacy R detects old CMS for warning without using it to select update row', async t => {
+  const queries = [];
+  t.mock.method(pool, 'query', async (...args) => { queries.push(args); return [[]]; });
+  const old = service.buildRow(proposal({ cms_station_code: 'LEGACY' }), 1);
+  const sheet = sheetMock([service.HEADER_ROW, old]);
+  await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys());
+  assert.equal(sheet.calls[0].requestBody.data[1].range, "'ON stations'!A3:T3");
+  assert.deepEqual(queries[0][1], [1, 'LEGACY', 'EMS001']);
+});
+
+test('historical rows do not reopen warnings after current CMS was already synchronized', async t => {
+  const queries = [];
+  t.mock.method(pool, 'query', async (...args) => { queries.push(args); return [[]]; });
+  const old = service.buildRow(proposal({ cms_station_code: 'OLD' }), 1);
+  const current = service.buildRow(proposal(), 2);
+  const sheet = sheetMock([service.HEADER_ROW, old, current]);
+  await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]),
+    new Map([[1, { code: 'LK_HNO_0001', lastCms: 'EMS001' }]]));
+  assert.equal(sheet.calls[0].requestBody.data[1].range, "'ON stations'!A3:T3");
+  assert.equal(queries.some(([sql]) => sql.includes('INSERT INTO on_station_sheet_sync_warnings')), false);
+});
+
+test('wrong or missing B or R headers fail before Sheet writes or queue completion', async t => {
   const queries = [];
   t.mock.method(pool, 'query', async (...args) => { queries.push(args); return [[]]; });
   const oldHeader = [...service.HEADER_ROW];
@@ -360,7 +415,7 @@ test('wrong or missing R headers fail before Sheet writes or queue completion', 
   for (const header of [oldHeader, ['STT', 'Mã Trạm']]) {
     const sheet = sheetMock([header, service.buildRow(proposal(), 1)]);
     await assert.rejects(service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys()),
-      /Header cột R/);
+      /Header cột B/);
     assert.deepEqual(sheet.calls, []);
   }
   assert.deepEqual(queries, []);

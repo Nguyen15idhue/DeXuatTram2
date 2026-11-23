@@ -212,6 +212,12 @@ const scalarValue = (value) => {
   return String(value).trim();
 };
 
+const userFieldId = (value) => {
+  const raw = value && typeof value === 'object' ? (value.id ?? value.user_id ?? value.value) : value;
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
 const getConfig = () => {
   const credentialsFile = process.env.GOOGLE_APPLICATION_CREDENTIALS || '';
   const missing = [];
@@ -553,8 +559,15 @@ const migratePoleColumns = async (sheets, config, fields, { apply = false } = {}
   return { status: 'migrated', columnsPerGroup: count };
 };
 
-const resolveBaseRowValues = (proposal, definitions, serial) => {
+const resolveBaseRowValues = (proposal, definitions, serial, usersById) => {
   const custom = parseObject(proposal.custom_data);
+  const proposer = custom.nguoi_de_xuat;
+  const proposerId = userFieldId(proposer);
+  const proposerUser = proposerId ? usersById.get(proposerId) : null;
+  if (proposerId && !proposerUser?.full_name) {
+    throw new Error(`Đề xuất ${proposal.id}: không tìm thấy người đề xuất #${proposerId}`);
+  }
+  const proposerName = proposerId ? proposerUser.full_name : scalarValue(proposer);
   const legalDocs = proposalGradingService.getLegalDocsState(custom);
   const modelCode = scalarValue(custom.mo_hinh_dau_tu);
   const modelFallback = {
@@ -591,7 +604,7 @@ const resolveBaseRowValues = (proposal, definitions, serial) => {
     __proposal_id: String(proposal.id),
     __proposal_code: proposal.ma_de_xuat_gen || '',
     __created_at: formatDateTime(proposal.created_at),
-    __submitter_name: proposal.submitter_name || '',
+    __submitter_name: proposerName || proposal.submitter_name || '',
     __area_director: managers.areaDirector,
     __area_department: managers.areaDepartment,
     __center_director: managers.centerDirector,
@@ -676,7 +689,7 @@ const resolveFieldValue = (proposal, custom, key, definitions, usersById) => {
 
 const mapProposalToRow = (proposal, fields, serial = '', usersById = new Map(), definitions = [], tabName) => {
   const custom = parseObject(proposal.custom_data);
-  const values = resolveBaseRowValues(proposal, definitions, serial);
+  const values = resolveBaseRowValues(proposal, definitions, serial, usersById);
   if (isDataQt1Tab(tabName) && proposal.on_station_id != null) {
     const displayLabel = (labels, value, field) => {
       if (value == null || value === '') return '—';
@@ -1104,9 +1117,11 @@ const processBatch = async (limit = BATCH_SIZE) => {
     let usersById = new Map();
     const userIdSet = new Set();
     for (const proposal of proposalRows) {
+      const custom = parseObject(proposal.custom_data);
+      const proposerId = userFieldId(custom.nguoi_de_xuat);
+      if (proposerId) userIdSet.add(proposerId);
       for (const field of fields) {
         if (field.type !== 'user') continue;
-        const custom = parseObject(proposal.custom_data);
         const raw = proposal[field.key] !== undefined && proposal[field.key] !== null && proposal[field.key] !== ''
           ? proposal[field.key]
           : custom[field.key];

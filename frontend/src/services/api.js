@@ -523,6 +523,9 @@ export const onStationSheetSyncService = {
   },
   cancelQueued(token) {
     return api.postWithAuth('/admin/on-station-sheet-sync/cancel', {}, token);
+  },
+  resolveWarning(id, token) {
+    return api.postWithAuth(`/admin/on-station-sheet-sync/warnings/${id}/resolve`, {}, token);
   }
 };
 

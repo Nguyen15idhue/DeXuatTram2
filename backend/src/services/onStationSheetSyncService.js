@@ -7,7 +7,8 @@ const LOCK_NAME = 'on_station_sheet_sync';
 const BATCH_SIZE = 50;
 const MAX_ATTEMPTS = 8;
 const LAST_COLUMN = 'T';
-const KEY_COLUMN_INDEX = 17;
+const KEY_COLUMN_INDEX = 1;
+const PROPOSAL_COLUMN_INDEX = 17;
 
 // Ánh xạ tỉnh mới (34 đơn vị sau sáp nhập) -> danh sách tỉnh cũ
 const PROVINCE_MERGE_MAP = {
@@ -321,24 +322,26 @@ const loadProposalKeys = async (proposalIds) => {
   const [rows] = await pool.query(
     `SELECT q.proposal_id AS id,
             COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code) AS proposal_code,
-            COALESCE(NULLIF(cs.cms_station_code, ''), q.sheet_cms_code) AS cms_station_code,
-            (SELECT COUNT(*) FROM station_proposals other_proposal
-              WHERE other_proposal.ma_de_xuat_gen=COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code)) AS code_count
+            cs.cms_station_code AS cms_station_code,
+            q.sheet_cms_code, q.last_synced_cms_code, q.last_synced_proposal_code,
+            (SELECT COUNT(*) FROM charging_stations other_cs
+              JOIN station_proposals other_p ON other_p.id=other_cs.proposal_id AND other_p.status='ACTIVE'
+              WHERE BINARY TRIM(other_cs.cms_station_code)=BINARY TRIM(cs.cms_station_code)) AS code_count,
+            (SELECT COUNT(*) FROM charging_stations other_cs
+              JOIN station_proposals other_p ON other_p.id=other_cs.proposal_id AND other_p.status='ACTIVE'
+              WHERE other_p.id <> q.proposal_id AND BINARY TRIM(other_cs.cms_station_code)
+                = BINARY TRIM(COALESCE(NULLIF(q.last_synced_cms_code, ''), q.sheet_cms_code))) AS other_code_count
        FROM on_station_sheet_sync_queue q
        LEFT JOIN station_proposals p ON p.id=q.proposal_id
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
       WHERE q.proposal_id IN (${proposalIds.map(() => '?').join(',')})`,
     proposalIds
   );
-  for (const row of rows) {
-    if (Number(row.code_count || 0) > 1) throw new Error(`Mã BCĐX trùng trong DB: đề xuất ${row.id}`);
-    await pool.query(
-      `UPDATE on_station_sheet_sync_queue SET sheet_proposal_code=?, sheet_cms_code=? WHERE proposal_id=?`,
-      [row.proposal_code || null, row.cms_station_code || null, row.id]
-    );
-  }
   return new Map(rows.map((row) => [Number(row.id), {
-    code: scalarValue(row.proposal_code), cms: scalarValue(row.cms_station_code)
+    code: scalarValue(row.proposal_code), cms: scalarValue(row.cms_station_code),
+    snapshot: scalarValue(row.sheet_cms_code), lastCms: scalarValue(row.last_synced_cms_code),
+    lastCode: scalarValue(row.last_synced_proposal_code), codeCount: Number(row.code_count || 0),
+    otherCodeCount: Number(row.other_code_count || 0)
   }]));
 };
 
@@ -350,40 +353,50 @@ const readSheetRows = async (sheets, config) => {
     valueRenderOption: 'UNFORMATTED_VALUE'
   });
   const rows = response.data.values || [];
-  if (rows.length && scalarValue(rows[0]?.[KEY_COLUMN_INDEX]) !== HEADER_ROW[KEY_COLUMN_INDEX]) {
-    throw new Error('Header cột R phải là "Mã BCĐX"; hãy kiểm tra bố cục Sheet trước khi đồng bộ');
+  if (rows.length && (scalarValue(rows[0]?.[KEY_COLUMN_INDEX]) !== HEADER_ROW[KEY_COLUMN_INDEX]
+    || scalarValue(rows[0]?.[PROPOSAL_COLUMN_INDEX]) !== HEADER_ROW[PROPOSAL_COLUMN_INDEX])) {
+    throw new Error('Header cột B phải là "Mã Trạm" và cột R phải là "Mã BCĐX"; hãy kiểm tra bố cục Sheet');
   }
   const rowById = new Map();
+  const rowsByProposal = new Map();
   let maxSerial = 0;
   rows.forEach((row, index) => {
     if (index === 0 || !row || !row.length) return;
     const serial = Number(row[0]);
     if (serial > maxSerial) maxSerial = serial;
-    const key = String(row[KEY_COLUMN_INDEX] || '').trim();
-    const entry = { row: index + 1, serial: Number.isFinite(serial) ? serial : null };
+    const key = scalarValue(row[KEY_COLUMN_INDEX]);
+    const proposalCode = scalarValue(row[PROPOSAL_COLUMN_INDEX]);
+    const entry = { row: index + 1, serial: Number.isFinite(serial) ? serial : null, proposalCode };
     if (key) {
-      if (rowById.has(key)) throw new Error(`Mã BCĐX trùng trên Sheet: ${key}`);
+      if (rowById.has(key)) throw new Error(`Mã trạm CMS trùng trên Sheet: ${key}`);
       rowById.set(key, entry);
+      if (proposalCode) {
+        const previous = rowsByProposal.get(proposalCode) || [];
+        previous.push(key);
+        rowsByProposal.set(proposalCode, previous);
+      }
     }
   });
-  return { rowById, maxSerial, nextRow: Math.max(rows.length + 1, 2) };
+  return { rowById, rowsByProposal, maxSerial, nextRow: Math.max(rows.length + 1, 2) };
 };
 
-const resolveKey = (keyById, proposalId, proposal) => {
-  const fromKeyMap = scalarValue(keyById.get(Number(proposalId))?.code);
-  if (fromKeyMap) return fromKeyMap;
-  const custom = parseObject(proposal?.custom_data);
-  const code = scalarValue(proposal?.ma_de_xuat_gen || custom.ma_de_xuat);
-  if (code) return code;
-  throw new Error(`Đề xuất ${proposalId}: thiếu mã BCĐX để đối soát`);
+const resolveKey = (keyById, proposalId, proposal, operation) => {
+  const info = keyById.get(Number(proposalId)) || {};
+  const isDelete = operation === 'DELETE' || !proposal;
+  const key = isDelete ? (info.lastCms || info.snapshot) : scalarValue(proposal.cms_station_code);
+  if (!key) throw new Error(`Đề xuất ${proposalId}: thiếu mã trạm CMS để đối soát`);
+  if (!isDelete && info.codeCount > 1) throw new Error(`Đề xuất ${proposalId}: mã trạm CMS trùng trong DB: ${key}`);
+  if (isDelete && info.otherCodeCount > 0) throw new Error(`Đề xuất ${proposalId}: mã trạm CMS ${key} đang thuộc đề xuất ACTIVE khác`);
+  return key;
 };
 
 const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   const tab = quoteTab(config.tabName);
   const sheetIndex = await readSheetRows(sheets, config);
-  const { rowById, maxSerial } = sheetIndex;
+  const { rowById, rowsByProposal, maxSerial } = sheetIndex;
   const updates = [];
   const clears = [];
+  const completed = [];
   let nextSerial = maxSerial + 1;
   let nextRow = sheetIndex.nextRow;
   const seenKeys = new Set();
@@ -392,14 +405,26 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   for (const job of jobs) {
     const proposalId = Number(job.proposal_id);
     const proposal = proposalsById.get(proposalId) || null;
-    const key = resolveKey(keyById, proposalId, proposal);
-    if (seenKeys.has(key)) throw new Error(`Mã BCĐX trùng trong lượt đồng bộ: ${key}`);
+    const key = resolveKey(keyById, proposalId, proposal, job.operation);
+    if (seenKeys.has(key)) throw new Error(`Mã trạm CMS trùng trong lượt đồng bộ: ${key}`);
     seenKeys.add(key);
     const existing = rowById.get(key);
+    const info = keyById.get(proposalId) || {};
     if (job.operation === 'DELETE' || !proposal) {
+      const owner = info.lastCode || info.code;
+      if (existing && (!owner || existing.proposalCode !== owner)) {
+        throw new Error(`Đề xuất ${proposalId}: không thể xác minh chủ sở hữu dòng CMS ${key} để xóa`);
+      }
       if (existing) clears.push({ row: existing.row });
+      completed.push({ job, key, code: owner, warnings: [] });
       continue;
     }
+    const code = scalarValue(proposal.ma_de_xuat_gen || parseObject(proposal.custom_data).ma_de_xuat);
+    const priorKeys = info.lastCms
+      ? new Set(rowById.has(info.lastCms) ? [info.lastCms] : [])
+      : new Set(rowsByProposal.get(code) || []);
+    priorKeys.delete(key);
+    const warnings = [...priorKeys];
     const serial = existing && existing.serial ? existing.serial : nextSerial++;
     const row = buildRow(proposal, serial);
     row[KEY_COLUMN_INDEX] = key;
@@ -414,6 +439,7 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
       updates.push({ range: `${tab}!A${nextRow}:${LAST_COLUMN}${nextRow}`, values: [row] });
       nextRow++;
     }
+    completed.push({ job, key, code, warnings });
   }
 
   for (const batch of chunks(updates, 50)) {
@@ -430,16 +456,26 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
     }
   }
 
-  for (const job of jobs) {
+  for (const { job, key, code, warnings } of completed) {
+    for (const oldKey of warnings) {
+      await pool.query(
+        `INSERT INTO on_station_sheet_sync_warnings (proposal_id, old_cms_code, new_cms_code)
+         VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE resolved_at=NULL, resolved_by=NULL`,
+        [job.proposal_id, oldKey, key]
+      );
+    }
     await pool.query(
       `UPDATE on_station_sheet_sync_queue
           SET status = IF(requested_version = ?, 'DONE', 'PENDING'),
               synced_version = GREATEST(synced_version, ?),
               attempt_count = IF(requested_version = ?, attempt_count, 0),
+              last_synced_cms_code = ?, last_synced_proposal_code = ?,
               next_attempt_at = NULL,
               last_synced_at = NOW(), last_error = NULL, updated_at = NOW()
         WHERE proposal_id = ?`,
-      [job.requested_version, job.requested_version, job.requested_version, job.proposal_id]
+      [job.requested_version, job.requested_version, job.requested_version,
+        (job.operation === 'DELETE' || !proposalsById.has(Number(job.proposal_id))) ? null : key,
+        (job.operation === 'DELETE' || !proposalsById.has(Number(job.proposal_id))) ? null : (code || null), job.proposal_id]
     );
   }
 };
@@ -490,7 +526,7 @@ const processBatch = async (limit = BATCH_SIZE) => {
       let validationError;
       try {
         const proposal = proposalsById.get(Number(job.proposal_id));
-        resolveKey(keyById, job.proposal_id, proposal);
+        resolveKey(keyById, job.proposal_id, proposal, job.operation);
         if (job.operation === 'UPSERT' && proposal) buildRow(proposal, 1);
       } catch (error) {
         validationError = error;
@@ -593,6 +629,13 @@ const cancelQueuedJobs = async () => {
   return { cancelled: result.affectedRows };
 };
 
+const safeSyncError = (error) => {
+  const message = String(error || '');
+  if (/^Đề xuất \d+: (thiếu mã trạm CMS|mã trạm CMS trùng trong DB|mã trạm CMS .* đang thuộc đề xuất ACTIVE khác|không thể xác minh chủ sở hữu dòng CMS)/.test(message)
+    || /^(Mã trạm CMS trùng trên Sheet|Mã trạm CMS trùng trong lượt đồng bộ|Header cột B phải là)/.test(message)) return message;
+  return 'Không thể đồng bộ; kiểm tra nhật ký backend và cấu hình Sheet.';
+};
+
 const getStatus = async () => {
   const config = getConfig();
   const [queueRows] = await pool.query(
@@ -608,6 +651,17 @@ const getStatus = async () => {
   const [lastRows] = await pool.query(
     `SELECT MAX(last_synced_at) AS last_synced_at FROM on_station_sheet_sync_queue WHERE last_synced_at IS NOT NULL`
   );
+  const [errors] = await pool.query(
+    `SELECT proposal_id, last_error FROM on_station_sheet_sync_queue
+      WHERE status='FAILED' AND last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 10`
+  );
+  const [warnings] = await pool.query(
+    `SELECT id, proposal_id, old_cms_code, new_cms_code FROM on_station_sheet_sync_warnings
+      WHERE resolved_at IS NULL ORDER BY id DESC LIMIT 10`
+  );
+  const [warningCounts] = await pool.query(
+    `SELECT COUNT(*) AS n FROM on_station_sheet_sync_warnings WHERE resolved_at IS NULL`
+  );
   return {
     configured: config.configured,
     message: config.message,
@@ -621,8 +675,23 @@ const getStatus = async () => {
       cancelled: queue.CANCELLED || 0,
       total: Object.values(queue).reduce((sum, n) => sum + n, 0)
     },
-    lastSyncedAt: lastRows[0]?.last_synced_at || null
+    lastSyncedAt: lastRows[0]?.last_synced_at || null,
+    errors: errors.map((row) => ({ proposal_id: row.proposal_id, message: safeSyncError(row.last_error) })),
+    warnings,
+    warningCount: Number(warningCounts[0]?.n || 0)
   };
+};
+
+const resolveWarning = async (id, userId) => {
+  const warningId = Number(id);
+  if (!Number.isSafeInteger(warningId) || warningId < 1) {
+    throw Object.assign(new Error('ID cảnh báo không hợp lệ'), { statusCode: 400 });
+  }
+  const [result] = await pool.query(
+    `UPDATE on_station_sheet_sync_warnings SET resolved_at=NOW(), resolved_by=?
+      WHERE id=? AND resolved_at IS NULL`, [userId, warningId]
+  );
+  if (!result.affectedRows) throw Object.assign(new Error('Cảnh báo không tồn tại hoặc đã xử lý'), { statusCode: 404 });
 };
 
 exports.getConfig = getConfig;
@@ -631,6 +700,7 @@ exports.startDailySync = startDailySync;
 exports.enqueueActiveProposal = enqueueActiveProposal;
 exports.getStatus = getStatus;
 exports.cancelQueuedJobs = cancelQueuedJobs;
+exports.resolveWarning = resolveWarning;
 exports.HEADER_ROW = HEADER_ROW;
 exports.buildRow = buildRow;
 exports.loadProposals = loadProposals;

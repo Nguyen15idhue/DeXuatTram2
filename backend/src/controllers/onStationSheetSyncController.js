@@ -49,3 +49,12 @@ exports.cancel = async (req, res) => {
     res.status(500).json({ success: false, message: 'Không thể hủy các mục đồng bộ đang chờ' });
   }
 };
+
+exports.resolveWarning = async (req, res) => {
+  try {
+    await onStationSheetSyncService.resolveWarning(req.params.id, req.user.id);
+    res.json({ success: true, message: 'Đã xác nhận xử lý cảnh báo; dữ liệu Sheet không thay đổi' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};

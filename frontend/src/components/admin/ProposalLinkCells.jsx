@@ -28,3 +28,18 @@ export const ProposalPersonLink = ({ id, name }) => {
     />
   );
 };
+
+export const ProposalProposerCell = ({ row, value }) => {
+  const raw = value && typeof value === 'object'
+    ? (value.id ?? value.user_id ?? value.value)
+    : value;
+  const id = Number(raw);
+  if (Number.isInteger(id) && id > 0) {
+    return <ProposalPersonLink id={id} name={typeof value === 'object' ? value.label : ''} />;
+  }
+  const label = typeof value === 'string' ? value.trim() : value?.label;
+  if (label) return <span>{label}</span>;
+  return row.user_id
+    ? <ProposalPersonLink id={row.user_id} name={row.user_name} />
+    : <span>Khách</span>;
+};

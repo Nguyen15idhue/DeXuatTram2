@@ -19,6 +19,8 @@ const OnStationSheetSyncButton = () => {
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmWarning, setConfirmWarning] = useState(null);
+  const [resolving, setResolving] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [toast, setToast] = useState(EMPTY_TOAST);
   const timerRef = useRef(null);
@@ -94,6 +96,22 @@ const OnStationSheetSyncButton = () => {
     }
   };
 
+  const handleResolveWarning = async () => {
+    if (!confirmWarning || resolving) return;
+    setResolving(true);
+    try {
+      const res = await onStationSheetSyncService.resolveWarning(confirmWarning.id, token);
+      if (!res?.success) throw new Error(res?.message || 'Không thể xác nhận cảnh báo');
+      setConfirmWarning(null);
+      setToast({ message: res.message, type: 'success' });
+      await load();
+    } catch (error) {
+      setToast({ message: error.message || 'Không thể xác nhận cảnh báo', type: 'error' });
+    } finally {
+      setResolving(false);
+    }
+  };
+
   return (
     <>
       <button
@@ -122,6 +140,24 @@ const OnStationSheetSyncButton = () => {
             : `Có ${failed} mục đồng bộ chưa thành công.${status.configured ? ' Bạn có thể thử đồng bộ lại hoặc hủy các mục này.' : ''}`}
         </div>
       )}
+      {!loadError && status?.errors?.length > 0 && (
+        <ul className="text-sm text-error max-w-xl">
+          {status.errors.map((item) => <li key={item.proposal_id}>{item.message}</li>)}
+        </ul>
+      )}
+      {status?.warningCount > 0 && (
+        <div role="alert" className="text-sm text-warning max-w-xl">
+          <div>Có {status.warningCount} cảnh báo mã CMS cũ cần kiểm tra thủ công trên Sheet. Dòng cũ không tự xóa.</div>
+          {(status.warnings || []).map((item) => (
+            <div key={item.id}>
+              Đề xuất {item.proposal_id}: {item.old_cms_code} → {item.new_cms_code}{' '}
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setConfirmWarning(item)}>
+                Đã xử lý
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {status?.queue?.cancelled > 0 && <span className="text-sm text-base-content/70">Đã hủy đồng bộ: {status.queue.cancelled}</span>}
       <ConfirmDialog
         isOpen={confirmCancel}
@@ -132,6 +168,15 @@ const OnStationSheetSyncButton = () => {
         type="warning"
         onConfirm={handleCancel}
         onCancel={() => setConfirmCancel(false)}
+      />
+      <ConfirmDialog
+        isOpen={!!confirmWarning}
+        title="Xác nhận đã xử lý mã CMS cũ?"
+        message={`Xác nhận đã kiểm tra và xử lý thủ công mã ${confirmWarning?.old_cms_code || ''} trên Sheet. Thao tác này không thay đổi Sheet.`}
+        confirmText="Đã xử lý"
+        cancelText="Quay lại"
+        onConfirm={handleResolveWarning}
+        onCancel={() => !resolving && setConfirmWarning(null)}
       />
       <Toast message={toast.message} type={toast.type} onClose={() => setToast(EMPTY_TOAST)} />
     </>
