@@ -32,11 +32,13 @@ import ProposalFlowInfo from "../../../components/admin/ProposalFlowInfo";
 import HistoricalOnImportModal from "../../../components/admin/HistoricalOnImportModal";
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_LEGAL_NAME_COLUMN_STYLES,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
   PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
+  ProposalLegalNameCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell,
@@ -3187,6 +3189,7 @@ const AdminProposalsPage = () => {
             ref={tableRef}
             entity="station_proposals"
             viewId={proposalsViewId}
+            columnStyleOverrides={PROPOSAL_LEGAL_NAME_COLUMN_STYLES}
             columnLabelOverrides={{
               status: "Trạng thái Quy trình",
               manager_name: "Người phụ trách",
@@ -3233,6 +3236,7 @@ const AdminProposalsPage = () => {
               ma_de_xuat: (row, value) => (
                 <ProposalCodeLink id={row.id} code={value} />
               ),
+              owner_name: (row, value) => <ProposalLegalNameCell value={value} />,
               nguoi_de_xuat: (row, value) => (
                 <ProposalProposerCell row={row} value={value} />
               ),

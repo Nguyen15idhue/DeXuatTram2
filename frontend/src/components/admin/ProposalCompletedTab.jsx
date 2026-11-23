@@ -11,11 +11,13 @@ import { ProposalCodeLink, ProposalProposerCell } from './ProposalLinkCells';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_LEGAL_NAME_COLUMN_STYLES,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
   PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
+  ProposalLegalNameCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell
@@ -115,6 +117,7 @@ const ProposalCompletedTab = ({ token }) => {
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => <ProposalCodeLink id={row.id} code={value} />,
+    owner_name: (row, value) => <ProposalLegalNameCell value={value} />,
     nguoi_de_xuat: (row, value) => <ProposalProposerCell row={row} value={value} />,
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
     scale: (row) => formatProposalScale(row),
@@ -202,6 +205,7 @@ const ProposalCompletedTab = ({ token }) => {
           ref={tableRef}
           entity="station_proposals"
           viewId={viewId}
+          columnStyleOverrides={PROPOSAL_LEGAL_NAME_COLUMN_STYLES}
           multiStatusFilter
           onStatusFilterChange={handleColumnStatusChange}
           showActions={false}

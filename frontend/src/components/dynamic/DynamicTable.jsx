@@ -15,7 +15,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, onStatusFilterChange, multiStatusFilter = false, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, columnStyleOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, onStatusFilterChange, multiStatusFilter = false, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
   const navigate = useNavigate();
   const numberedStatuses = useNumberedProposalStatuses();
   const [loading, setLoading] = useState(true);
@@ -445,7 +445,7 @@ const toDisplayValue = (val) => {
                     <th
                       onClick={() => sortable && handleSort(key)}
                       className={`${sortable ? 'cursor-pointer select-none' : ''} ${fp.className || ''}`}
-                      style={{ ...colWidthStyle(col), ...fp.style }}
+                      style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style }}
                     >
                       {col.label}
                       {sortable && <span className="ml-1 text-xs">{getSortIcon(key)}</span>}
@@ -469,7 +469,7 @@ const toDisplayValue = (val) => {
                   const fpPin = (pinActions && ci === pinAfterIdx) ? frozenCell('__pin', 'filter') : null;
                   return (
                     <Fragment key={key}>
-                      <th style={{ ...colWidthStyle(col), ...fp.style }} className={fp.className}>
+                      <th style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style }} className={fp.className}>
                         {col.filterable && numberedStatuses && entity === 'station_proposals' && key === 'status' && multiStatusFilter ? (
                           <SearchableMultiSelect
                             ariaLabel="Lọc trạng thái quy trình"
@@ -554,7 +554,7 @@ const toDisplayValue = (val) => {
                   );
                   return (
                     <Fragment key={key}>
-                      <td style={{ ...colWidthStyle(col), ...fp.style, ...rowStyle, ...extraCellStyle }} className={fp.className}>
+                      <td style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style, ...rowStyle, ...extraCellStyle }} className={fp.className}>
                         {colIdx === 0 && depth > 0 ? <div style={{ paddingLeft: depth * 24 }}>{cell}</div> : cell}
                         {typeof cellFooter === 'function' ? cellFooter(row, key) : null}
                       </td>
