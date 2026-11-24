@@ -102,6 +102,36 @@ exports.generate = async (req, res) => {
   }
 };
 
+exports.generationOptions = async (req, res) => {
+  try {
+    const data = await proposalReportGenerationService.listPreviewOptions({
+      proposalId: req.params.id, user: req.user
+    });
+    res.set('Cache-Control', 'no-store').json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.generationPreview = async (req, res) => {
+  try {
+    const result = await proposalReportGenerationService.preview({
+      proposalId: req.params.id,
+      templateId: req.body?.template_id,
+      values: req.body?.values,
+      user: req.user
+    });
+    res.set({
+      'Cache-Control': 'no-store',
+      'Content-Type': 'application/pdf',
+      'X-Preview-Warnings': encodeURIComponent(JSON.stringify(result.fontWarnings || [])),
+      'Access-Control-Expose-Headers': 'X-Preview-Warnings'
+    }).send(result.pdfBuffer);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.requestRevision = async (req, res) => {
   try {
     const result = await proposalReportService.requestRevision({

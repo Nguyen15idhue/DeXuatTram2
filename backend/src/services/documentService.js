@@ -375,7 +375,7 @@ const resolveTemplate = async (model, templateId, entity = 'station_proposals') 
     `SELECT id, \`name\`, entity, model, file_id, mapping, status FROM document_templates
      WHERE entity = ? AND status = 'active' AND (model = ? OR model IS NULL)
      ORDER BY CASE WHEN model = ? THEN 0 ELSE 1 END, is_default DESC, id ASC LIMIT 1`,
-    [model, model]
+    [entity, model, model]
   );
   if (rows.length === 0 || !rows[0].file_id) {
     throw Object.assign(new Error(`Chưa cấu hình template cho mô hình ${model || '(trống)'}`), { statusCode: 400 });
@@ -397,6 +397,7 @@ const safeName = (s, fallback) => {
 
 exports.buildData = buildData;
 exports.resolveTemplate = resolveTemplate;
+exports.stripEmptyLoopRow = stripEmptyLoopRow;
 exports.exportReports = async (proposalIds, opts = {}) => {
   const warnings = [];
   const skipped = [];

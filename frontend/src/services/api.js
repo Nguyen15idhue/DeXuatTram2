@@ -639,6 +639,27 @@ export const proposalReportService = {
   generate(id, data, token) {
     return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-reports/${id}/generate`, data || {}, token));
   },
+  getGenerationOptions(id, token) {
+    return api.getWithAuth(`/admin/proposal-reports/${id}/generation-options`, token);
+  },
+  async previewGeneration(id, data, token) {
+    const response = await fetch(`${API_URL}/admin/proposal-reports/${id}/generation-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data)
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      const body = await parseJsonSafe(response);
+      throw new Error(body.message || 'Không tạo được bản xem thử');
+    }
+    if (!(response.headers.get('content-type') || '').toLowerCase().includes('application/pdf')) {
+      throw new Error('Bản xem thử không phải file PDF');
+    }
+    const warningHeader = response.headers.get('X-Preview-Warnings');
+    const warnings = warningHeader ? JSON.parse(decodeURIComponent(warningHeader)) : [];
+    return { blob: await response.blob(), warnings };
+  },
   requestRevision(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token));
   }

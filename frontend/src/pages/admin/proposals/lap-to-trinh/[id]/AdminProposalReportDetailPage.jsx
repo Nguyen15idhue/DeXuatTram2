@@ -20,6 +20,7 @@ import {
 import FileViewer from "../../../../../components/dynamic/FileViewer";
 import ProposalReportSummary from "../../../../../components/admin/ProposalReportSummary";
 import ProposalReportUpdateModal from "../../../../../components/admin/ProposalReportUpdateModal";
+import ProposalReportPreviewModal from "../../../../../components/admin/ProposalReportPreviewModal";
 import PageHeader from "../../../../../components/ui/PageHeader";
 import Toast from "../../../../../components/Toast";
 import ProposalProgressiveDetails from "../../../../../components/admin/ProposalProgressiveDetails";
@@ -110,6 +111,7 @@ const AdminProposalReportDetailPage = () => {
   const [error, setError] = useState("");
   const [fileViewing, setFileViewing] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState("");
 
   const loadDetail = useCallback(async () => {
@@ -184,6 +186,15 @@ const AdminProposalReportDetailPage = () => {
         actions={
           <div className="flex gap-2">
             <ProposalLocationMapButton proposal={proposal} />
+            {detail.permissions?.canUpload && canUploadReport(proposal) && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm gap-1"
+                onClick={() => setPreviewOpen(true)}
+              >
+                <FileText size={14} /> Xem thử mẫu
+              </button>
+            )}
             {detail.permissions?.canUpload && canUploadReport(proposal) && (
               <button
                 type="button"
@@ -352,6 +363,7 @@ const AdminProposalReportDetailPage = () => {
         onClose={() => setUploadOpen(false)}
         onSaved={handleUploaded}
       />
+      {previewOpen && <ProposalReportPreviewModal record={proposal} onClose={() => setPreviewOpen(false)} />}
       <Toast message={toast} onClose={() => setToast("")} />
     </div>
   );

@@ -12,7 +12,7 @@ const parseJson = (v, fb) => {
   try { return JSON.parse(v); } catch { return fb; }
 };
 
-const MODELS = ['TDT', 'NQ', 'LK'];
+const MODELS = ['TDT', 'NQ', 'LK', 'NQ_LK'];
 
 const normalizePartsCfg = (cfg) => {
   if (Array.isArray(cfg.parts) && cfg.parts.length) {
@@ -56,7 +56,7 @@ const assertTemplateInput = (body, isCreate) => {
     throw Object.assign(new Error('Thiếu tên template'), { statusCode: 400 });
   }
   if (model !== undefined && model !== null && model !== '' && !MODELS.includes(model)) {
-    throw Object.assign(new Error('Model phải là TDT/NQ/LK'), { statusCode: 400 });
+    throw Object.assign(new Error('Model phải là TDT/NQ/LK/NQ_LK'), { statusCode: 400 });
   }
   if (status !== undefined && !['active', 'inactive'].includes(status)) {
     throw Object.assign(new Error('Trạng thái không hợp lệ'), { statusCode: 400 });
@@ -80,7 +80,7 @@ exports.createTemplate = async (body) => {
   if (v.file_id) await assertDocxFile(v.file_id);
   const [result] = await pool.query(
     'INSERT INTO document_templates (`name`, `entity`, `model`, `file_id`, `mapping`, `status`, `is_default`) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [v.name, v.entity || 'station_proposals', v.model, v.file_id, v.mapping ? JSON.stringify(v.mapping) : null, 'active', 0]
+    [v.name, v.entity || 'station_proposals', v.model, v.file_id, v.mapping ? JSON.stringify(v.mapping) : null, v.status || 'active', v.is_default ?? 0]
   );
   return exports.getTemplate(result.insertId);
 };
