@@ -1827,7 +1827,7 @@ export const documentService = {
         if (err && err.message) message = err.message;
       } catch {}
       throw new Error(message);
-    }z
+    }
     const ct = (response.headers.get('content-type') || '').toLowerCase();
     if (!ct.includes('wordprocessingml') && !ct.includes('octet-stream') && !ct.includes('zip')) {
       throw new Error('File template không phải định dạng docx');
@@ -1852,7 +1852,13 @@ export const documentService = {
       } catch {}
       throw new Error(message);
     }
-    return response.arrayBuffer();
+    const ct = (response.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('wordprocessingml')) throw new Error('Bản xem thử không phải file Word');
+    const warningHeader = response.headers.get('X-Preview-Warnings');
+    return {
+      buffer: await response.arrayBuffer(),
+      warnings: warningHeader ? JSON.parse(decodeURIComponent(warningHeader)) : []
+    };
   },
   async uploadTemplateFile(file, token) {
     const formData = new FormData();

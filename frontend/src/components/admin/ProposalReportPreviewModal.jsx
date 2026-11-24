@@ -10,6 +10,7 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState('');
   const [values, setValues] = useState({});
+  const [inputs, setInputs] = useState({});
   const [previewUrl, setPreviewUrl] = useState('');
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +45,7 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
     const next = templates.find((item) => String(item.id) === id);
     setTemplateId(id);
     setValues(Object.fromEntries((next?.fields || []).map((field) => [field.key, String(field.value ?? '')])));
+    setInputs(Object.fromEntries((next?.input_fields || []).map((field) => [field.key, String(field.value ?? '')])));
     setPreviewUrl('');
     setWarnings([]);
     setError('');
@@ -56,7 +58,8 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
     setWarnings([]);
     try {
       const result = await proposalReportService.previewGeneration(record.id, {
-        template_id: Number(templateId), values
+        template_id: Number(templateId), values,
+        ...(template?.input_fields?.length ? { inputs } : {})
       }, token);
       if (!mounted.current) return;
       setPreviewUrl(URL.createObjectURL(result.blob));
@@ -96,7 +99,7 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
             {!templates.length && <p className="text-sm">Chưa có mẫu hoạt động phù hợp với mô hình đề xuất.</p>}
             {template && (
               <>
-                <p className="text-sm text-base-content/70">Các trường văn bản, số và ngày đã gán trong mẫu có thể sửa để xem thử. Trường khác lấy từ đề xuất.</p>
+                <p className="text-sm text-base-content/70">Thông tin từ đề xuất: có thể sửa tạm để xem thử, không ghi ngược vào đề xuất.</p>
                 <div className="grid gap-3 md:grid-cols-2 max-h-72 overflow-y-auto">
                   {template.fields.map((field) => (
                     <label className="form-control" key={field.key}>
@@ -117,12 +120,37 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
                     </label>
                   ))}
                 </div>
+                {!!template.input_fields?.length && (
+                  <>
+                    <h4 className="font-semibold text-sm">Thông tin bổ sung BCĐX</h4>
+                    <p className="text-xs text-base-content/70">Chỉ dùng cho bản xem thử. Trường bắt buộc còn trống được đánh dấu và cảnh báo; đóng cửa sổ sẽ mất dữ liệu nhập.</p>
+                    <div className="grid gap-3 md:grid-cols-2 max-h-72 overflow-y-auto">
+                      {template.input_fields.map((field) => {
+                        const change = (event) => {
+                          setInputs((current) => ({ ...current, [field.key]: event.target.value }));
+                          setPreviewUrl('');
+                          setWarnings([]);
+                        };
+                        return (
+                          <label className="form-control" key={field.key}>
+                            <span className="label-text mb-1">{field.label}{field.required ? ' (bắt buộc)' : ''}</span>
+                            {field.type === 'textarea' ? (
+                              <textarea className="textarea textarea-bordered" value={inputs[field.key] ?? ''} disabled={rendering} maxLength={10000} onChange={change} />
+                            ) : (
+                              <input className="input input-bordered" type={field.type === 'date' ? 'date' : 'text'} inputMode={field.type === 'number' ? 'decimal' : undefined} value={inputs[field.key] ?? ''} disabled={rendering} maxLength={10000} onChange={change} />
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
                 <button type="button" className="btn btn-primary btn-sm" onClick={renderPreview} disabled={rendering}>
                   {rendering ? 'Đang tạo bản xem thử...' : 'Xem thử PDF'}
                 </button>
               </>
             )}
-            {warnings.length > 0 && <div className="alert alert-warning text-sm">{warnings.join(' ')}</div>}
+            {warnings.length > 0 && <div className="alert alert-warning text-sm"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
             {previewUrl && <iframe title="Xem thử BCĐX" src={previewUrl} className="w-full h-[65vh] border border-base-300" />}
           </div>
         )}

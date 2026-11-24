@@ -276,6 +276,10 @@ router.get('/:id/generation-options', requireAuth, requireProposalReportManager,
  *             properties:
  *               template_id: { type: integer }
  *               values: { type: object, additionalProperties: { type: string } }
+ *               inputs:
+ *                 type: object
+ *                 description: Giá trị nhập riêng BCĐX theo token source=input trong mapping; không lưu vào đề xuất
+ *                 additionalProperties: { type: string }
  *     responses:
  *       200:
  *         description: PDF xem thử, không thay đổi đề xuất

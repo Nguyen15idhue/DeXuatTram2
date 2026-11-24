@@ -1,4 +1,3 @@
-const Docxtemplater = require('docxtemplater');
 const JSZip = require('jszip');
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
@@ -7,6 +6,8 @@ const adminUserService = require('./adminUserService');
 const dataListService = require('./dataListService');
 const documentFormula = require('./documentFormula');
 const documentTemplateService = require('./documentTemplateService');
+const { SYSTEM_DATE_TOKENS, getSystemDateTokens } = require('./documentSystemTokens');
+const { renderDocument } = require('./documentRendering');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -328,12 +329,15 @@ const loadConsts = async () => {
 };
 
 const buildData = async (proposal, mapping) => {
+  const systemTokens = getSystemDateTokens();
   const fieldMap = await getFieldMap();
   const consts = await loadConsts();
   const ctx = { proposal, fieldMap, consts, userCache: new Map(), dlCache: new Map() };
   const data = {};
   const loopInfos = {};
   for (const [tok, src] of Object.entries((mapping && mapping.tokens) || {})) {
+    if (Object.hasOwn(SYSTEM_DATE_TOKENS, tok)) continue;
+    if (src?.source === 'input') continue;
     data[tok] = await resolveToken(src, ctx);
   }
   for (const [loopKey, cfg] of Object.entries((mapping && mapping.loops) || {})) {
@@ -343,6 +347,7 @@ const buildData = async (proposal, mapping) => {
     loopInfos[loopKey] = { count: display.length };
     Object.assign(data, computeFooters(loopKey, cfg, raws, scalarVals));
   }
+  Object.assign(data, systemTokens);
   return { data, loopInfos };
 };
 
@@ -426,17 +431,16 @@ exports.exportReports = async (proposalIds, opts = {}) => {
         stripEmptyLoopRow(zip, loopKey);
       }
     }
-    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+    let rendered;
     try {
-      doc.render(data);
+      rendered = renderDocument({ zip, data, mapping });
     } catch (e) {
-      const details = e && e.properties && Array.isArray(e.properties.errors)
-        ? e.properties.errors.map((x) => x.message || String(x)).join('; ')
-        : (e && e.message) || 'Lỗi render';
-      fail(pid, details);
+      if (!e.statusCode) throw e;
+      fail(pid, e.message);
       continue;
     }
-    const buffer = doc.getZip().generate({ type: 'nodebuffer' });
+    const buffer = rendered.buffer;
+    rendered.warnings.forEach((reason) => warnings.push({ proposalId: pid, reason }));
     const code = rec.ma_de_xuat || rec.ma_de_xuat_gen || `#${rec.id}`;
     results.push({ proposalId: pid, code, buffer });
   }

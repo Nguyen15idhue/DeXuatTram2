@@ -5,6 +5,8 @@ const PizZip = require('pizzip');
 const mammoth = require('mammoth');
 const documentFormula = require('./documentFormula');
 const documentXmlService = require('./documentXmlService');
+const { SYSTEM_DATE_TOKENS } = require('./documentSystemTokens');
+const { getInputFields, compileDocx } = require('./documentRendering');
 
 const parseJson = (v, fb) => {
   if (!v) return fb;
@@ -64,6 +66,7 @@ const assertTemplateInput = (body, isCreate) => {
   if (mapping !== undefined && mapping !== null && typeof mapping !== 'object') {
     throw Object.assign(new Error('Mapping phải là object'), { statusCode: 400 });
   }
+  if (mapping) getInputFields(mapping);
   return {
     name: name !== undefined ? String(name).trim() : undefined,
     entity: entity !== undefined ? (String(entity).trim() || 'station_proposals') : undefined,
@@ -199,7 +202,12 @@ exports.listTokens = async (templateId) => {
   if (!tpl) throw Object.assign(new Error('Không tìm thấy template'), { statusCode: 404 });
   if (!tpl.file_id) throw Object.assign(new Error('Template chưa gắn file .docx'), { statusCode: 400 });
   const { xml } = await readDocxXml(tpl.file_id);
-  return extractTokens(xml);
+  return extractTokens(xml).map((item) => {
+    const name = item.token.slice(1, -1);
+    return item.kind === 'scalar' && Object.hasOwn(SYSTEM_DATE_TOKENS, name)
+      ? { ...item, system_label: SYSTEM_DATE_TOKENS[name] }
+      : item;
+  });
 };
 
 exports.previewBlank = async (templateId) => {
@@ -231,9 +239,16 @@ exports.validateMapping = async (templateId, mapping) => {
   const tokens = (m.tokens && typeof m.tokens === 'object') ? m.tokens : {};
   const loops = (m.loops && typeof m.loops === 'object') ? m.loops : {};
   for (const [tok, src] of Object.entries(tokens)) {
+    if (Object.hasOwn(SYSTEM_DATE_TOKENS, tok)) continue;
     if (!src || typeof src !== 'object' || !src.source) { errors.push(`Token "${tok}" chưa gán nguồn`); continue; }
-    if (!['field', 'const', 'datalist'].includes(src.source)) errors.push(`Token "${tok}" nguồn không hợp lệ`);
+    if (!['field', 'const', 'datalist', 'input'].includes(src.source)) errors.push(`Token "${tok}" nguồn không hợp lệ`);
     if (src.source === 'datalist' && (!src.listId || !src.column)) errors.push(`Token "${tok}" thiếu listId/column`);
+  }
+  try {
+    getInputFields(m);
+  } catch (cause) {
+    if (!cause.statusCode) throw cause;
+    errors.push(cause.message);
   }
   for (const [loopKey, cfg] of Object.entries(loops)) {
     if (!cfg || typeof cfg !== 'object') { errors.push(`Loop "${loopKey}" chưa cấu hình`); continue; }
@@ -287,13 +302,15 @@ exports.validateMapping = async (templateId, mapping) => {
   }
   if (tpl.file_id) {
     try {
+      const { zip } = await exports.readDocxXml(tpl.file_id);
+      compileDocx(zip);
       const found = await exports.listTokens(templateId);
       const opens = found.filter((t) => t.kind === 'loop_open').map((t) => t.token.replace(/[{}#/]/g, ''));
       const closes = found.filter((t) => t.kind === 'loop_close').map((t) => t.token.replace(/[{}#/]/g, ''));
       opens.forEach((o) => { if (!closes.includes(o)) errors.push(`Loop "{#${o}}" thiếu "{/${o}}"`); });
       closes.forEach((c) => { if (!opens.includes(c)) errors.push(`Loop "{/${c}}" thiếu "{#${c}}"`); });
       found.filter((t) => t.split).forEach((t) => errors.push(`Token "${t.token}" bị split-run (nằm trên nhiều run)`));
-      const boundNames = new Set(Object.keys(tokens));
+      const boundNames = new Set([...Object.keys(tokens), ...Object.keys(SYSTEM_DATE_TOKENS)]);
       for (const [loopKey, cfg] of Object.entries(loops)) {
         boundNames.add(loopKey);
         boundNames.add('stt');
@@ -308,7 +325,10 @@ exports.validateMapping = async (templateId, mapping) => {
         const name = t.token.replace(/[{}#/]/g, '');
         if (!boundNames.has(name)) errors.push(`Token "${t.token}" trong file chưa được bind`);
       }
-    } catch {}
+    } catch (cause) {
+      if (!cause.statusCode) throw cause;
+      errors.push(cause.message);
+    }
   }
   return { valid: errors.length === 0, errors };
 };

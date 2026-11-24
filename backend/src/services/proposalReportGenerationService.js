@@ -1,9 +1,10 @@
 const pool = require('../utils/db');
-const Docxtemplater = require('docxtemplater');
 const dynamicUtils = require('./dynamicUtils');
 const documentService = require('./documentService');
 const documentTemplateService = require('./documentTemplateService');
 const libreOfficeService = require('./libreOfficeService');
+const { SYSTEM_DATE_TOKENS } = require('./documentSystemTokens');
+const { getInputFields, validateInputs, renderDocument } = require('./documentRendering');
 
 const EDIT_STATUSES = new Set([
   'PROPOSAL_REPORT_CREATING',
@@ -45,7 +46,8 @@ const getAvailableTemplates = async (model) => {
 const editableFields = (template, fields, proposal) => {
   const byKey = new Map(fields.map((field) => [field.key, field]));
   const result = new Map();
-  for (const binding of Object.values(template.mapping?.tokens || {})) {
+  for (const [name, binding] of Object.entries(template.mapping?.tokens || {})) {
+    if (Object.hasOwn(SYSTEM_DATE_TOKENS, name)) continue;
     if (!binding || binding.source !== 'field' || result.has(binding.key)) continue;
     const field = byKey.get(binding.key);
     if (!field || FORBIDDEN_KEYS.has(field.key) || !EDITABLE_TYPES.has(field.type)) continue;
@@ -73,12 +75,13 @@ exports.listPreviewOptions = async ({ proposalId, user } = {}) => {
       id: template.id,
       name: template.name,
       model: template.model,
-      fields: editableFields(template, fields, proposal)
+      fields: editableFields(template, fields, proposal),
+      input_fields: getInputFields(template.mapping)
     }))
   };
 };
 
-const preview = async ({ proposalId, templateId, values, user } = {}) => {
+const preview = async ({ proposalId, templateId, values, inputs = {}, user } = {}) => {
   const context = await loadContext(proposalId, user);
   const id = Number(templateId);
   if (!Number.isSafeInteger(id) || id <= 0) throw error('Vui lòng chọn mẫu BCĐX');
@@ -106,6 +109,7 @@ const preview = async ({ proposalId, templateId, values, user } = {}) => {
     overrides[key] = field.type === 'number' && value !== '' ? Number(value) : value;
   }
   const mapping = template.mapping || {};
+  validateInputs(mapping, inputs);
   if (mapping.signatureAnchors?.length || mapping.signers?.length) {
     throw error('Mẫu có cấu hình chữ ký tự động chưa được hỗ trợ trong bản xem thử');
   }
@@ -120,21 +124,9 @@ const preview = async ({ proposalId, templateId, values, user } = {}) => {
       documentService.stripEmptyLoopRow(zip, key);
     }
   }
-  let doc;
-  try {
-    doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true,
-      nullGetter: (part) => { throw error(`Mẫu chưa gán dữ liệu cho trường ${part.value}`); }
-    });
-    doc.render(data);
-  } catch (cause) {
-    if (cause.statusCode) throw cause;
-    const details = cause.properties?.errors?.map((item) => item.message).join('; ') || cause.message;
-    throw error(`Không tạo được bản xem thử: ${details}`);
-  }
-  const buffer = doc.getZip().generate({ type: 'nodebuffer' });
-  return libreOfficeService.convertToPdf(buffer, '.docx');
+  const rendered = renderDocument({ zip, data, mapping, inputs });
+  const converted = await libreOfficeService.convertToPdf(rendered.buffer, '.docx');
+  return { ...converted, warnings: rendered.warnings };
 };
 
 let pendingPreviews = 0;

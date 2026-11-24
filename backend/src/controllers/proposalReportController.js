@@ -119,12 +119,13 @@ exports.generationPreview = async (req, res) => {
       proposalId: req.params.id,
       templateId: req.body?.template_id,
       values: req.body?.values,
+      inputs: req.body?.inputs,
       user: req.user
     });
     res.set({
       'Cache-Control': 'no-store',
       'Content-Type': 'application/pdf',
-      'X-Preview-Warnings': encodeURIComponent(JSON.stringify(result.fontWarnings || [])),
+      'X-Preview-Warnings': encodeURIComponent(JSON.stringify([...(result.warnings || []), ...(result.fontWarnings || [])])),
       'Access-Control-Expose-Headers': 'X-Preview-Warnings'
     }).send(result.pdfBuffer);
   } catch (error) {

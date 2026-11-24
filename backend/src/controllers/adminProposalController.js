@@ -454,7 +454,10 @@ exports.exportReports = async (req, res) => {
     if (skippedAll.length > 0) res.setHeader('X-Report-Skipped', skippedAll.join(','));
     if (result.warnings.length > 0) {
       res.setHeader('X-Report-Warnings', encodeURIComponent(result.warnings.map((w) => `#${w.proposalId} ${w.reason}`).join('; ').slice(0, 500)));
+      res.setHeader('X-Preview-Warnings', encodeURIComponent(JSON.stringify(result.warnings.map((w) => `#${w.proposalId} ${w.reason}`))));
     }
+    res.setHeader('Access-Control-Expose-Headers', 'X-Report-Skipped, X-Report-Warnings, X-Preview-Warnings');
+    res.setHeader('Cache-Control', 'no-store');
     return res.send(result.buffer);
   } catch (error) {
     if (error.statusCode) {

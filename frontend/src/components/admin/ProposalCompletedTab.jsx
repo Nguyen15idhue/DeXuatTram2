@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { adminProposalService, proposalRequestService } from '../../services/api';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
@@ -25,6 +26,7 @@ import {
 import { formatProposalScale } from '../../utils/proposalGrading';
 import { RotateCcw, Search } from 'lucide-react';
 import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilters';
+import SearchableMultiSelect from '../ui/SearchableMultiSelect';
 
 const PROPOSALS_VIEW_ID = 8;
 const STATUS_VALUES = ['APPROVED', 'CANCELLED'];
@@ -32,6 +34,32 @@ const EMPTY_FILTERS = {
   proposalStatus: [], model: [], province: [], region: [],
   ownerUserId: [], managerUserId: [], dateFrom: '', dateTo: ''
 };
+
+const DEFAULT_COMPLETED_FROZEN = 3;
+const DEFAULT_COMPLETED_HIDDEN_KEYS = ['review_level', ...PROPOSAL_MONEY_COLUMN_KEYS, ...PROPOSAL_HIDDEN_COLUMN_KEYS];
+const DEFAULT_COMPLETED_HIDDEN_LABELS = ['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS];
+const USER_TABLE_PREFS_PREFIX = 'tmt.userTablePrefs';
+
+const completedTablePrefsKey = (userId) => `${USER_TABLE_PREFS_PREFIX}.${userId}.proposals.completed`;
+
+const COMPLETED_COLUMN_TOGGLES = [
+  { key: 'ma_de_xuat', label: 'Mã đề xuất' },
+  { key: 'owner_name', label: 'Tên chủ trạm / Pháp nhân' },
+  { key: 'owner_department', label: 'Phòng ban đề xuất' },
+  { key: 'vung_mien', label: 'Miền đề xuất' },
+  { key: 'manager_name', label: 'Người phụ trách' },
+  { key: 'province', label: 'Tỉnh/Thành phố' },
+  { key: 'address', label: 'Địa chỉ chi tiết' },
+  { key: 'created_at', label: 'Thời gian tạo' },
+  { key: 'updated_at', label: 'Lần cập nhật cuối' },
+  { key: 'nguoi_de_xuat', label: 'Người đề xuất' },
+  { key: 'status', label: 'Trạng thái Quy trình' },
+  { key: 'cost', label: 'Tổng chi phí' },
+  { key: 'investment_cost', label: 'Giá trị đầu tư' },
+  { key: 'tong_chi_phi', label: 'Tổng chi phí' },
+  { key: 'tong_gia_tri_chot', label: 'Tổng giá trị chốt' },
+  { key: PROPOSAL_SCALE_COLUMN.key, label: PROPOSAL_SCALE_COLUMN.label }
+];
 
 const ProposalCompletedTab = ({ token }) => {
   const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
@@ -57,6 +85,66 @@ const ProposalCompletedTab = ({ token }) => {
   const [searchInput, setSearchInput] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const { user } = useAuth();
+  const [hiddenKeysOverride, setHiddenKeysOverride] = useState(null);
+  const [frozenOverride, setFrozenOverride] = useState(null);
+  const [columnWidths, setColumnWidths] = useState({});
+
+  const userTablePrefsKey = user?.id ? completedTablePrefsKey(user.id) : null;
+
+  useEffect(() => {
+    if (!userTablePrefsKey) return undefined;
+    try {
+      const raw = localStorage.getItem(userTablePrefsKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.hiddenColumnKeys) && parsed.hiddenColumnKeys.length) setHiddenKeysOverride(parsed.hiddenColumnKeys);
+        if (typeof parsed.frozenColumns === 'number') setFrozenOverride(parsed.frozenColumns);
+        if (parsed.columnWidths && typeof parsed.columnWidths === 'object') setColumnWidths(parsed.columnWidths);
+      }
+    } catch { /* ignore */ }
+    return undefined;
+  }, [userTablePrefsKey]);
+
+  useEffect(() => {
+    if (!userTablePrefsKey) return;
+    if (hiddenKeysOverride === null && frozenOverride === null && Object.keys(columnWidths).length === 0) return;
+    try {
+      localStorage.setItem(
+        userTablePrefsKey,
+        JSON.stringify({
+          hiddenColumnKeys: hiddenKeysOverride || DEFAULT_COMPLETED_HIDDEN_KEYS,
+          columnWidths,
+          frozenColumns: frozenOverride ?? DEFAULT_COMPLETED_FROZEN
+        })
+      );
+    } catch { /* ignore */ }
+  }, [userTablePrefsKey, hiddenKeysOverride, frozenOverride, columnWidths]);
+
+  const effectiveHiddenKeys = hiddenKeysOverride ?? DEFAULT_COMPLETED_HIDDEN_KEYS;
+
+  const handleColumnWidthsChange = (key, width) => {
+    setColumnWidths((prev) => ({ ...prev, [key]: width }));
+  };
+
+  const visibleToggleKeys = useMemo(
+    () => COMPLETED_COLUMN_TOGGLES.filter((t) => !effectiveHiddenKeys.includes(t.key)).map((t) => t.key),
+    [effectiveHiddenKeys]
+  );
+
+  const visibleColumnsCount = visibleToggleKeys.length;
+
+  const handleColumnVisibilityChange = (nextSelected) => {
+    const selectedSet = new Set((Array.isArray(nextSelected) ? nextSelected : []).map(String));
+    const toggleableKeys = new Set(COMPLETED_COLUMN_TOGGLES.map((t) => t.key));
+    const nextHiddenSet = new Set(
+      DEFAULT_COMPLETED_HIDDEN_KEYS.filter((k) => !toggleableKeys.has(k))
+    );
+    COMPLETED_COLUMN_TOGGLES.forEach((t) => {
+      if (!selectedSet.has(t.key)) nextHiddenSet.add(t.key);
+    });
+    setHiddenKeysOverride([...nextHiddenSet]);
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -201,6 +289,29 @@ const ProposalCompletedTab = ({ token }) => {
       {loading && !loadedRef.current ? (
         <div className="text-center py-10 text-base-content/60">Đang tải...</div>
       ) : (
+        <>
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <span className="text-xs text-base-content/70">Cột đóng băng:</span>
+          <select
+            className="select select-bordered select-xs"
+            value={frozenOverride ?? DEFAULT_COMPLETED_FROZEN}
+            onChange={(e) => setFrozenOverride(Number(e.target.value))}
+          >
+            {[0, 1, 2, 3, 4].map((n) => (<option key={n} value={n}>{n}</option>))}
+          </select>
+          <span className="text-xs text-base-content/70">Chọn cột hiển thị ({visibleColumnsCount}):</span>
+          <div className="w-72 max-w-full">
+            <SearchableMultiSelect
+              options={COMPLETED_COLUMN_TOGGLES.map((t) => ({ value: t.key, label: t.label }))}
+              values={visibleToggleKeys}
+              onChange={handleColumnVisibilityChange}
+              placeholder="-- Chọn cột hiển thị --"
+              selectedLabel="cột"
+              ariaLabel="Chọn cột hiển thị"
+              showSelectedChips={false}
+            />
+          </div>
+        </div>
         <DynamicTable
           ref={tableRef}
           entity="station_proposals"
@@ -218,14 +329,17 @@ const ProposalCompletedTab = ({ token }) => {
           }}
           additionalColumns={[...PROPOSAL_CONTEXT_COLUMNS, PROPOSAL_SCALE_COLUMN]}
           columnsAfter={{ anchorKey: 'nguoi_de_xuat', keys: ['owner_department', 'vung_mien'] }}
-          hiddenColumnKeys={['review_level', ...PROPOSAL_MONEY_COLUMN_KEYS, ...PROPOSAL_HIDDEN_COLUMN_KEYS]}
-          hiddenColumnLabels={['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS]}
+          hiddenColumnKeys={effectiveHiddenKeys}
+          hiddenColumnLabels={hiddenKeysOverride ? hiddenKeysOverride.map((k) => String(k).toLowerCase()) : DEFAULT_COMPLETED_HIDDEN_LABELS}
           density="compact"
           data={items}
           startIndex={(pagination.page - 1) * pagination.limit}
           cellRenderers={cellRenderers}
-          frozenColumns={3}
+          frozenColumns={frozenOverride ?? DEFAULT_COMPLETED_FROZEN}
+          columnWidths={columnWidths}
+          onColumnWidthsChange={handleColumnWidthsChange}
         />
+        </>
       )}
       <Pagination
         page={pagination.page}

@@ -1,4 +1,15 @@
 const { test, expect } = require('@playwright/test');
+const { createRequire } = require('node:module');
+const backendRequire = createRequire(require.resolve('../backend/package.json'));
+const PizZip = backendRequire('pizzip');
+
+const wordBuffer = (text) => {
+  const zip = new PizZip();
+  zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+  zip.file('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>`);
+  return zip.generate({ type: 'nodebuffer' });
+};
 
 test.use({ baseURL: process.env.E2E_BASE_URL || 'http://127.0.0.1:5187' });
 
@@ -23,7 +34,10 @@ test('xem thử mẫu không gửi duyệt và bỏ bản xem thử khi sửa d�
     let data = [];
     if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
     else if (path.endsWith('/generation-options')) data = {
-      templates: [{ id: 10, name: 'Mẫu NQ_LK', fields: [{ key: 'ten', label: 'Tên pháp nhân', type: 'text', value: 'Tên cũ' }] }]
+      templates: [{ id: 10, name: 'Mẫu NQ_LK',
+        fields: [{ key: 'ten', label: 'Tên pháp nhân', type: 'text', value: 'Tên cũ' }],
+        input_fields: [{ key: 'note', label: 'Nội dung bổ sung', type: 'textarea', required: true, value: 'Mặc định' }]
+      }]
     };
     else if (path.endsWith('/admin/proposal-reports')) data = [{
       id: 4, ma_de_xuat: 'DX-4', status: 'PROPOSAL_REPORT_CREATING', can_upload: true,
@@ -44,13 +58,112 @@ test('xem thử mẫu không gửi duyệt và bỏ bản xem thử khi sửa d�
   await expect(dialog.getByText('Bản xem thử chưa lưu dữ liệu', { exact: false })).toBeVisible();
   await dialog.getByLabel('Mẫu BCĐX').selectOption('10');
   await dialog.getByLabel('Tên pháp nhân').fill('Tên mới');
+  await expect(dialog.getByLabel('Nội dung bổ sung (bắt buộc)')).toHaveValue('Mặc định');
+  await dialog.getByLabel('Nội dung bổ sung (bắt buộc)').fill('Nội dung riêng\nDòng hai');
   await dialog.getByRole('button', { name: 'Xem thử PDF' }).click();
   await expect(dialog.locator('iframe[title="Xem thử BCĐX"]')).toBeVisible();
   await expect(dialog.getByText('Kiểm tra phông chữ')).toBeVisible();
   expect(mutations).toEqual([{ path: '/api/admin/proposal-reports/4/generation-preview', data: {
-    template_id: 10, values: { ten: 'Tên mới' }
+    template_id: 10, values: { ten: 'Tên mới' }, inputs: { note: 'Nội dung riêng\nDòng hai' }
   } }]);
-  await dialog.getByLabel('Tên pháp nhân').fill('Tên khác');
+  await dialog.getByLabel('Nội dung bổ sung (bắt buộc)').fill('Nội dung khác');
   await expect(dialog.locator('iframe[title="Xem thử BCĐX"]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('cấu hình trường nhập BCĐX và xem Word thật kèm cảnh báo mà không lỗi z', async ({ page }) => {
+  const errors = [];
+  const saves = [];
+  const template = { id: 10, name: 'Mẫu cấu hình', file_id: 7, status: 'active', mapping: {} };
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/files/7/download')) {
+      await route.fulfill({ contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: wordBuffer('{report_note}') });
+      return;
+    }
+    if (path.endsWith('/admin/proposals/reports')) {
+      expect(request.postDataJSON()).toEqual({ proposalIds: [1272], templateId: 10 });
+      await route.fulfill({
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers: { 'X-Preview-Warnings': encodeURIComponent(JSON.stringify(['#1272 Chưa cấu hình: extra'])) },
+        body: wordBuffer('Bản thật [Chưa cấu hình: extra]')
+      });
+      return;
+    }
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.endsWith('/documents/templates')) data = [template];
+    else if (path.endsWith('/documents/templates/10')) {
+      if (request.method() === 'PUT') {
+        saves.push(request.postDataJSON());
+        template.mapping = saves.at(-1).mapping;
+      }
+      data = template;
+    } else if (path.endsWith('/documents/templates/10/tokens')) data = [{ token: '{report_note}', kind: 'scalar' }];
+    else if (path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+  });
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.goto('/admin/documents');
+  await page.getByRole('button', { name: 'Gán trường', exact: true }).click();
+  await page.getByRole('button', { name: 'Người dùng nhập', exact: true }).click();
+  await page.getByLabel('Nhãn report_note', { exact: true }).fill('Nội dung BCĐX');
+  await page.getByLabel('Kiểu report_note', { exact: true }).selectOption('textarea');
+  await page.getByLabel('Mặc định report_note', { exact: true }).fill('Nội dung mẫu');
+  await page.getByLabel('Bắt buộc khi hoàn thiện BCĐX').check();
+  await page.getByRole('button', { name: 'Lưu mapping', exact: true }).click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].mapping.tokens.report_note).toEqual({
+    source: 'input', label: 'Nội dung BCĐX', type: 'textarea', required: true, defaultValue: 'Nội dung mẫu'
+  });
+  await page.getByRole('button', { name: 'Xem trước', exact: true }).click();
+  await expect(page.locator('.dxp-doc article')).toBeVisible();
+  await page.getByRole('button', { name: 'Dữ liệu thật', exact: true }).click();
+  await page.getByPlaceholder('ID đề xuất (vd 596)').fill('1272');
+  await page.getByRole('button', { name: 'Xem với dữ liệu', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('#1272 Chưa cấu hình: extra');
+  await expect(page.locator('.dxp-doc article')).toContainText('Bản thật');
+  expect(errors).toEqual([]);
+});
+
+test('ngày hệ thống trong mẫu không yêu cầu gán trường hoặc thêm vào form', async ({ page }) => {
+  const errors = [];
+  const validations = [];
+  const template = { id: 10, name: 'Mẫu ngày tự động', status: 'active', mapping: {} };
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.endsWith('/documents/templates')) data = [template];
+    else if (path.endsWith('/documents/templates/10')) data = template;
+    else if (path.endsWith('/documents/templates/10/tokens')) data = [
+      ...[
+        ['today_day', 'Ngày hiện tại (giờ Việt Nam)'],
+        ['today_month', 'Tháng hiện tại (giờ Việt Nam)'],
+        ['today_year', 'Năm hiện tại (giờ Việt Nam)']
+      ].map(([name, label]) => ({ token: `{${name}}`, kind: 'scalar', system_label: label })),
+      { token: '{customer_name}', kind: 'scalar' }
+    ];
+    else if (path.endsWith('/documents/templates/10/validate')) {
+      validations.push(request.postDataJSON());
+      data = { valid: false, errors: ['Token "{customer_name}" trong file chưa được bind'] };
+    } else if (path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+  });
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.goto('/admin/documents');
+  await page.getByRole('button', { name: 'Gán trường', exact: true }).click();
+  for (const label of ['Ngày', 'Tháng', 'Năm']) {
+    await expect(page.getByText(`Tự động: ${label} hiện tại (giờ Việt Nam) — không cần gán trường`, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByText('— chưa gán —', { exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Kiểm tra', exact: true }).click();
+  await expect(page.getByText('Token "{customer_name}" trong file chưa được bind', { exact: false })).toBeVisible();
+  expect(validations).toHaveLength(1);
+  expect(validations[0].mapping.tokens).toEqual({});
   expect(errors).toEqual([]);
 });
