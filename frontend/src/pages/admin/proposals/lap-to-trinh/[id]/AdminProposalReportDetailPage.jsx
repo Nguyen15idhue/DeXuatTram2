@@ -23,7 +23,7 @@ import ProposalReportUpdateModal from "../../../../../components/admin/ProposalR
 import ProposalReportPreviewModal from "../../../../../components/admin/ProposalReportPreviewModal";
 import PageHeader from "../../../../../components/ui/PageHeader";
 import Toast from "../../../../../components/Toast";
-import ProposalProgressiveDetails from "../../../../../components/admin/ProposalProgressiveDetails";
+import ProposalProgressiveDetails from "../../components/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
 import ProposalTableFieldValue from "../../../../../components/admin/ProposalTableFieldValue";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";

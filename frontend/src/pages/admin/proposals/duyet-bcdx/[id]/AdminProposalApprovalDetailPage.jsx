@@ -40,9 +40,9 @@ import {
   canRequestUpdate,
   getReportFiles,
 } from "../../../../../utils/proposalApproval";
-import ProposalProgressiveDetails from "../../../../../components/admin/ProposalProgressiveDetails";
+import ProposalProgressiveDetails from "../../components/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
-import ProposalStaticInfo from "../../../../../components/admin/ProposalStaticInfo";
+import ProposalStaticInfo from "../../components/ProposalStaticInfo";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";
 
 const AdminProposalApprovalDetailPage = () => {
