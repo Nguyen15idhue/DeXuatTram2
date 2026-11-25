@@ -1,5 +1,5 @@
 import { FileText, Paperclip } from 'lucide-react';
-import { getFieldValue, getLegalDocFiles, getProposalModelCode } from '../../utils/proposalGrading';
+import { getFieldValue, getLegalDocFiles, getProposalModelCode } from '../../../../utils/proposalGrading';
 
 const COMMON_FIELDS = [
   { key: 'province', label: 'Tỉnh / thành phố' },

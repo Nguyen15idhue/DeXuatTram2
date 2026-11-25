@@ -2,6 +2,7 @@
 // Đồng bộ Google Sheet riêng cho trạm đã ON (proposal status = ACTIVE).
 const pool = require('../utils/db');
 const { google } = require('googleapis');
+const { actualOnDateSerial } = require('../utils/sheetDate');
 
 const LOCK_NAME = 'on_station_sheet_sync';
 const BATCH_SIZE = 50;
@@ -115,18 +116,6 @@ const scalarValue = (value) => {
     return value.label || value.name || value.value || value.code || '';
   }
   return String(value).trim();
-};
-
-const formatDate = (value) => {
-  if (!value) return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const d = String(value.getDate()).padStart(2, '0');
-    const m = String(value.getMonth() + 1).padStart(2, '0');
-    return `${d}/${m}/${value.getFullYear()}`;
-  }
-  const text = String(value).slice(0, 10);
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : text;
 };
 
 const normalizeProvince = (value) => {
@@ -278,7 +267,7 @@ const buildRow = (proposal, serial) => {
     formatPoleScale(initial),
     formatPoleScale(deployed),
     countPoles(deployed),
-    formatDate(proposal.on_date),
+    actualOnDateSerial(proposal.on_date, proposal.id),
     '',
     scalarValue(proposal.ma_de_xuat_gen || custom.ma_de_xuat),
     person,
@@ -455,6 +444,22 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
       });
     }
   }
+
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId: config.spreadsheetId, fields: 'sheets(properties(sheetId,title))'
+  });
+  const sheet = (metadata.data.sheets || []).find(item => item.properties?.title === config.tabName);
+  if (!sheet || !Number.isInteger(sheet.properties.sheetId)) {
+    throw new Error('Không tìm thấy tab Google Sheet cần định dạng ngày ON trạm');
+  }
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.spreadsheetId,
+    requestBody: { requests: [{ repeatCell: {
+      range: { sheetId: sheet.properties.sheetId, startRowIndex: 1, startColumnIndex: 15, endColumnIndex: 16 },
+      cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'MM/dd/yyyy' } } },
+      fields: 'userEnteredFormat.numberFormat'
+    } }] }
+  });
 
   for (const { job, key, code, warnings } of completed) {
     for (const oldKey of warnings) {

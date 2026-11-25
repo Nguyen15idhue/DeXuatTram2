@@ -9,7 +9,7 @@ import {
 import useFieldOptions from "../../../../hooks/useFieldOptions";
 import FileViewer from "../../../../components/dynamic/FileViewer";
 import ProposalGradingSummary from "../../../../components/admin/ProposalGradingSummary";
-import ProposalProgressiveDetails from "../../../../components/admin/ProposalProgressiveDetails";
+import ProposalProgressiveDetails from "../components/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../components/admin/ProposalLocationMapButton";
 import ProposalTableFieldValue from "../../../../components/admin/ProposalTableFieldValue";
 import ProposalGoogleMapLink from "../../../../components/admin/ProposalGoogleMapLink";

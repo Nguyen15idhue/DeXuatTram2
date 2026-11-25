@@ -125,6 +125,47 @@ test('worker loads the selected proposer even when it is not an export field', a
   assert.equal(sheet.cells[1][4], 'Người được chọn');
 });
 
+test('Data_QT1 worker writes the date serial and applies its date format before completing', async (t) => {
+  const { google } = require('googleapis');
+  const keys = ['GOOGLE_APPLICATION_CREDENTIALS', 'PROPOSAL_GOOGLE_SHEETS_SPREADSHEET_ID', 'PROPOSAL_GOOGLE_SHEETS_TAB_NAME'];
+  const originalEnv = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = __filename;
+  process.env.PROPOSAL_GOOGLE_SHEETS_SPREADSHEET_ID = 'fixture';
+  process.env.PROPOSAL_GOOGLE_SHEETS_TAB_NAME = 'Data_QT1';
+  t.after(() => {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    require('../src/utils/ttlCache').del('fielddefs:all:station_proposals');
+  });
+  const sheet = createSheet(service.buildColumns([], 'Data_QT1').map(column => column.header));
+  sheet.sheets.spreadsheets.get = async () => ({ data: { sheets: [{ properties: { title: 'Data_QT1', sheetId: 7 } }] } });
+  let formats;
+  sheet.sheets.spreadsheets.batchUpdate = async ({ requestBody }) => { formats = requestBody.requests; };
+  t.mock.method(google.auth.GoogleAuth.prototype, 'getClient', async () => ({}));
+  t.mock.method(google, 'sheets', () => sheet.sheets);
+  t.mock.method(pool, 'getConnection', async () => ({
+    query: async sql => sql.includes('GET_LOCK') ? [[{ acquired: 1 }]] : [[]],
+    release: () => {}
+  }));
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes("updated_at < DATE_SUB")) return [{ affectedRows: 0 }];
+    if (sql.includes('SELECT proposal_id, operation')) return [[{ proposal_id: 1, operation: 'UPSERT', requested_version: 1 }]];
+    if (sql.includes("SET status = 'PROCESSING'")) return [{ affectedRows: 1 }];
+    if (sql.includes('FROM station_proposals p')) return [[record(1, { actual_on_date: '2026-10-10' })]];
+    if (sql.includes('FROM field_definitions')) return [[]];
+    if (sql.includes('SET synced_version')) {
+      assert.equal(sheet.cells[1][columnIndex('BC')], 46305);
+      assert.equal(formats[0].repeatCell.cell.userEnteredFormat.numberFormat.type, 'DATE');
+      return [{ affectedRows: 1 }];
+    }
+    if (sql.includes('SELECT DISTINCT manual_run_id')) return [[]];
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  assert.deepEqual(await service.processBatch(), { processed: 1 });
+});
+
 test('Data_QT1 validates the requested headers and preserves columns after the managed range', async () => {
   const qtConfig = { ...config, tabName: 'Data_QT1' };
   const requested = [
@@ -140,6 +181,16 @@ test('Data_QT1 validates the requested headers and preserves columns after the m
     [1, '1', ...Array(requested.length - 2).fill(''), 'Giữ nguyên khi cập nhật'],
     [2, '2', ...Array(requested.length - 2).fill('Dữ liệu cũ'), 'Giữ nguyên khi xóa']
   ]);
+  const batchUpdate = sheet.sheets.spreadsheets.values.batchUpdate;
+  sheet.sheets.spreadsheets.values.batchUpdate = async (request) => {
+    assert.equal(request.requestBody.valueInputOption, 'RAW');
+    return batchUpdate(request);
+  };
+  const append = sheet.sheets.spreadsheets.values.append;
+  sheet.sheets.spreadsheets.values.append = async (request) => {
+    assert.equal(request.valueInputOption, 'RAW');
+    return append(request);
+  };
   const old = createSheet(requested.map((title) => title.replace(/^ĐX_/, '')));
   await assert.rejects(service.assertHeader(old.sheets, qtConfig, fields), /Header Google Sheet không khớp/);
   assert.deepEqual(old.calls, []);
@@ -164,12 +215,12 @@ test('Data_QT1 validates the requested headers and preserves columns after the m
   assert.deepEqual([at('U'), at('AH'), at('BK'), at('BL'), at('BM'), at('BO'), at('DD'), at('DE'), at('DF')],
     [2, 1, '200 m²', 'Mô tả thử', 'TEST', 'Ghi chú thử', 'QH thử', 'PL thử', 'Giữ nguyên khi cập nhật']);
   assert.equal(at('BB'), '01/02/2026');
-  assert.equal(at('BC'), '02/03/2026');
+  assert.equal(at('BC'), 46056);
   assert.ok(sheet.cells[2].slice(0, requested.length).every((value) => value === ''));
   assert.equal(sheet.cells[2][requested.length], 'Giữ nguyên khi xóa');
   assert.equal(sheet.cells[3].length, requested.length);
   assert.equal(sheet.cells[3][1], '3');
-  assert.equal(sheet.cells[3][columnIndex('BC')], '12/31/2026');
+  assert.equal(sheet.cells[3][columnIndex('BC')], 46387);
 });
 
 test('Data_QT1 maps ON status and numeric percentage using existing finance rules', () => {
@@ -227,24 +278,33 @@ test('prepared empty ON columns receive headers only when all new cells are empt
   assert.deepEqual(mismatched.calls, []);
 });
 
-test('Data_QT1 formats only its percentage data column as a percentage', async () => {
+test('Data_QT1 formats only actual ON dates and percentage data columns', async () => {
   const calls = [];
   const sheets = { spreadsheets: {
     get: async () => ({ data: { sheets: [{ properties: { title: 'Data_QT1', sheetId: 7 } }] } }),
     batchUpdate: async (request) => calls.push(request)
   } };
-  await service.ensurePaidPercentFormat(sheets, { ...config, tabName: 'Data_QT1' }, fields);
+  await service.ensureDataQt1Formats(sheets, { ...config, tabName: 'Data_QT1' }, fields);
+  assert.equal(calls[0].requestBody.requests.length, 2);
   assert.deepEqual(calls[0].requestBody.requests[0].repeatCell, {
+    range: { sheetId: 7, startRowIndex: 1, startColumnIndex: columnIndex('BC'), endColumnIndex: columnIndex('BD') },
+    cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'dd/MM/yyyy' } } },
+    fields: 'userEnteredFormat.numberFormat'
+  });
+  assert.deepEqual(calls[0].requestBody.requests[1].repeatCell, {
     range: { sheetId: 7, startRowIndex: 1, startColumnIndex: columnIndex('BH'), endColumnIndex: columnIndex('BI') },
     cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0%' } } },
     fields: 'userEnteredFormat.numberFormat'
   });
-  await service.ensurePaidPercentFormat(sheets, config, fields);
+  await service.ensureDataQt1Formats(sheets, config, fields);
   assert.equal(calls.length, 1);
 });
 
 test('TEST_Data_QT1 uses the same fixed columns and log query as Data_QT1', async t => {
   assert.deepEqual(service.buildColumns(fields, 'TEST_Data_QT1'), service.buildColumns(fields, 'Data_QT1'));
+  const row = service.mapProposalToRow(record(1, { actual_on_date: '2026-01-05' }),
+    fields, 1, new Map(), definitions, 'TEST_Data_QT1');
+  assert.equal(row[columnIndex('BC')], 46027);
   let query;
   t.mock.method(pool, 'query', async sql => {
     query = sql;
@@ -253,6 +313,20 @@ test('TEST_Data_QT1 uses the same fixed columns and log query as Data_QT1', asyn
   await service.loadProposals([1], 'TEST_Data_QT1');
   assert.match(query, /JOIN proposal_activity_logs status_log/);
   assert.match(query, /ORDER BY l\.created_at DESC, l\.id DESC LIMIT 1/);
+});
+
+test('Data_QT1 writes actual ON dates as date serials using Vietnam time', () => {
+  const map = (value, tab = 'Data_QT1') => service.mapProposalToRow(
+    record(1, { actual_on_date: value }), fields, 1, new Map(), definitions, tab
+  )[columnIndex('BC')];
+  assert.equal(map('2026-10-10'), 46305);
+  assert.equal(map('2026-01-05'), 46027);
+  assert.equal(map(new Date('2026-01-04T17:00:00Z')), 46027);
+  assert.equal(map(new Date('2026-01-04T16:59:59Z')), 46026);
+  assert.equal(map(null), '');
+  assert.throws(() => map('2026-02-30'), /ngày ON thực tế không hợp lệ/);
+  assert.throws(() => map('not-a-date'), /ngày ON thực tế không hợp lệ/);
+  assert.equal(map('2026-01-05', 'Đề xuất'), '05/01/2026');
 });
 
 test('current header does not rewrite rows; safe append preserves external columns and rejects occupied cells', async () => {
@@ -308,11 +382,15 @@ test('exports the selected GĐKV department and independent status and actual ON
   assert.equal(row[6], 'Phòng Bắc');
   assert.equal(row[48], '02/01/2026 10:04');
   assert.equal(row[53], '01/02/2026');
-  assert.equal(row[54], '02/03/2026');
+  assert.equal(row[54], '03/02/2026');
   const dateObject = service.mapProposalToRow(record(3, {
     actual_on_date: new Date('2026-02-02T17:00:00Z')
   }), [], 1);
-  assert.equal(dateObject[54], '02/03/2026');
+  assert.equal(dateObject[54], '03/02/2026');
+  const singleDigitDate = service.mapProposalToRow(record(4, {
+    actual_on_date: new Date('2026-01-04T17:00:00Z')
+  }), [], 1);
+  assert.equal(singleDigitDate[54], '05/01/2026');
   const noManager = service.mapProposalToRow(record(2, { actual_on_date: null }), [], 1);
   assert.equal(noManager[6], '');
   assert.equal(noManager[48], '');

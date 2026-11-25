@@ -34,9 +34,22 @@ test('exports all twenty A-T columns in the required order, including duplicated
   assert.deepEqual(row, [
     7, 'EMS001', 'Trạm fixture', 'Contact, not assignee', 'Creator sales', 'MB',
     'https://www.google.com/maps?q=21%2C105', '21', '105', 'Địa chỉ fixture, Hà Nội', 'Hà Nội', 'Hà Nội',
-    'LK_4 DC 60kW', 'LK_2 DC 120kW + NQ_1 AC 22kW', 3, '18/11/2026',
+    'LK_4 DC 60kW', 'LK_2 DC 120kW + NQ_1 AC 22kW', 3, 46344,
     '', 'LK_HNO_0001', 'Creator sales', 'MB'
   ]);
+});
+
+test('converts ON dates to Sheet serials for ISO strings and Vietnam-time Date objects', () => {
+  for (const [value, expected] of [
+    ['2026-01-05', 46027],
+    ['2026-11-18', 46344],
+    [new Date('2026-01-04T17:00:00Z'), 46027],
+    [new Date('2026-01-04T16:59:59Z'), 46026],
+    [null, '']
+  ]) {
+    assert.equal(service.buildRow(proposal({ on_date: value }), 1)[15], expected);
+  }
+  assert.throws(() => service.buildRow(proposal({ on_date: '2026-02-30' }), 1), /ngày ON thực tế không hợp lệ/);
 });
 
 test('E and S prefer SALES creators, otherwise use the assigned account without role or parent inference', () => {
@@ -112,21 +125,53 @@ test('missing optional data does not block sync; invalid commitments fall back t
 
 const sheetMock = (rows, readError) => {
   const calls = [];
+  const formatCalls = [];
   return {
     calls,
-    spreadsheets: { values: {
+    formatCalls,
+    spreadsheets: {
+      get: async () => ({ data: { sheets: [
+        { properties: { title: 'ON stations', sheetId: 7 } },
+        { properties: { title: 'test-only', sheetId: 8 } }
+      ] } }),
+      batchUpdate: async request => { formatCalls.push(request); },
+      values: {
       get: async () => {
         if (readError) throw readError;
         return { data: { values: rows } };
       },
       batchUpdate: async (request) => { calls.push(request); },
       clear: async (request) => { calls.push(request); }
-    } }
+      }
+    }
   };
 };
 const config = { spreadsheetId: 'test-only', tabName: 'ON stations' };
 const jobs = [{ proposal_id: 1, operation: 'UPSERT', requested_version: 1 }];
 const keys = () => new Map([[1, { code: 'LK_HNO_0001', cms: 'EMS001', snapshot: 'EMS001' }]]);
+
+test('writes ON date serials as RAW and formats only P while preserving missing dates', async (t) => {
+  t.mock.method(pool, 'query', async () => [[]]);
+  const existing = service.buildRow(proposal({ on_date: '2026-11-18' }), 5);
+  const updated = proposal({ on_date: '2026-01-05' });
+  for (const rows of [[service.HEADER_ROW, existing], [service.HEADER_ROW]]) {
+    const sheet = sheetMock(rows);
+    await service.writeSheetRows(sheet, config, jobs, new Map([[1, updated]]), keys());
+    assert.equal(sheet.calls[0].requestBody.valueInputOption, 'RAW');
+    assert.equal(sheet.calls[0].requestBody.data[1].values[0][15], 46027);
+    assert.deepEqual(sheet.formatCalls[0].requestBody.requests, [{ repeatCell: {
+      range: { sheetId: 7, startRowIndex: 1, startColumnIndex: 15, endColumnIndex: 16 },
+      cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'MM/dd/yyyy' } } },
+      fields: 'userEnteredFormat.numberFormat'
+    } }]);
+  }
+  const sheet = sheetMock([service.HEADER_ROW, existing]);
+  await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal({ on_date: null })]]), keys());
+  assert.equal(sheet.calls[0].requestBody.data[1].values[0][15], null);
+  const inserted = sheetMock([service.HEADER_ROW]);
+  await service.writeSheetRows(inserted, config, jobs, new Map([[1, proposal({ on_date: null })]]), keys());
+  assert.equal(inserted.calls[0].requestBody.data[1].values[0][15], '');
+});
 
 test('sheet updates, inserts and clears A-T using the CMS code in B while preserving serials', async () => {
   const originalQuery = pool.query;
@@ -204,14 +249,18 @@ test('repeated reconciliation and deletion preserve U onward, including formulas
       if (values[0][column] !== null) cells[index][column] = values[0][column];
     }
   };
-  const sheet = { spreadsheets: { values: {
+  const sheet = { spreadsheets: {
+    get: async () => ({ data: { sheets: [{ properties: { title: 'ON stations', sheetId: 7 } }] } }),
+    batchUpdate: async () => {},
+    values: {
     get: async request => {
       assert.equal(request.range, "'ON stations'!A1:T");
       return { data: { values: cells.map(row => row.slice(0, 20)) } };
     },
     batchUpdate: async request => { request.requestBody.data.forEach(apply); },
     clear: async request => apply({ ...request, values: [Array(20).fill('')] })
-  } } };
+    }
+  } };
   pool.query = async () => [[]];
   try {
     for (let index = 0; index < 2; index++) {
@@ -428,6 +477,16 @@ test('Sheet write failures never mark jobs as synchronized', async t => {
   sheet.spreadsheets.values.batchUpdate = async () => { throw new Error('Google write failed'); };
   await assert.rejects(service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys()),
     /Google write failed/);
+  assert.deepEqual(queries, []);
+});
+
+test('date formatting failure does not mark jobs as synchronized', async t => {
+  const queries = [];
+  t.mock.method(pool, 'query', async (...args) => { queries.push(args); return [[]]; });
+  const sheet = sheetMock([service.HEADER_ROW]);
+  sheet.spreadsheets.batchUpdate = async () => { throw new Error('Google date format failed'); };
+  await assert.rejects(service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys()),
+    /Google date format failed/);
   assert.deepEqual(queries, []);
 });
 
