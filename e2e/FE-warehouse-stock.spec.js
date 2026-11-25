@@ -52,6 +52,28 @@ const setup = async (page, { role = 'ADMIN', conflict = false, saveError = false
   return { errors, writes };
 };
 
+test('warehouse defaults to stock and preserves explicitly selected tabs', async ({ page }) => {
+  const { errors } = await setup(page);
+  const stock = page.getByRole('tab', { name: 'Tồn kho', exact: true });
+  const poles = page.getByRole('tab', { name: 'Loại trụ sạc', exact: true });
+  await page.goto('/admin/kho?filter=example');
+  await expect(stock).toHaveClass(/tab-active/);
+  await expect(page.locator('tbody tr')).toHaveCount(3);
+  await poles.click();
+  await expect(poles).toHaveClass(/tab-active/);
+  await expect(page).toHaveURL(/filter=example.*tab=poles/);
+  await page.reload();
+  await expect(poles).toHaveClass(/tab-active/);
+  await stock.click();
+  await expect(stock).toHaveClass(/tab-active/);
+  await expect(page).toHaveURL(/filter=example.*tab=stock/);
+  await page.goto('/admin/kho?tab=invalid');
+  await expect(stock).toHaveClass(/tab-active/);
+  await page.goto('/admin/kho?tab=suppliers');
+  await expect(page.getByRole('tab', { name: 'Nhà cung cấp', exact: true })).toHaveClass(/tab-active/);
+  expect(errors).toEqual([]);
+});
+
 test('stock groups sort by numeric power and a detail link handles decimal power correctly', async ({ page }) => {
   const { errors } = await setup(page);
   await page.goto('/admin/kho?tab=stock');

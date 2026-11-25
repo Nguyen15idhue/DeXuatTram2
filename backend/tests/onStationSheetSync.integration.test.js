@@ -42,14 +42,18 @@ test('snapshot deletion and concurrent queue versions survive reconciliation', {
       "UPDATE on_station_sheet_sync_queue SET requested_version=2, status='PROCESSING', attempt_count=8 WHERE proposal_id=?",
       [id]
     );
-    const sheet = { spreadsheets: { values: {
+    const sheet = { spreadsheets: {
+      get: async () => ({ data: { sheets: [{ properties: { title: 'ON', sheetId: 7 } }] } }),
+      batchUpdate: async () => {},
+      values: {
       get: async () => ({ data: { values: [service.HEADER_ROW, service.buildRow(proposals[0], 1)] } }),
       batchUpdate: async request => {
         assert.equal(request.requestBody.data[1].range, "'ON'!A2:T2");
         assert.equal(request.requestBody.data[1].values[0][1], `${code}_CMS`);
         assert.equal(request.requestBody.data[1].values[0][17], code);
       }
-    } } };
+      }
+    } };
     const proposalMap = new Map([[id, proposals[0]]]);
     const config = { spreadsheetId: 'mock-only', tabName: 'ON' };
     await service.writeSheetRows(sheet, config,

@@ -103,14 +103,14 @@ const navigationItems = [
       },
       {
         path: "/admin/proposals/duyet-bcdx",
-        label: "Duyệt BCĐX",
+        label: "Admin kiểm tra BCĐX",
         icon: Gavel,
         roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
         access: canSeeApprovalPage,
       },
       {
         path: "/admin/proposals/trinh-ky",
-        label: "Trình ký",
+        label: "Ký duyệt BCĐX",
         icon: PenSquare,
         roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
       },
@@ -628,7 +628,9 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           "on_station",
           "finance",
         ];
-        const onStationTaskKeys = taskKeys.filter((key) => !["finance", "overview"].includes(key));
+        const onStationTaskKeys = taskKeys.filter(
+          (key) => !["finance", "overview"].includes(key),
+        );
         if (
           response?.success !== true ||
           !counts ||

@@ -51,7 +51,7 @@ const AdminWarehousePage = () => {
   const [activeTab, setActiveTab] = useState(
     visibleTabs.some((tab) => tab.key === searchParams.get("tab"))
       ? searchParams.get("tab")
-      : "suppliers",
+      : "stock",
   );
   const [toast, setToast] = useState(EMPTY_TOAST);
   const closeToast = useCallback(() => setToast(EMPTY_TOAST), []);
@@ -59,14 +59,13 @@ const AdminWarehousePage = () => {
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (tab && TABS.some((item) => item.key === tab)) setActiveTab(tab);
-    else setActiveTab("suppliers");
+    else setActiveTab("stock");
   }, [searchParams]);
 
   const changeTab = (tab) => {
     setActiveTab(tab);
     const next = new URLSearchParams(searchParams);
-    if (tab === "poles") next.delete("tab");
-    else next.set("tab", tab);
+    next.set("tab", tab);
     setSearchParams(next, { replace: true });
   };
 

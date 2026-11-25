@@ -1,7 +1,7 @@
 import { X, GitBranch } from 'lucide-react';
-import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
-import { getNumberedProposalStatusOptions } from '../../utils/proposalStatus';
-import { PROPOSAL_STATUSES } from '../../utils/mapStatuses';
+import { useNumberedProposalStatuses } from '../../../../contexts/ProposalStatusContext';
+import { getNumberedProposalStatusOptions } from '../../../../utils/proposalStatus';
+import { PROPOSAL_STATUSES } from '../../../../utils/mapStatuses';
 
 const STEPS = [
   {
