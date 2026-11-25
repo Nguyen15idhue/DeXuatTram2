@@ -1,8 +1,13 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const { requireAuth, requireProposalReportManager, requireProposalInfoManager } = require('../middlewares/auth');
 const proposalReportController = require('../controllers/proposalReportController');
 const reportDocuments = require('../controllers/proposalReportDocumentController');
+const generatedPdfUpload = multer({
+  storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 1 }
+}).single('file');
+let pendingGeneratedUploads = 0;
 
 /**
  * @swagger
@@ -241,7 +246,55 @@ router.get('/:id', requireAuth, requireProposalReportManager, proposalReportCont
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id', requireAuth, requireProposalReportManager, proposalReportController.upload);
-router.post('/:id/generate', requireAuth, requireProposalReportManager, proposalReportController.generate);
+/**
+ * @swagger
+ * /api/admin/proposal-reports/{id}/generate:
+ *   post:
+ *     tags: [Proposal Reports]
+ *     summary: Gửi duyệt đúng PDF đã xem thử từ mẫu
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file, proof]
+ *             properties:
+ *               file: { type: string, format: binary }
+ *               proof: { type: string }
+ *     responses:
+ *       200: { description: Đã lưu tài liệu và chuyển sang duyệt }
+ *       400: { description: Bản xem thử còn thiếu thông tin bắt buộc }
+ *       403: { description: Không có quyền }
+ *       409: { description: Bản xem thử hết hạn hoặc dữ liệu đã thay đổi }
+ */
+router.post('/:id/generate', requireAuth, requireProposalReportManager, (req, res, next) => {
+  if (pendingGeneratedUploads >= 3) {
+    return res.status(429).json({ success: false, message: 'Hệ thống đang xử lý nhiều BCĐX, vui lòng thử lại sau' });
+  }
+  pendingGeneratedUploads += 1;
+  let released = false;
+  const release = () => {
+    if (!released) {
+      released = true;
+      pendingGeneratedUploads -= 1;
+    }
+  };
+  res.once('finish', release);
+  res.once('close', release);
+  generatedPdfUpload(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError) {
+      return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({
+        success: false,
+        message: error.code === 'LIMIT_FILE_SIZE' ? 'PDF BCĐX vượt quá 20 MB' : 'Dữ liệu gửi BCĐX không hợp lệ'
+      });
+    }
+    return next(error);
+  });
+}, proposalReportController.generate);
 
 /**
  * @swagger
@@ -260,12 +313,41 @@ router.get('/:id/generation-options', requireAuth, requireProposalReportManager,
 
 /**
  * @swagger
+ * /api/admin/proposal-reports/{id}/generation-draft:
+ *   put:
+ *     tags: [Proposal Reports]
+ *     summary: Lưu trụ chốt và ngày dự kiến ON trước khi lập BCĐX
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [chot_so_luong_tru, ngay_du_kien_on, revision]
+ *             properties:
+ *               chot_so_luong_tru: { type: array, items: { type: object } }
+ *               ngay_du_kien_on: { type: string, format: date }
+ *               revision: { type: string }
+ *     responses:
+ *       200: { description: Đã lưu dữ liệu, chưa gửi duyệt }
+ *       400: { description: Dữ liệu không hợp lệ }
+ *       403: { description: Không có quyền }
+ *       409: { description: Trạng thái hoặc dữ liệu đã thay đổi }
+ */
+router.put('/:id/generation-draft', requireAuth, requireProposalReportManager, proposalReportController.saveGenerationDraft);
+
+/**
+ * @swagger
  * /api/admin/proposal-reports/{id}/generation-preview:
  *   post:
  *     tags: [Proposal Reports]
  *     summary: Xem thử PDF từ mẫu mà không lưu hoặc gửi duyệt
  *     security: [{ bearerAuth: [] }]
- *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: query, name: format, schema: { type: string, enum: [json] }, description: Trả PDF base64, cảnh báo và bằng chứng xác nhận trong JSON }
  *     requestBody:
  *       required: true
  *       content:
@@ -280,11 +362,26 @@ router.get('/:id/generation-options', requireAuth, requireProposalReportManager,
  *                 type: object
  *                 description: Giá trị nhập riêng BCĐX theo token source=input trong mapping; không lưu vào đề xuất
  *                 additionalProperties: { type: string }
+ *               saved_draft_revision:
+ *                 type: string
+ *                 description: Phiên bản trụ chốt và ngày ON đã lưu; bản xem thử dùng dữ liệu này nếu được truyền
+ *               chot_so_luong_tru:
+ *                 type: array
+ *                 description: Các dòng trụ chốt dùng riêng cho bản xem thử; giá và thành tiền tính theo danh mục hiện tại, không lưu vào đề xuất
+ *                 items:
+ *                   type: object
+ *                   required: [mo_hinh, so_luong, loai_tru]
+ *                   properties:
+ *                     mo_hinh: { type: string, enum: [TDT, LK, NQ] }
+ *                     so_luong: { type: integer, minimum: 1 }
+ *                     loai_tru: { type: string }
+ *                     ghi_chu: { type: string }
  *     responses:
  *       200:
- *         description: PDF xem thử, không thay đổi đề xuất
+ *         description: PDF xem thử hoặc JSON chứa PDF và cảnh báo; không thay đổi đề xuất
  *         content:
  *           application/pdf: { schema: { type: string, format: binary } }
+ *           application/json: { schema: { type: object } }
  *       400: { description: Mẫu hoặc dữ liệu không hợp lệ }
  *       403: { description: Không có quyền lập tờ trình }
  *       409: { description: Đề xuất không ở bước lập tờ trình }

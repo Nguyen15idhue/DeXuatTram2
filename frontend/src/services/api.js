@@ -636,14 +636,30 @@ export const proposalReportService = {
   upload(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token));
   },
-  generate(id, data, token) {
-    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-reports/${id}/generate`, data || {}, token));
+  generate(id, blob, proof, token) {
+    return runProposalTaskMutation(async () => {
+      const body = new FormData();
+      body.append('file', blob, 'BCDX.pdf');
+      body.append('proof', proof);
+      const response = await fetch(`${API_URL}/admin/proposal-reports/${id}/generate`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body
+      });
+      handleUnauthorized(response);
+      const result = await parseJsonSafe(response);
+      if (!response.ok || result.success === false) {
+        throw new Error(result.message || `Không gửi được BCĐX (HTTP ${response.status})`);
+      }
+      return result;
+    });
   },
   getGenerationOptions(id, token) {
     return api.getWithAuth(`/admin/proposal-reports/${id}/generation-options`, token);
   },
+  saveGenerationDraft(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reports/${id}/generation-draft`, data, token);
+  },
   async previewGeneration(id, data, token) {
-    const response = await fetch(`${API_URL}/admin/proposal-reports/${id}/generation-preview`, {
+    const response = await fetch(`${API_URL}/admin/proposal-reports/${id}/generation-preview?format=json`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(data)
@@ -653,12 +669,13 @@ export const proposalReportService = {
       const body = await parseJsonSafe(response);
       throw new Error(body.message || 'Không tạo được bản xem thử');
     }
-    if (!(response.headers.get('content-type') || '').toLowerCase().includes('application/pdf')) {
-      throw new Error('Bản xem thử không phải file PDF');
-    }
-    const warningHeader = response.headers.get('X-Preview-Warnings');
-    const warnings = warningHeader ? JSON.parse(decodeURIComponent(warningHeader)) : [];
-    return { blob: await response.blob(), warnings };
+    const result = await parseJsonSafe(response);
+    if (!result.success || !result.data?.pdf) throw new Error(result.message || 'Không nhận được bản xem thử PDF');
+    const bytes = Uint8Array.from(atob(result.data.pdf), (char) => char.charCodeAt(0));
+    return {
+      blob: new Blob([bytes], { type: 'application/pdf' }),
+      warnings: result.data.warnings || [], blocking: result.data.blocking || [], proof: result.data.proof
+    };
   },
   requestRevision(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token));

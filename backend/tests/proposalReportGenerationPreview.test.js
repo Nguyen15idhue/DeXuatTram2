@@ -12,6 +12,7 @@ const { getSystemDateTokens } = require('../src/services/documentSystemTokens');
 const rendering = require('../src/services/documentRendering');
 const adminProposals = require('../src/services/adminProposalService');
 const formulaEngine = require('../src/services/documentFormula');
+const lifecycle = require('../src/services/proposalLifecycle');
 
 const user = { id: 1, role: 'SUPER_ADMIN' };
 const fields = [
@@ -39,6 +40,55 @@ const createDocx = (text = '{name}: {quantity}') => {
 };
 
 test.after(() => pool.end());
+
+test('saving finalized poles and ON date preserves data and rejects a stale draft', async (t) => {
+  let proposal = {
+    id: 4, status: 'PROPOSAL_REPORT_CREATING', custom_data: {},
+    chot_so_luong_tru: null, tong_gia_tri_chot: null, saved_on_date: null
+  };
+  let rollbacks = 0;
+  const connection = {
+    beginTransaction: async () => {},
+    commit: async () => {},
+    rollback: async () => { rollbacks += 1; },
+    release: () => {},
+    query: async (sql, params) => {
+      if (sql.startsWith('UPDATE station_proposals')) {
+        proposal = {
+          ...proposal, chot_so_luong_tru: JSON.parse(params[0]),
+          tong_gia_tri_chot: Number(params[1]).toFixed(2), saved_on_date: params[2]
+        };
+        return [{ affectedRows: 1 }];
+      }
+      return [[{ ...proposal }]];
+    }
+  };
+  t.mock.method(pool, 'query', async (sql) => {
+    if (sql.includes('FROM users')) return [[{ custom_data: {} }]];
+    if (sql.includes('FROM station_proposals')) return [[{ ...proposal }]];
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  t.mock.method(pool, 'getConnection', async () => connection);
+  t.mock.method(reports, 'normalizePreviewChotRows', async () => ({
+    rows: [{ mo_hinh: 'LK', so_luong: 2, loai_tru: 'DC60', gia_chot: 100, thanh_tien: 200 }],
+    total: 200
+  }));
+  t.mock.method(lifecycle, 'logActivity', async () => {});
+
+  const initial = await reports.getGenerationDraft(4);
+  const saved = await reports.saveGenerationDraft({
+    user, id: 4, chotSoLuongTru: [{ mo_hinh: 'LK', so_luong: 2, loai_tru: 'DC60' }],
+    ngayDuKienOn: '2026-12-01', revision: initial.revision
+  });
+  assert.equal(saved.tong_gia_tri_chot, 200);
+  assert.equal((await reports.getGenerationDraft(4)).revision, saved.revision);
+  assert.equal(proposal.saved_on_date, '2026-12-01');
+  await assert.rejects(reports.saveGenerationDraft({
+    user, id: 4, chotSoLuongTru: [], ngayDuKienOn: '2026-12-02', revision: initial.revision
+  }), { statusCode: 409 });
+  assert.equal(proposal.saved_on_date, '2026-12-01');
+  assert.equal(rollbacks, 1);
+});
 
 test('preview filters templates, applies permitted edits without database writes', async (t) => {
   const queries = [];
@@ -81,7 +131,58 @@ test('preview filters templates, applies permitted edits without database writes
   await assert.rejects(generation.preview({ proposalId: 4, templateId: 11, user, values: {} }), /không khả dụng/);
   await assert.rejects(generation.preview({ proposalId: 4, templateId: 10, user, values: { status: 'APPROVED' } }), /không được phép|không hợp lệ/);
   await assert.rejects(generation.preview({ proposalId: 4, templateId: 10, user, values: { ngay_du_kien: '2026-02-31' } }), /ngày không hợp lệ/);
-  await assert.rejects(generation.generate({ proposalId: 4, user }), { statusCode: 501 });
+});
+
+test('only the unchanged, complete preview PDF may be sent for review', async (t) => {
+  const previousSecret = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
+  t.after(() => {
+    if (previousSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousSecret;
+  });
+  const proposal = {
+    id: 4, status: 'PROPOSAL_REPORT_CREATING',
+    custom_data: { mo_hinh_dau_tu: 'NQ_LK', ten_phap_nhan: 'Tên mới', so_luong: 3 }
+  };
+  const draft = {
+    revision: 'a'.repeat(64), ngay_du_kien_on: '2026-12-01',
+    chot_so_luong_tru: [{ mo_hinh: 'LK', so_luong: 1, loai_tru: 'DC60' }], tong_gia_tri_chot: 100
+  };
+  const reportTemplate = {
+    ...template, mapping: { ...template.mapping, tokens: {
+      ...template.mapping.tokens, extra: { source: 'input', type: 'text', label: 'Thông tin thêm', required: true }
+    } }
+  };
+  const pdf = Buffer.from('%PDF-test');
+  let submitted;
+  t.mock.method(pool, 'query', async (sql) => {
+    if (sql.startsWith('SELECT * FROM station_proposals')) return [[proposal]];
+    if (sql.includes('INSERT INTO files')) return [{ insertId: 99 }];
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  t.mock.method(reports, 'resolveScope', async () => ({ role: 'SUPER_ADMIN' }));
+  t.mock.method(reports, 'canUploadReport', async () => true);
+  t.mock.method(reports, 'getGenerationDraft', async () => draft);
+  t.mock.method(reports, 'uploadReport', async (input) => { submitted = input; return { status: 'PROPOSAL_REPORT_REVIEWING' }; });
+  t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => fields);
+  t.mock.method(templates, 'listTemplates', async () => [reportTemplate]);
+  t.mock.method(templates, 'listTokens', async () => []);
+  t.mock.method(templates, 'readDocxXml', async () => ({ zip: createDocx() }));
+  t.mock.method(documents, 'buildData', async () => ({ data: { name: 'Tên mới', quantity: 3 } }));
+  t.mock.method(converter, 'convertToPdf', async () => ({ pdfBuffer: pdf, fontWarnings: [] }));
+  t.mock.method(require('fs/promises'), 'mkdir', async () => {});
+  t.mock.method(require('fs/promises'), 'writeFile', async () => {});
+
+  const input = { proposalId: 4, templateId: 10, user, values: {}, savedDraftRevision: draft.revision };
+  const incomplete = await generation.preview({ ...input, inputs: { extra: '' } });
+  assert.ok(incomplete.blocking.length);
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: incomplete.proof }), { statusCode: 400 });
+  const complete = await generation.preview({ ...input, inputs: { extra: 'Đã nhập' } });
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: Buffer.from('other'), proof: complete.proof }), { statusCode: 409 });
+  const result = await generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof });
+  assert.equal(result.status, 'PROPOSAL_REPORT_REVIEWING');
+  assert.equal(submitted.files[0].id, 99);
+  assert.equal(submitted.expectedDraftRevision, draft.revision);
 });
 
 test('preview rejects unauthorized users, wrong status and unsupported signature anchors', async (t) => {
@@ -99,6 +200,42 @@ test('preview rejects unauthorized users, wrong status and unsupported signature
   await assert.rejects(generation.listPreviewOptions({ proposalId: 4, user }), { statusCode: 409 });
   status = 'PROPOSAL_REPORT_CREATING';
   await assert.rejects(generation.preview({ proposalId: 4, templateId: 10, values: {}, user }), /chữ ký|vị trí ký/);
+});
+
+test('preview uses temporary finalized poles and current catalogue prices without saving', async (t) => {
+  const queries = [];
+  t.mock.method(pool, 'query', async (sql) => {
+    queries.push(sql);
+    if (sql.includes('FROM station_proposals')) return [[{
+      id: 4, status: 'PROPOSAL_REPORT_CREATING', custom_data: { mo_hinh_dau_tu: 'NQ_LK' },
+      chot_so_luong_tru: [{ loai_tru: 'old' }], tong_gia_tri_chot: 10
+    }]];
+    if (sql.includes('FROM data_list_rows')) return [[{ data: { ten: 'DC60', gia: 100 } }]];
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  t.mock.method(reports, 'resolveScope', async () => ({ role: 'SUPER_ADMIN' }));
+  t.mock.method(reports, 'canUploadReport', async () => true);
+  t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => fields);
+  t.mock.method(templates, 'listTemplates', async () => [template]);
+  t.mock.method(templates, 'listTokens', async () => []);
+  t.mock.method(templates, 'readDocxXml', async () => ({ zip: createDocx('{name}') }));
+  t.mock.method(documents, 'buildData', async (proposal) => {
+    assert.equal(proposal.tong_gia_tri_chot, 300);
+    assert.deepEqual(proposal.chot_so_luong_tru.map(({ loai_tru, so_luong, gia_chot, thanh_tien }) =>
+      ({ loai_tru, so_luong, gia_chot, thanh_tien })), [
+      { loai_tru: 'DC60', so_luong: 3, gia_chot: 100, thanh_tien: 300 }
+    ]);
+    return { data: { name: 'OK' } };
+  });
+  t.mock.method(converter, 'convertToPdf', async () => ({ pdfBuffer: Buffer.from('%PDF-test') }));
+
+  await generation.preview({ proposalId: 4, templateId: 10, values: {}, user,
+    chotSoLuongTru: [{ mo_hinh: 'LK', so_luong: 3, loai_tru: 'DC60', gia_chot: 1 }] });
+  assert.ok(queries.every((sql) => /^\s*SELECT/i.test(sql)));
+  await assert.rejects(generation.preview({ proposalId: 4, templateId: 10, values: {}, user,
+    chotSoLuongTru: [{ mo_hinh: 'LK', so_luong: 0, loai_tru: 'DC60' }] }), /số lượng/i);
+  await assert.rejects(generation.preview({ proposalId: 4, templateId: 10, values: {}, user,
+    chotSoLuongTru: [] }), /ít nhất một dòng/);
 });
 
 test('real document mapping reads proposal data and marks unmapped tokens in preview', async (t) => {

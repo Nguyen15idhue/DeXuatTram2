@@ -225,7 +225,7 @@ exports.transition = async (id, to, opts = {}) => {
   const {
     reason, actorId, actorRole, source = 'user', manualOverride = false, ip,
     isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false, directOnStation = false,
-    signatureWithdrawal = false
+    signatureWithdrawal = false, expectedFromStatus
   } = opts;
   if (!ALL_STATUSES.includes(to)) {
     throw err('Trạng thái không hợp lệ', 400);
@@ -241,6 +241,9 @@ exports.transition = async (id, to, opts = {}) => {
   }
   const proposal = rows[0];
   const from = proposal.status;
+  if (expectedFromStatus !== undefined && from !== expectedFromStatus) {
+    throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+  }
   const isSignatureWithdrawal = signatureWithdrawal === true && from === 'SIGNATURE_PENDING'
     && to === 'PROPOSAL_REPORT_REVIEWING' && source === 'user';
   if (signatureWithdrawal) {
@@ -449,16 +452,20 @@ exports.transition = async (id, to, opts = {}) => {
            signature_completed_at = CASE WHEN ? = 'SIGNATURE_PENDING' THEN NULL ELSE signature_completed_at END,
            paused_from_status = CASE WHEN ? = 1 THEN NULL ELSE paused_from_status END,
            paused_at = CASE WHEN ? = 1 THEN NULL ELSE paused_at END
-       WHERE id = ?`,
+       WHERE id = ?${expectedFromStatus !== undefined ? ' AND status = ?' : ''}`,
       [
         to, rejectReasonValue, actorId || null,
         deadlines.supplement, deadlines.transition, deadlines.calendarId,
         to,
         isPausedCancellation ? 1 : 0,
         isPausedCancellation ? 1 : 0,
-        id
+        id,
+        ...(expectedFromStatus !== undefined ? [expectedFromStatus] : [])
       ]
     );
+    if (expectedFromStatus !== undefined && updateResult.affectedRows !== 1) {
+      throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+    }
   }
 
   if (!isPauseTransition && !isResumeTransition) {
