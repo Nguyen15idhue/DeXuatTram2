@@ -298,6 +298,7 @@ const buildLoop = async (cfg, ctx) => {
 
 const computeFooters = (loopKey, cfg, raws, scalarVals) => {
   const out = {};
+  const numeric = {};
   const tokens = new Set();
   raws.forEach((r) => Object.keys(r).forEach((t) => tokens.add(t)));
   Object.keys(scalarVals || {}).forEach((t) => tokens.add(t));
@@ -312,13 +313,18 @@ const computeFooters = (loopKey, cfg, raws, scalarVals) => {
     let val = '';
     try {
       val = documentFormula.evaluate(f.formula, aggs, null);
-    } catch {
-      val = '#ERR';
+    } catch (cause) {
+      throw Object.assign(new Error(`Footer "${loopKey}/${f.id}": ${cause.message}`), { statusCode: 400 });
     }
-    out[`${loopKey}_f_${f.id}_value`] = typeof val === 'number' && isFinite(val) ? formatNumberVal(val) : String(val ?? '');
+    const name = `${loopKey}_f_${f.id}_value`;
+    if (typeof val === 'number' && !Number.isFinite(val)) {
+      throw Object.assign(new Error(`Footer "${loopKey}/${f.id}": kết quả không hữu hạn; kiểm tra phép chia cho 0`), { statusCode: 400 });
+    }
+    if (typeof val === 'number') numeric[name] = val;
+    out[name] = typeof val === 'number' ? formatNumberVal(val) : String(val ?? '');
     out[`${loopKey}_f_${f.id}_label`] = f.label || '';
   }
-  return out;
+  return { display: out, numeric };
 };
 
 const loadConsts = async () => {
@@ -334,21 +340,30 @@ const buildData = async (proposal, mapping) => {
   const consts = await loadConsts();
   const ctx = { proposal, fieldMap, consts, userCache: new Map(), dlCache: new Map() };
   const data = {};
+  const numericData = {};
   const loopInfos = {};
   for (const [tok, src] of Object.entries((mapping && mapping.tokens) || {})) {
     if (Object.hasOwn(SYSTEM_DATE_TOKENS, tok)) continue;
-    if (src?.source === 'input') continue;
+    if (src?.source === 'input' || src?.source === 'formula') continue;
     data[tok] = await resolveToken(src, ctx);
+    const raw = src?.source === 'field' ? proposal[src.key]
+      : src?.source === 'const' ? consts[src.key] : undefined;
+    if ((typeof raw === 'number' || typeof raw === 'string') && String(raw).trim() !== '' && Number.isFinite(Number(raw))) {
+      numericData[tok] = Number(raw);
+    }
   }
   for (const [loopKey, cfg] of Object.entries((mapping && mapping.loops) || {})) {
     if (!cfg || typeof cfg !== 'object') { data[loopKey] = []; loopInfos[loopKey] = { count: 0 }; continue; }
     const { display, raws, scalarVals } = await buildLoop(cfg, ctx);
     data[loopKey] = display;
     loopInfos[loopKey] = { count: display.length };
-    Object.assign(data, computeFooters(loopKey, cfg, raws, scalarVals));
+    const footer = computeFooters(loopKey, cfg, raws, scalarVals);
+    Object.assign(data, footer.display);
+    Object.assign(numericData, footer.numeric);
   }
   Object.assign(data, systemTokens);
-  return { data, loopInfos };
+  Object.entries(systemTokens).forEach(([key, value]) => { numericData[key] = Number(value); });
+  return { data, loopInfos, numericData };
 };
 
 const stripEmptyLoopRow = (zip, loopKey) => {
@@ -424,7 +439,7 @@ exports.exportReports = async (proposalIds, opts = {}) => {
       continue;
     }
     const mapping = tpl.mapping || {};
-    const { data, loopInfos } = await buildData(rec, mapping);
+    const { data, loopInfos, numericData } = await buildData(rec, mapping);
     const { zip } = await documentTemplateService.readDocxXml(tpl.file_id);
     for (const [loopKey, cfg] of Object.entries(mapping.loops || {})) {
       if (cfg && cfg.render && cfg.render.empty === 'hide' && (loopInfos[loopKey] || { count: 0 }).count === 0) {
@@ -433,7 +448,7 @@ exports.exportReports = async (proposalIds, opts = {}) => {
     }
     let rendered;
     try {
-      rendered = renderDocument({ zip, data, mapping });
+      rendered = renderDocument({ zip, data, mapping, numericData });
     } catch (e) {
       if (!e.statusCode) throw e;
       fail(pid, e.message);

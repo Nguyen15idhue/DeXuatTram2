@@ -243,6 +243,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     const b = (mapping.tokens || {})[tokenName];
     if (!b) return null;
     if (b.source === 'input') return `Người dùng nhập: ${b.label || tokenName}`;
+    if (b.source === 'formula') return `Công thức: ${b.expression || '(chưa nhập)'}`;
     if (b.source === 'field') {
       const f = fields.find((x) => x.key === b.key);
       return `Trường: ${f ? (f.label || f.key) : b.key}`;
@@ -370,16 +371,26 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     });
   };
 
-  const setInputBinding = (name, patch) => {
+  const setScalarBinding = (name, source, patch) => {
     setMapping((prev) => ({
       ...prev,
       tokens: { ...prev.tokens, [name]: patch
         ? { ...prev.tokens[name], ...patch }
-        : { source: 'input', label: name, type: 'text', required: false, defaultValue: '' } }
+        : source === 'formula'
+          ? { source, expression: '', decimalPlaces: 0 }
+          : { source, label: name, type: 'text', required: false, defaultValue: '' } }
     }));
     setRealBytes(null);
     setRealWarnings([]);
   };
+  const setInputBinding = (name, patch) => setScalarBinding(name, 'input', patch);
+  const setFormulaBinding = (name, patch) => setScalarBinding(name, 'formula', patch);
+  const formulaReferences = useMemo(() => [
+    ...Object.keys(mapping.tokens || {}),
+    ...Object.entries(mapping.loops || {}).flatMap(([name, config]) =>
+      (config.footers || []).map((footer) => `${name}_f_${footer.id}_value`)),
+    'today_day', 'today_month', 'today_year'
+  ], [mapping]);
 
   const handleValidate = async () => {
     try {
@@ -520,6 +531,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   const bindLabel = (b) => {
     if (!b) return null;
     if (b.source === 'input') return { label: `Người dùng nhập: ${b.label}`, key: '' };
+    if (b.source === 'formula') return { label: `Công thức: ${b.expression || '(chưa nhập)'}`, key: '' };
     if (b.source === 'field') {
       const f = fields.find((x) => x.key === b.key);
       return { label: f ? (f.label || f.key) : b.key, key: b.key };
@@ -822,6 +834,11 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                         Người dùng nhập
                       </button>
                     )}
+                    {!r.loop && b?.source !== 'formula' && (
+                      <button type="button" className="btn btn-ghost btn-xs" onClick={() => setFormulaBinding(r.key)} title={`Công thức BCĐX: ${r.key}`}>
+                        Công thức BCĐX
+                      </button>
+                    )}
                     {bound && (
                       <button type="button" className="ml-auto text-[11px] opacity-60 hover:opacity-100 hover:text-error shrink-0"
                         title="Gỡ gán"
@@ -831,6 +848,23 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                     )}
                   </div>
                   <div className="text-[11px] opacity-60 truncate">{r.item.context}</div>
+                  {b?.source === 'formula' && (
+                    <div className="space-y-2 mt-2 text-xs">
+                      <label className="block">Biểu thức (tên token không có ngoặc nhọn)
+                        <textarea aria-label={`Công thức ${r.key}`} className="textarea textarea-bordered w-full font-mono text-xs" rows={2} maxLength={1000} value={b.expression || ''} onChange={(e) => setFormulaBinding(r.key, { expression: e.target.value })} placeholder="chi_phi_khac_f_tong_value + chi_phi_tru_f_tong_value" />
+                      </label>
+                      <label className="flex items-center gap-2">Số chữ số thập phân
+                        <select aria-label={`Thập phân ${r.key}`} className="select select-bordered select-xs" value={b.decimalPlaces ?? 0} onChange={(e) => setFormulaBinding(r.key, { decimalPlaces: Number(e.target.value) })}>
+                          {Array.from({ length: 11 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+                        </select>
+                      </label>
+                      <details>
+                        <summary className="cursor-pointer">Token có thể tham chiếu</summary>
+                        <div className="font-mono break-all max-h-28 overflow-auto">{formulaReferences.filter((name) => name !== r.key).join(', ')}</div>
+                      </details>
+                      <p>Hỗ trợ +, −, *, /, SUM, ROUND, IF. Tỷ lệ phần trăm: chia tổng rồi nhân 100; đặt dấu % trong Word.</p>
+                    </div>
+                  )}
                   {b?.source === 'input' && (
                     <div className="grid gap-2 mt-2 sm:grid-cols-2 text-xs">
                       <label>Nhãn nhập liệu

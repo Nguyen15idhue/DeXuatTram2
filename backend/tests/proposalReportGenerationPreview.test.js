@@ -11,6 +11,7 @@ const generation = require('../src/services/proposalReportGenerationService');
 const { getSystemDateTokens } = require('../src/services/documentSystemTokens');
 const rendering = require('../src/services/documentRendering');
 const adminProposals = require('../src/services/adminProposalService');
+const formulaEngine = require('../src/services/documentFormula');
 
 const user = { id: 1, role: 'SUPER_ADMIN' };
 const fields = [
@@ -280,6 +281,74 @@ test('default template lookup includes entity and model in SQL parameters', asyn
   });
   assert.equal((await documents.resolveTemplate('NQ_LK', null, 'proposal_report')).id, 1);
 });
+
+  test('cross-table formulas use original footer numbers and BCĐX-only numeric inputs', async (t) => {
+    documents.clearCache();
+    t.after(() => documents.clearCache());
+    t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => []);
+    t.mock.method(pool, 'query', async (sql) => {
+      assert.match(sql, /FROM document_constants/);
+      return [[]];
+    });
+    const mapping = {
+      tokens: {
+        ty_le: { source: 'formula', expression: 'chi_phi_tru_f_tong_value / tong_chi_phi * 100', decimalPlaces: 2 },
+        tong_chi_phi: { source: 'formula', expression: 'SUM(chi_phi_khac_f_tong_value, chi_phi_tru_f_tong_value, extra)' },
+        extra: { source: 'input', label: 'Bổ sung', type: 'number', defaultValue: '0' }
+      },
+      loops: Object.fromEntries(['chi_phi_khac', 'chi_phi_tru'].map((name) => [name, {
+        source: 'field', table: name, columns: { cost: 'cost' },
+        footers: [{ id: 'tong', formula: 'SUM(cost)', label: 'Tổng' }]
+      }]))
+    };
+    const built = await documents.buildData({
+      chi_phi_tru: [{ cost: 1000000 }, { cost: 2000000 }],
+      chi_phi_khac: [{ cost: 500000 }, { cost: 500000 }]
+    }, mapping);
+    assert.equal(built.data.chi_phi_tru_f_tong_value, '3.000.000');
+    assert.equal(built.numericData.chi_phi_tru_f_tong_value, 3000000);
+    const result = rendering.renderDocument({
+      zip: createDocx('{chi_phi_tru_f_tong_value}; {tong_chi_phi}; {ty_le}%'),
+      ...built, mapping, inputs: { extra: '0' }
+    });
+    const xml = new PizZip(result.buffer).file('word/document.xml').asText();
+    assert.match(xml, /3\.000\.000; 4\.000\.000; 75,00%/);
+    assert.deepEqual(result.warnings, []);
+  });
+
+  test('formula dependencies use unrounded values and report missing data without zero defaults', () => {
+    const mapping = { tokens: {
+      doubled: { source: 'formula', expression: 'half * 2' },
+      half: { source: 'formula', expression: 'amount / 2', decimalPlaces: 0 },
+      amount: { source: 'input', label: 'Số', type: 'number' }
+    } };
+    const result = formulaEngine.evaluateScalars(mapping, { amount: 3 });
+    assert.equal(result.display.half, '2');
+    assert.equal(result.raw.doubled, 3);
+    assert.equal(result.display.doubled, '3');
+    const missing = formulaEngine.evaluateScalars(mapping, {});
+    assert.equal(missing.display.half, '');
+    assert.equal(missing.display.doubled, '');
+    assert.equal(missing.warnings.length, 2);
+  });
+
+  test('formula configuration rejects unknown references, cycles and unsafe expressions', async (t) => {
+    const config = (expression) => ({ tokens: { total: { source: 'formula', expression } } });
+    assert.throws(() => formulaEngine.scalarPlan(config('unknown + 1')), /không có token/);
+    assert.throws(() => formulaEngine.scalarPlan(config('total + 1')), /tham chiếu vòng/);
+    assert.throws(() => formulaEngine.scalarPlan({ tokens: {
+      first: { source: 'formula', expression: 'second + 1' },
+      second: { source: 'formula', expression: 'first + 1' }
+    } }), /tham chiếu vòng/);
+    for (const expression of ['x = 1', 'import("fs")', 'random()', '[1, 2]', 'total.constructor', '"text"']) {
+      assert.throws(() => formulaEngine.scalarPlan(config(expression)), { statusCode: 400 });
+    }
+    assert.throws(() => formulaEngine.evaluateScalars(config('1 / 0'), {}), /chia cho 0/);
+    t.mock.method(templates, 'getTemplate', async () => ({ id: 10 }));
+    const checked = await templates.validateMapping(10, config('unknown + 1'));
+    assert.equal(checked.valid, false);
+    assert.match(checked.errors.join('; '), /unknown/);
+  });
 
 test('new NQ_LK template preserves chosen status and default flag', async (t) => {
   t.mock.method(pool, 'query', async (sql, params) => {

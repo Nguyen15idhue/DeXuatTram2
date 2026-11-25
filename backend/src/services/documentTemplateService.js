@@ -66,7 +66,10 @@ const assertTemplateInput = (body, isCreate) => {
   if (mapping !== undefined && mapping !== null && typeof mapping !== 'object') {
     throw Object.assign(new Error('Mapping phải là object'), { statusCode: 400 });
   }
-  if (mapping) getInputFields(mapping);
+  if (mapping) {
+    getInputFields(mapping);
+    documentFormula.scalarPlan(mapping);
+  }
   return {
     name: name !== undefined ? String(name).trim() : undefined,
     entity: entity !== undefined ? (String(entity).trim() || 'station_proposals') : undefined,
@@ -241,11 +244,12 @@ exports.validateMapping = async (templateId, mapping) => {
   for (const [tok, src] of Object.entries(tokens)) {
     if (Object.hasOwn(SYSTEM_DATE_TOKENS, tok)) continue;
     if (!src || typeof src !== 'object' || !src.source) { errors.push(`Token "${tok}" chưa gán nguồn`); continue; }
-    if (!['field', 'const', 'datalist', 'input'].includes(src.source)) errors.push(`Token "${tok}" nguồn không hợp lệ`);
+    if (!['field', 'const', 'datalist', 'input', 'formula'].includes(src.source)) errors.push(`Token "${tok}" nguồn không hợp lệ`);
     if (src.source === 'datalist' && (!src.listId || !src.column)) errors.push(`Token "${tok}" thiếu listId/column`);
   }
   try {
     getInputFields(m);
+    documentFormula.scalarPlan(m);
   } catch (cause) {
     if (!cause.statusCode) throw cause;
     errors.push(cause.message);

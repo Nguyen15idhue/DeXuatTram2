@@ -1,5 +1,6 @@
 const Docxtemplater = require('docxtemplater');
 const { SYSTEM_DATE_TOKENS } = require('./documentSystemTokens');
+const documentFormula = require('./documentFormula');
 
 const INPUT_TYPES = ['text', 'textarea', 'number', 'date'];
 const invalid = (message) => Object.assign(new Error(message), { statusCode: 400 });
@@ -63,7 +64,7 @@ const compileDocx = (zip, options = {}) => {
   }
 };
 
-const renderDocument = ({ zip, data, mapping = {}, inputs = {} }) => {
+const renderDocument = ({ zip, data, mapping = {}, inputs = {}, numericData = {} }) => {
   const warnings = new Set();
   const known = new Set([...Object.keys(mapping.tokens || {}), ...Object.keys(SYSTEM_DATE_TOKENS)]);
   const loopKeys = new Set(Object.keys(mapping.loops || {}));
@@ -93,6 +94,9 @@ const renderDocument = ({ zip, data, mapping = {}, inputs = {} }) => {
     return `[${configured ? 'Chưa có dữ liệu' : 'Chưa cấu hình'}: ${name}]`;
   };
   const resolvedInputs = validateInputs(mapping, inputs);
+  const inputNumbers = Object.fromEntries(Object.entries(resolvedInputs).filter(([, value]) => typeof value === 'number'));
+  const calculated = documentFormula.evaluateScalars(mapping, { ...numericData, ...inputNumbers });
+  calculated.warnings.forEach((warning) => warnings.add(warning));
   const doc = compileDocx(zip, {
     parser: (tag) => ({
       get: (scope) => {
@@ -119,7 +123,7 @@ const renderDocument = ({ zip, data, mapping = {}, inputs = {} }) => {
     }
   });
   try {
-    doc.render({ ...data, ...resolvedInputs });
+    doc.render({ ...data, ...resolvedInputs, ...calculated.display });
   } catch (cause) {
     throw documentError(cause);
   }

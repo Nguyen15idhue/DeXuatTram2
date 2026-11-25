@@ -117,14 +117,14 @@ const preview = async ({ proposalId, templateId, values, inputs = {}, user } = {
   if (tokens.some((item) => /^\{sig_/i.test(item.token))) {
     throw error('Mẫu có vị trí ký tự động chưa được hỗ trợ trong bản xem thử');
   }
-  const { data, loopInfos } = await documentService.buildData({ ...context.proposal, ...overrides }, mapping);
+  const { data, loopInfos, numericData } = await documentService.buildData({ ...context.proposal, ...overrides }, mapping);
   const { zip } = await documentTemplateService.readDocxXml(template.file_id);
   for (const [key, config] of Object.entries(mapping.loops || {})) {
     if (config?.render?.empty === 'hide' && !loopInfos?.[key]?.count) {
       documentService.stripEmptyLoopRow(zip, key);
     }
   }
-  const rendered = renderDocument({ zip, data, mapping, inputs });
+  const rendered = renderDocument({ zip, data, mapping, inputs, numericData });
   const converted = await libreOfficeService.convertToPdf(rendered.buffer, '.docx');
   return { ...converted, warnings: rendered.warnings };
 };

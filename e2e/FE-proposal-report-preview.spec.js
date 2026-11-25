@@ -167,3 +167,72 @@ test('ngày hệ thống trong mẫu không yêu cầu gán trường hoặc th�
   expect(validations[0].mapping.tokens).toEqual({});
   expect(errors).toEqual([]);
 });
+
+test('cấu hình công thức tổng liên bảng và tỷ lệ, kiểm tra vòng rồi xem dữ liệu thật', async ({ page }) => {
+  const formulaEngine = backendRequire('./src/services/documentFormula');
+  const renderer = backendRequire('./src/services/documentRendering');
+  const errors = [];
+  const template = { id: 10, name: 'Mẫu công thức', file_id: 7, status: 'active', mapping: {
+    tokens: {},
+    loops: {
+      chi_phi_khac: { source: 'field', table: 'other', columns: { cost: 'cost' }, footers: [{ id: 'tong', formula: 'SUM(cost)' }] },
+      chi_phi_tru: { source: 'field', table: 'poles', columns: { cost: 'cost' }, footers: [{ id: 'tong', formula: 'SUM(cost)' }] }
+    }
+  } };
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/files/7/download')) {
+      await route.fulfill({ contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: wordBuffer('{total}; {percent}%') });
+      return;
+    }
+    if (path.endsWith('/admin/proposals/reports')) {
+      const result = renderer.renderDocument({
+        zip: new PizZip(wordBuffer('{total}; {percent}%')),
+        mapping: template.mapping, data: {},
+        numericData: { chi_phi_khac_f_tong_value: 1000000, chi_phi_tru_f_tong_value: 3000000 }
+      });
+      await route.fulfill({ contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: result.buffer });
+      return;
+    }
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.endsWith('/documents/templates')) data = [template];
+    else if (path.endsWith('/documents/templates/10')) {
+      if (request.method() === 'PUT') template.mapping = request.postDataJSON().mapping;
+      data = template;
+    } else if (path.endsWith('/documents/templates/10/tokens')) data = ['total', 'percent'].map((name) => ({ token: `{${name}}`, kind: 'scalar' }));
+    else if (path.endsWith('/documents/templates/10/validate')) {
+      try {
+        formulaEngine.scalarPlan(request.postDataJSON().mapping);
+        data = { valid: true, errors: [] };
+      } catch (cause) {
+        data = { valid: false, errors: [cause.message] };
+      }
+    } else if (path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
+  });
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.goto('/admin/documents');
+  await page.getByRole('button', { name: 'Gán trường', exact: true }).click();
+  await page.getByRole('button', { name: 'Công thức BCĐX', exact: true }).first().click();
+  await page.getByLabel('Công thức total', { exact: true }).fill('total + 1');
+  await page.getByRole('button', { name: 'Kiểm tra', exact: true }).click();
+  await expect(page.getByText('Công thức BCĐX tham chiếu vòng tại "total"', { exact: false })).toBeVisible();
+  await page.getByLabel('Công thức total', { exact: true }).fill('chi_phi_khac_f_tong_value + chi_phi_tru_f_tong_value');
+  await page.getByRole('button', { name: 'Công thức BCĐX', exact: true }).click();
+  await page.getByLabel('Công thức percent', { exact: true }).fill('chi_phi_tru_f_tong_value / total * 100');
+  await page.getByLabel('Thập phân percent', { exact: true }).selectOption('2');
+  await page.getByRole('button', { name: 'Kiểm tra', exact: true }).click();
+  await expect(page.getByText('Mapping hợp lệ', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Lưu mapping', exact: true }).click();
+  await expect.poll(() => template.mapping.tokens.percent?.decimalPlaces).toBe(2);
+  await page.getByRole('button', { name: 'Xem trước', exact: true }).click();
+  await expect(page.locator('.dxp-doc article')).toBeVisible();
+  await page.getByRole('button', { name: 'Dữ liệu thật', exact: true }).click();
+  await page.getByPlaceholder('ID đề xuất (vd 596)').fill('1272');
+  await page.getByRole('button', { name: 'Xem với dữ liệu', exact: true }).click();
+  await expect(page.locator('.dxp-doc article')).toContainText('4.000.000; 75,00%');
+  expect(errors).toEqual([]);
+});
