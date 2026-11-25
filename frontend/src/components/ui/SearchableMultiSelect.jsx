@@ -12,6 +12,7 @@ const SearchableMultiSelect = ({
   noResultText = 'Không có kết quả',
   selectedLabel = 'model',
   ariaLabel,
+  showSelectedChips = true
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -153,7 +154,7 @@ const SearchableMultiSelect = ({
           </div>
         )}
       </div>
-      {selected.length > 0 && (
+      {showSelectedChips && selected.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5">
           {selected.map((v) => (
             <span key={v} className="badge badge-sm gap-1 max-w-full" title={v}>

@@ -15,7 +15,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, columnStyleOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, onStatusFilterChange, multiStatusFilter = false, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, columnStyleOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, onStatusFilterChange, multiStatusFilter = false, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null, columnWidths = null, onColumnWidthsChange = null }, ref) => {
   const navigate = useNavigate();
   const numberedStatuses = useNumberedProposalStatuses();
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,8 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
   const [frozenN, setFrozenN] = useState(typeof frozenColumns === 'number' ? frozenColumns : 2);
   const [frozenMap, setFrozenMap] = useState(null);
   const [frozenBgs, setFrozenBgs] = useState(null);
+  const [userWidths, setUserWidths] = useState({});
+  const dragRef = useRef(null);
   const [cellStyleNow, setCellStyleNow] = useState(Date.now());
   const frozenSigRef = useRef(null);
   const tableWrapRef = useRef(null);
@@ -47,6 +49,8 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
   const lastPushedRef = useRef('{}');
   const statusFilterRef = useRef(onStatusFilterChange);
   statusFilterRef.current = onStatusFilterChange;
+  const onColumnWidthsChangeRef = useRef(onColumnWidthsChange);
+  onColumnWidthsChangeRef.current = onColumnWidthsChange;
 
   useImperativeHandle(ref, () => ({
     clearFilters() {
@@ -175,6 +179,10 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setLoading(false);
     }
   }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, hiddenColumnLabelsSig, hiddenLabels, columnLabelOverridesSig, additionalColumnsSig, columnsAfterSig, numberedStatuses]);
+
+  useEffect(() => {
+    setUserWidths(columnWidths || {});
+  }, [columnWidths]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {
@@ -380,6 +388,38 @@ const toDisplayValue = (val) => {
     return () => window.removeEventListener('resize', measure);
   }, [frozenKeys, hasSelection, hasLeading, visibleColumns, pinActions, pinAfterIdx, showActions, (data || []).length]);
 
+  const suppressClickRef = useRef(null);
+
+  const handleColMouseDown = (e, key) => {
+    if (e.button !== 0) return;
+    if (key.startsWith('__')) return;
+    const th = e.currentTarget;
+    const startWidth = th.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const state = { key, startX, startWidth, current: startWidth };
+    dragRef.current = state;
+    const onMove = (ev) => {
+      const d = dragRef.current;
+      if (!d || d.key !== key) return;
+      d.current = Math.max(40, d.startWidth + (ev.clientX - d.startX));
+      setUserWidths((prev) => ({ ...prev, [d.key]: d.current }));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (d) {
+        onColumnWidthsChangeRef.current?.(d.key, d.current);
+        if (Math.abs(d.current - d.startWidth) > 3) suppressClickRef.current = { key: d.key, at: Date.now() };
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  useEffect(() => () => { dragRef.current = null; }, []);
+
   if (error) return <div className="alert alert-error"><span>{error}</span></div>;
   if (columns.length === 0 && !loading) return <div className="text-center py-8 text-base-content/40">Chưa có cột nào được cấu hình</div>;
 
@@ -443,9 +483,14 @@ const toDisplayValue = (val) => {
                 return (
                   <Fragment key={key}>
                     <th
-                      onClick={() => sortable && handleSort(key)}
+                      onMouseDown={(e) => handleColMouseDown(e, key)}
+                      onClick={() => {
+                        if (suppressClickRef.current?.key === key && Date.now() - suppressClickRef.current.at < 400) { suppressClickRef.current = null; return; }
+                        suppressClickRef.current = null;
+                        sortable && handleSort(key);
+                      }}
                       className={`${sortable ? 'cursor-pointer select-none' : ''} ${fp.className || ''}`}
-                      style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style }}
+                      style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style, ...(userWidths[key] ? { width: userWidths[key], minWidth: userWidths[key] } : {}) }}
                     >
                       {col.label}
                       {sortable && <span className="ml-1 text-xs">{getSortIcon(key)}</span>}
@@ -554,7 +599,7 @@ const toDisplayValue = (val) => {
                   );
                   return (
                     <Fragment key={key}>
-                      <td style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style, ...rowStyle, ...extraCellStyle }} className={fp.className}>
+                      <td style={{ ...colWidthStyle(col), ...columnStyleOverrides?.[key], ...fp.style, ...(userWidths[key] ? { width: userWidths[key], minWidth: userWidths[key] } : {}), ...rowStyle, ...extraCellStyle }} className={fp.className}>
                         {colIdx === 0 && depth > 0 ? <div style={{ paddingLeft: depth * 24 }}>{cell}</div> : cell}
                         {typeof cellFooter === 'function' ? cellFooter(row, key) : null}
                       </td>

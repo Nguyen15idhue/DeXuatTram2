@@ -1,4 +1,3 @@
-const Docxtemplater = require('docxtemplater');
 const JSZip = require('jszip');
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
@@ -7,6 +6,8 @@ const adminUserService = require('./adminUserService');
 const dataListService = require('./dataListService');
 const documentFormula = require('./documentFormula');
 const documentTemplateService = require('./documentTemplateService');
+const { SYSTEM_DATE_TOKENS, getSystemDateTokens } = require('./documentSystemTokens');
+const { renderDocument } = require('./documentRendering');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -297,6 +298,7 @@ const buildLoop = async (cfg, ctx) => {
 
 const computeFooters = (loopKey, cfg, raws, scalarVals) => {
   const out = {};
+  const numeric = {};
   const tokens = new Set();
   raws.forEach((r) => Object.keys(r).forEach((t) => tokens.add(t)));
   Object.keys(scalarVals || {}).forEach((t) => tokens.add(t));
@@ -311,13 +313,18 @@ const computeFooters = (loopKey, cfg, raws, scalarVals) => {
     let val = '';
     try {
       val = documentFormula.evaluate(f.formula, aggs, null);
-    } catch {
-      val = '#ERR';
+    } catch (cause) {
+      throw Object.assign(new Error(`Footer "${loopKey}/${f.id}": ${cause.message}`), { statusCode: 400 });
     }
-    out[`${loopKey}_f_${f.id}_value`] = typeof val === 'number' && isFinite(val) ? formatNumberVal(val) : String(val ?? '');
+    const name = `${loopKey}_f_${f.id}_value`;
+    if (typeof val === 'number' && !Number.isFinite(val)) {
+      throw Object.assign(new Error(`Footer "${loopKey}/${f.id}": kết quả không hữu hạn; kiểm tra phép chia cho 0`), { statusCode: 400 });
+    }
+    if (typeof val === 'number') numeric[name] = val;
+    out[name] = typeof val === 'number' ? formatNumberVal(val) : String(val ?? '');
     out[`${loopKey}_f_${f.id}_label`] = f.label || '';
   }
-  return out;
+  return { display: out, numeric };
 };
 
 const loadConsts = async () => {
@@ -328,22 +335,35 @@ const loadConsts = async () => {
 };
 
 const buildData = async (proposal, mapping) => {
+  const systemTokens = getSystemDateTokens();
   const fieldMap = await getFieldMap();
   const consts = await loadConsts();
   const ctx = { proposal, fieldMap, consts, userCache: new Map(), dlCache: new Map() };
   const data = {};
+  const numericData = {};
   const loopInfos = {};
   for (const [tok, src] of Object.entries((mapping && mapping.tokens) || {})) {
+    if (Object.hasOwn(SYSTEM_DATE_TOKENS, tok)) continue;
+    if (src?.source === 'input' || src?.source === 'formula') continue;
     data[tok] = await resolveToken(src, ctx);
+    const raw = src?.source === 'field' ? proposal[src.key]
+      : src?.source === 'const' ? consts[src.key] : undefined;
+    if ((typeof raw === 'number' || typeof raw === 'string') && String(raw).trim() !== '' && Number.isFinite(Number(raw))) {
+      numericData[tok] = Number(raw);
+    }
   }
   for (const [loopKey, cfg] of Object.entries((mapping && mapping.loops) || {})) {
     if (!cfg || typeof cfg !== 'object') { data[loopKey] = []; loopInfos[loopKey] = { count: 0 }; continue; }
     const { display, raws, scalarVals } = await buildLoop(cfg, ctx);
     data[loopKey] = display;
     loopInfos[loopKey] = { count: display.length };
-    Object.assign(data, computeFooters(loopKey, cfg, raws, scalarVals));
+    const footer = computeFooters(loopKey, cfg, raws, scalarVals);
+    Object.assign(data, footer.display);
+    Object.assign(numericData, footer.numeric);
   }
-  return { data, loopInfos };
+  Object.assign(data, systemTokens);
+  Object.entries(systemTokens).forEach(([key, value]) => { numericData[key] = Number(value); });
+  return { data, loopInfos, numericData };
 };
 
 const stripEmptyLoopRow = (zip, loopKey) => {
@@ -375,7 +395,7 @@ const resolveTemplate = async (model, templateId, entity = 'station_proposals') 
     `SELECT id, \`name\`, entity, model, file_id, mapping, status FROM document_templates
      WHERE entity = ? AND status = 'active' AND (model = ? OR model IS NULL)
      ORDER BY CASE WHEN model = ? THEN 0 ELSE 1 END, is_default DESC, id ASC LIMIT 1`,
-    [model, model]
+    [entity, model, model]
   );
   if (rows.length === 0 || !rows[0].file_id) {
     throw Object.assign(new Error(`Chưa cấu hình template cho mô hình ${model || '(trống)'}`), { statusCode: 400 });
@@ -397,6 +417,7 @@ const safeName = (s, fallback) => {
 
 exports.buildData = buildData;
 exports.resolveTemplate = resolveTemplate;
+exports.stripEmptyLoopRow = stripEmptyLoopRow;
 exports.exportReports = async (proposalIds, opts = {}) => {
   const warnings = [];
   const skipped = [];
@@ -418,24 +439,23 @@ exports.exportReports = async (proposalIds, opts = {}) => {
       continue;
     }
     const mapping = tpl.mapping || {};
-    const { data, loopInfos } = await buildData(rec, mapping);
+    const { data, loopInfos, numericData } = await buildData(rec, mapping);
     const { zip } = await documentTemplateService.readDocxXml(tpl.file_id);
     for (const [loopKey, cfg] of Object.entries(mapping.loops || {})) {
       if (cfg && cfg.render && cfg.render.empty === 'hide' && (loopInfos[loopKey] || { count: 0 }).count === 0) {
         stripEmptyLoopRow(zip, loopKey);
       }
     }
-    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+    let rendered;
     try {
-      doc.render(data);
+      rendered = renderDocument({ zip, data, mapping, numericData });
     } catch (e) {
-      const details = e && e.properties && Array.isArray(e.properties.errors)
-        ? e.properties.errors.map((x) => x.message || String(x)).join('; ')
-        : (e && e.message) || 'Lỗi render';
-      fail(pid, details);
+      if (!e.statusCode) throw e;
+      fail(pid, e.message);
       continue;
     }
-    const buffer = doc.getZip().generate({ type: 'nodebuffer' });
+    const buffer = rendered.buffer;
+    rendered.warnings.forEach((reason) => warnings.push({ proposalId: pid, reason }));
     const code = rec.ma_de_xuat || rec.ma_de_xuat_gen || `#${rec.id}`;
     results.push({ proposalId: pid, code, buffer });
   }

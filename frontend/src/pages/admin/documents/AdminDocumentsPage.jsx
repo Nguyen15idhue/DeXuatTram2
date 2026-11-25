@@ -363,6 +363,7 @@ const AdminDocumentsPage = () => {
                   <option value="TDT">TDT — Tự đầu tư</option>
                   <option value="NQ">NQ — Nhượng quyền</option>
                   <option value="LK">LK — Liên kết</option>
+                  <option value="NQ_LK">NQ_LK — Nhượng quyền và Liên kết</option>
                 </select>
               </div>
               <div className="form-control">

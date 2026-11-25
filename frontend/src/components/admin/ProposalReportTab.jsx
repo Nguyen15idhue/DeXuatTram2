@@ -8,6 +8,7 @@ import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
 import ProposalReportUpdateModal from './ProposalReportUpdateModal';
+import ProposalReportPreviewModal from './ProposalReportPreviewModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
@@ -96,6 +97,7 @@ const ProposalReportTab = ({ tab }) => {
   const [toastType, setToastType] = useState('success');
 
   const [uploadModal, setUploadModal] = useState({ open: false, record: null });
+  const [previewRecord, setPreviewRecord] = useState(null);
 
   const loadItems = useCallback(async (
     targetPage = 1,
@@ -143,11 +145,6 @@ const ProposalReportTab = ({ tab }) => {
 
   const openUpload = (record) => {
     setUploadModal({ open: true, record });
-  };
-
-  const handleGenerate = () => {
-    setToastType('info');
-    setToastMessage('Chức năng đang triển khai');
   };
 
   const handleUploaded = (result) => {
@@ -211,15 +208,15 @@ const ProposalReportTab = ({ tab }) => {
           {uploadButtonLabel(row)}
         </button>
       )}
-      <button
+      {row.can_upload && canUploadReport(row) && <button
         type="button"
         className="btn btn-xs btn-outline gap-1"
-        title="Tạo tờ trình BCĐX từ mẫu"
-        onClick={handleGenerate}
+        title="Xem thử tờ trình BCĐX từ mẫu"
+        onClick={() => setPreviewRecord(row)}
       >
         <FileText size={14} />
-        Tạo từ mẫu
-      </button>
+        Xem thử mẫu
+      </button>}
     </div>
   );
 
@@ -327,6 +324,8 @@ const ProposalReportTab = ({ tab }) => {
         onClose={() => setUploadModal({ open: false, record: null })}
         onSaved={handleUploaded}
       />
+
+      {previewRecord && <ProposalReportPreviewModal record={previewRecord} onClose={() => setPreviewRecord(null)} />}
 
       <Toast message={toastMessage} type={toastType} onClose={() => setToastMessage('')} />
     </div>

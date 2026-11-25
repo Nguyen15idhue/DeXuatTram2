@@ -5,7 +5,7 @@ import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
-import { getMapStatusLabel, getStatusLabel, getProposalMapStatus, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
+import { filterMapProposals, getMapStatusLabel, getStatusLabel, getProposalMapStatus, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getProposalDisplayName, getProposalDisplayPhone, isProposalAssignee, canShowProposalMapField } from '../utils/proposalDisplay';
 import { PROVINCES, ISLAND_POINTS, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
@@ -821,25 +821,10 @@ const MapView = ({
     return list;
   }, [stations, filters]);
 
-  const visibleProposals = useMemo(() => {
-    if (!filters) return proposals;
-    if (filters.hideProposals) return [];
-    let list = proposals;
-    list = list.filter(p => p.status !== 'CONTRACT_SIGNED');
-    const mapSet = new Set((proposalLegendStatuses || []).map(s => s.value));
-    if (mapSet.size > 0) {
-      list = list.filter(p => mapSet.has(getProposalMapStatus(p.status)));
-    }
-    if (filters.scope === 'mine' && user) {
-      const uid = Number(user.id);
-      list = list.filter(p => Number(p.user_id) === uid);
-    }
-    const statuses = filters.proposalStatuses || [];
-    if (statuses.length > 0) {
-      list = list.filter(p => statuses.includes(getProposalMapStatus(p.status)));
-    }
-    return list;
-  }, [proposals, filters, user, proposalLegendStatuses]);
+  const visibleProposals = useMemo(
+    () => filterMapProposals(proposals, filters, user, proposalLegendStatuses),
+    [proposals, filters, user, proposalLegendStatuses]
+  );
 
   const visibleEvReports = useMemo(() => {
     if (!filters || filters.hideEvReports) return [];

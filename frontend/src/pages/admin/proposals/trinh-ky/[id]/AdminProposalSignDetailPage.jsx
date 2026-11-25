@@ -22,6 +22,7 @@ import ProposalStaticInfo from "../../../../../components/admin/ProposalStaticIn
 import ProposalProgressiveDetails from "../../../../../components/admin/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";
+import { ProposalProposerCell } from "../../../../../components/admin/ProposalLinkCells";
 import FileViewer from "../../../../../components/dynamic/FileViewer";
 import ConfirmDialog from "../../../../../components/ui/ConfirmDialog";
 import Toast from "../../../../../components/Toast";
@@ -377,7 +378,15 @@ const AdminProposalSignDetailPage = () => {
       )}
 
       <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">
-        <InfoItem label="Người đề xuất" value={detail.user_name} />
+        <InfoItem
+          label="Người đề xuất"
+          value={
+            <ProposalProposerCell
+              row={detail}
+              value={proposalInfo.nguoi_de_xuat ?? proposalInfo.custom_data?.nguoi_de_xuat}
+            />
+          }
+        />
         <InfoItem label="Tên pháp nhân" value={getProposalLegalName(detail)} />
         {/* <InfoItem label="SĐT liên hệ" value={getProposalPhone(detail)} /> */}
         <InfoItem label="Mô hình đầu tư" value={detail.mo_hinh_dau_tu || "-"} />

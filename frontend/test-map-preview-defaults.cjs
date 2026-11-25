@@ -56,7 +56,7 @@ async function main() {
         }))
       );
     });
-    const expected = ['PENDING', 'REVIEWING', 'APPROVED', 'DEPLOYING', 'ACTIVE'];
+    const expected = ['PENDING', 'REVIEWING', 'APPROVED'];
     assert.deepEqual(await page.evaluate(() => window.previewDefaults), { preview: expected, normal: expected });
     for (const createPreview of [true, false]) {
       await page.evaluate((value) => window.mountMapPreview(value), createPreview);
@@ -65,7 +65,7 @@ async function main() {
       await modal.locator('.map-filter-toggle').click();
       const proposalGroup = modal.locator('.map-filter-group').filter({ has: page.locator('.map-filter-label', { hasText: 'Trạng thái đề xuất' }) });
       const selectedLabels = async () => (await proposalGroup.locator('.map-filter-chip.active').allTextContents()).map((text) => text.trim());
-      const expectedLabels = ['Mới đề xuất', 'Đang xem xét', 'Đã duyệt BCĐX', 'Đang triển khai', 'Hoạt động'];
+      const expectedLabels = ['Mới đề xuất', 'Đang xem xét', 'Đã duyệt BCĐX'];
       assert.deepEqual(await selectedLabels(), expectedLabels);
       await proposalGroup.getByRole('button', { name: 'Đang xem xét', exact: true }).click();
       assert.deepEqual(await selectedLabels(), expectedLabels.filter((label) => label !== 'Đang xem xét'));
@@ -74,7 +74,7 @@ async function main() {
       await modal.getByRole('button', { name: 'Close', exact: true }).click();
     }
     assert.deepEqual(errors, []);
-    console.log('PASS create/detail preview: five default proposal statuses, no cancelled/archived, toggles and reset; no runtime errors');
+    console.log('PASS create/detail preview: three default proposal statuses, no cancelled/archived, toggles and reset; no runtime errors');
   } finally {
     if (browser) await browser.close();
     await server.close();

@@ -321,7 +321,10 @@ const loadProposal = async (id) => {
   const proposalId = Number(id);
   if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
   const [rows] = await pool.query(
-    'SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat FROM station_proposals p WHERE p.id = ?',
+    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name
+     FROM station_proposals p
+     LEFT JOIN users u ON u.id = p.user_id
+     WHERE p.id = ?`,
     [proposalId]
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
@@ -432,6 +435,7 @@ const buildDetail = async (proposal, scope) => {
     ma_de_xuat: proposal.ma_de_xuat,
     status: proposal.status,
     user_id: proposal.user_id,
+    user_name: proposal.user_name,
     owner_name: proposal.owner_name,
     owner_phone: proposal.owner_phone,
     address: proposal.address || '',

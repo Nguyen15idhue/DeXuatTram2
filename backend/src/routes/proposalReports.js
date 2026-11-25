@@ -245,6 +245,54 @@ router.post('/:id/generate', requireAuth, requireProposalReportManager, proposal
 
 /**
  * @swagger
+ * /api/admin/proposal-reports/{id}/generation-options:
+ *   get:
+ *     tags: [Proposal Reports]
+ *     summary: Danh sách mẫu và trường có thể sửa để xem thử BCĐX
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     responses:
+ *       200: { description: Các mẫu phù hợp với mô hình đề xuất }
+ *       403: { description: Không có quyền lập tờ trình }
+ *       409: { description: Đề xuất không ở bước lập tờ trình }
+ */
+router.get('/:id/generation-options', requireAuth, requireProposalReportManager, proposalReportController.generationOptions);
+
+/**
+ * @swagger
+ * /api/admin/proposal-reports/{id}/generation-preview:
+ *   post:
+ *     tags: [Proposal Reports]
+ *     summary: Xem thử PDF từ mẫu mà không lưu hoặc gửi duyệt
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [template_id, values]
+ *             properties:
+ *               template_id: { type: integer }
+ *               values: { type: object, additionalProperties: { type: string } }
+ *               inputs:
+ *                 type: object
+ *                 description: Giá trị nhập riêng BCĐX theo token source=input trong mapping; không lưu vào đề xuất
+ *                 additionalProperties: { type: string }
+ *     responses:
+ *       200:
+ *         description: PDF xem thử, không thay đổi đề xuất
+ *         content:
+ *           application/pdf: { schema: { type: string, format: binary } }
+ *       400: { description: Mẫu hoặc dữ liệu không hợp lệ }
+ *       403: { description: Không có quyền lập tờ trình }
+ *       409: { description: Đề xuất không ở bước lập tờ trình }
+ */
+router.post('/:id/generation-preview', requireAuth, requireProposalReportManager, proposalReportController.generationPreview);
+
+/**
+ * @swagger
  * /api/admin/proposal-reports/{id}/request-revision:
  *   put:
  *     tags: [Proposal Reports]

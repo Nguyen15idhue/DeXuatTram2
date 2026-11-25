@@ -95,3 +95,116 @@ exports.evaluate = (expression, aggregatesByCol, currentColKey = null) => {
   const result = math.evaluate(expr, scope);
   return typeof result === 'number' ? result : String(result);
 };
+
+const scalarFunctions = {
+  ...customFunctions,
+  SUM: (...values) => values.reduce((sum, value) => sum + value, 0),
+  MIN: (...values) => Math.min(...values),
+  MAX: (...values) => Math.max(...values),
+  AVG: (...values) => values.reduce((sum, value) => sum + value, 0) / values.length
+};
+const invalidScalar = (message) => Object.assign(new Error(message), { statusCode: 400 });
+const safeScalarKey = (key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)
+  && !['__proto__', 'prototype', 'constructor'].includes(key);
+
+exports.scalarPlan = (mapping = {}) => {
+  const entries = Object.entries(mapping.tokens || {});
+  const available = new Set(entries.map(([name]) => name));
+  const footerNames = new Set();
+  for (const [loop, config] of Object.entries(mapping.loops || {})) {
+    (config?.footers || []).forEach((footer) => {
+      const name = `${loop}_f_${footer.id}_value`;
+      available.add(name);
+      footerNames.add(name);
+    });
+  }
+  ['today_day', 'today_month', 'today_year'].forEach((name) => available.add(name));
+  const formulas = new Map();
+  for (const [name, binding] of entries.filter(([, value]) => value?.source === 'formula')) {
+    if (!safeScalarKey(name) || Object.hasOwn(scalarFunctions, name) || footerNames.has(name)
+      || ['today_day', 'today_month', 'today_year'].includes(name)
+      || typeof binding.expression !== 'string' || !binding.expression.trim() || binding.expression.length > 1000
+      || (binding.decimalPlaces !== undefined && (!Number.isInteger(binding.decimalPlaces) || binding.decimalPlaces < 0 || binding.decimalPlaces > 10))) {
+      throw invalidScalar(`Công thức BCĐX "${name}" chưa cấu hình hợp lệ`);
+    }
+    let node;
+    try {
+      node = math.parse(binding.expression);
+    } catch {
+      throw invalidScalar(`Công thức BCĐX "${name}": cú pháp không hợp lệ`);
+    }
+    const dependencies = new Set();
+    let count = 0;
+    node.traverse((part, path, parent) => {
+      if (++count > 200 || !['ConstantNode', 'SymbolNode', 'OperatorNode', 'ParenthesisNode', 'FunctionNode'].includes(part.type)) {
+        throw invalidScalar(`Công thức BCĐX "${name}": biểu thức không được hỗ trợ`);
+      }
+      if (part.isOperatorNode && !['+', '-', '*', '/', '%', '^', '==', '!=', '<', '>', '<=', '>='].includes(part.op)) {
+        throw invalidScalar(`Công thức BCĐX "${name}": toán tử không được hỗ trợ`);
+      }
+      if (part.isConstantNode && !['number', 'boolean'].includes(typeof part.value)) {
+        throw invalidScalar(`Công thức BCĐX "${name}": chỉ hỗ trợ giá trị số`);
+      }
+      if (part.isFunctionNode && !Object.hasOwn(scalarFunctions, part.fn.name)) {
+        throw invalidScalar(`Công thức BCĐX "${name}": hàm không hỗ trợ "${part.fn.name}"`);
+      }
+      if (part.isSymbolNode && !(parent?.isFunctionNode && path === 'fn')) {
+        if (!safeScalarKey(part.name) || !available.has(part.name)) {
+          throw invalidScalar(`Công thức BCĐX "${name}": không có token "${part.name}"`);
+        }
+        dependencies.add(part.name);
+      }
+    });
+    formulas.set(name, { name, binding, dependencies: [...dependencies], node });
+  }
+  if (formulas.size > 128) throw invalidScalar('Mẫu có quá nhiều công thức BCĐX (tối đa 128)');
+  const ordered = [];
+  const visiting = new Set();
+  const done = new Set();
+  const visit = (name) => {
+    if (done.has(name)) return;
+    if (visiting.has(name)) throw invalidScalar(`Công thức BCĐX tham chiếu vòng tại "${name}"`);
+    visiting.add(name);
+    const formula = formulas.get(name);
+    formula.dependencies.filter((key) => formulas.has(key)).forEach(visit);
+    visiting.delete(name);
+    done.add(name);
+    ordered.push(formula);
+  };
+  formulas.forEach((_, name) => visit(name));
+  return ordered;
+};
+
+exports.evaluateScalars = (mapping, numericValues) => {
+  const scope = { ...scalarFunctions, ...numericValues };
+  const raw = {};
+  const display = {};
+  const warnings = [];
+  for (const { name, binding, dependencies, node } of exports.scalarPlan(mapping)) {
+    const missing = dependencies.filter((key) => typeof scope[key] !== 'number' || !Number.isFinite(scope[key]));
+    if (missing.length) {
+      warnings.push(`Công thức "${name}": chưa có dữ liệu số cho ${missing.join(', ')}`);
+      display[name] = '';
+      continue;
+    }
+    let value;
+    try {
+      value = node.compile().evaluate({
+        ...scalarFunctions,
+        ...Object.fromEntries(dependencies.map((key) => [key, scope[key]]))
+      });
+    } catch (cause) {
+      throw invalidScalar(`Công thức BCĐX "${name}": ${cause.message}`);
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw invalidScalar(`Công thức BCĐX "${name}": kết quả không hữu hạn hoặc không phải số; kiểm tra phép chia cho 0`);
+    }
+    scope[name] = value;
+    raw[name] = value;
+    display[name] = value.toLocaleString('vi-VN', {
+      minimumFractionDigits: binding.decimalPlaces ?? 0,
+      maximumFractionDigits: binding.decimalPlaces ?? 0
+    });
+  }
+  return { raw, display, warnings };
+};

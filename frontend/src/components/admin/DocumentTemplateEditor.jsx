@@ -83,11 +83,15 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   const [realProposalId, setRealProposalId] = useState('');
   const [realBytes, setRealBytes] = useState(null);
   const [realLoading, setRealLoading] = useState(false);
+  const [realWarnings, setRealWarnings] = useState([]);
   const [expandedTable, setExpandedTable] = useState(null);
   const [expandedDl, setExpandedDl] = useState(null);
   const [centerView, setCenterView] = useState('fields');
   const [paletteSearch, setPaletteSearch] = useState('');
   const [chipMode, setChipMode] = useState('label');
+  const systemTokens = useMemo(() => Object.fromEntries(
+    tokens.filter((item) => item.system_label).map((item) => [stripToken(item.token), item.system_label])
+  ), [tokens]);
 
   const loadAll = useCallback(async () => {
     try {
@@ -177,6 +181,10 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   };
 
   const dropOnToken = (tokenName, item) => {
+    if (systemTokens[tokenName]) {
+      setToast({ message: 'Token hệ thống tự điền theo giờ Việt Nam, không cần gán trường', type: 'error' });
+      return;
+    }
     if (!item) return;
     const lk = findLoopForToken(tokenName);
     setMapping((prev) => {
@@ -234,6 +242,8 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   const bindingLabel = (tokenName) => {
     const b = (mapping.tokens || {})[tokenName];
     if (!b) return null;
+    if (b.source === 'input') return `Người dùng nhập: ${b.label || tokenName}`;
+    if (b.source === 'formula') return `Công thức: ${b.expression || '(chưa nhập)'}`;
     if (b.source === 'field') {
       const f = fields.find((x) => x.key === b.key);
       return `Trường: ${f ? (f.label || f.key) : b.key}`;
@@ -361,6 +371,27 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     });
   };
 
+  const setScalarBinding = (name, source, patch) => {
+    setMapping((prev) => ({
+      ...prev,
+      tokens: { ...prev.tokens, [name]: patch
+        ? { ...prev.tokens[name], ...patch }
+        : source === 'formula'
+          ? { source, expression: '', decimalPlaces: 0 }
+          : { source, label: name, type: 'text', required: false, defaultValue: '' } }
+    }));
+    setRealBytes(null);
+    setRealWarnings([]);
+  };
+  const setInputBinding = (name, patch) => setScalarBinding(name, 'input', patch);
+  const setFormulaBinding = (name, patch) => setScalarBinding(name, 'formula', patch);
+  const formulaReferences = useMemo(() => [
+    ...Object.keys(mapping.tokens || {}),
+    ...Object.entries(mapping.loops || {}).flatMap(([name, config]) =>
+      (config.footers || []).map((footer) => `${name}_f_${footer.id}_value`)),
+    'today_day', 'today_month', 'today_year'
+  ], [mapping]);
+
   const handleValidate = async () => {
     try {
       const res = await documentService.validateMapping(templateId, mapping, token);
@@ -411,8 +442,11 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     }
     try {
       setRealLoading(true);
-      const buf = await documentService.fetchReportBytes(pid, templateId, token);
-      setRealBytes(buf);
+      setRealBytes(null);
+      setRealWarnings([]);
+      const result = await documentService.fetchReportBytes(pid, templateId, token);
+      setRealBytes(result.buffer);
+      setRealWarnings(result.warnings);
       setPreviewTab('data');
     } catch (e) {
       setToast({ message: e.message || 'Xuất báo cáo thất bại', type: 'error' });
@@ -424,6 +458,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   const previewDropToken = (name, item) => dropOnToken(name, item);
   const previewDropLoop = (key, item) => dropOnLoop(key, item);
   const previewUnbind = (name) => {
+    if (systemTokens[name]) return;
     setMapping((prev) => {
       const nt = { ...(prev.tokens || {}) };
       delete nt[name];
@@ -495,6 +530,8 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const bindLabel = (b) => {
     if (!b) return null;
+    if (b.source === 'input') return { label: `Người dùng nhập: ${b.label}`, key: '' };
+    if (b.source === 'formula') return { label: `Công thức: ${b.expression || '(chưa nhập)'}`, key: '' };
     if (b.source === 'field') {
       const f = fields.find((x) => x.key === b.key);
       return { label: f ? (f.label || f.key) : b.key, key: b.key };
@@ -510,7 +547,9 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     return { label: JSON.stringify(b), key: '' };
   };
 
-  const bindingInfo = (tokenName) => bindLabel((mapping.tokens || {})[tokenName]);
+  const bindingInfo = (tokenName) => systemTokens[tokenName]
+    ? { label: `Tự động: ${systemTokens[tokenName]}`, key: tokenName }
+    : bindLabel((mapping.tokens || {})[tokenName]);
 
   const loopBindingInfo = (loopKey) => {
     const cfg = normalizeLoopForEdit((mapping.loops || {})[loopKey] || {});
@@ -726,6 +765,11 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                 {realBytes && (
                   <DocxPreviewPane docxBytes={realBytes} bindings={previewBindings} loopKeys={previewLoopKeys} dragPayload={dragItem} onDropToken={previewDropToken} onDropLoop={previewDropLoop} onUnbind={previewUnbind} chipMode={chipMode} />
                 )}
+                {realWarnings.length > 0 && (
+                  <div className="alert alert-warning text-sm" role="status">
+                    <ul>{realWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+                  </div>
+                )}
               </div>
             )}
             {previewTab === 'html' && (
@@ -757,6 +801,14 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                 );
               }
               if (r.type === 'loopclose') return null;
+              if (systemTokens[r.key]) {
+                return (
+                  <div key={r.idx} className="rounded border border-success/40 bg-success/5 px-2 py-1.5 text-xs">
+                    <span className="font-mono font-bold">{r.item.token}</span>
+                    <span className="ml-2 text-success">Tự động: {systemTokens[r.key]} — không cần gán trường</span>
+                  </div>
+                );
+              }
               if (r.type === 'footer') {
                 return (
                   <div key={r.idx} className="flex items-center gap-2 px-2 py-1 rounded bg-warning/10 text-[11px]">
@@ -777,6 +829,16 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                   <div className="flex items-center gap-2 text-xs">
                     <span className="font-mono font-bold shrink-0">{r.item.token}</span>
                     <span className={`${bound ? 'text-success' : 'opacity-50'} truncate`}>{bound || '— chưa gán —'}</span>
+                    {!r.loop && b?.source !== 'input' && (
+                      <button type="button" className="btn btn-ghost btn-xs ml-auto" onClick={() => setInputBinding(r.key)} title={`Nhập riêng BCĐX: ${r.key}`}>
+                        Người dùng nhập
+                      </button>
+                    )}
+                    {!r.loop && b?.source !== 'formula' && (
+                      <button type="button" className="btn btn-ghost btn-xs" onClick={() => setFormulaBinding(r.key)} title={`Công thức BCĐX: ${r.key}`}>
+                        Công thức BCĐX
+                      </button>
+                    )}
                     {bound && (
                       <button type="button" className="ml-auto text-[11px] opacity-60 hover:opacity-100 hover:text-error shrink-0"
                         title="Gỡ gán"
@@ -786,6 +848,42 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                     )}
                   </div>
                   <div className="text-[11px] opacity-60 truncate">{r.item.context}</div>
+                  {b?.source === 'formula' && (
+                    <div className="space-y-2 mt-2 text-xs">
+                      <label className="block">Biểu thức (tên token không có ngoặc nhọn)
+                        <textarea aria-label={`Công thức ${r.key}`} className="textarea textarea-bordered w-full font-mono text-xs" rows={2} maxLength={1000} value={b.expression || ''} onChange={(e) => setFormulaBinding(r.key, { expression: e.target.value })} placeholder="chi_phi_khac_f_tong_value + chi_phi_tru_f_tong_value" />
+                      </label>
+                      <label className="flex items-center gap-2">Số chữ số thập phân
+                        <select aria-label={`Thập phân ${r.key}`} className="select select-bordered select-xs" value={b.decimalPlaces ?? 0} onChange={(e) => setFormulaBinding(r.key, { decimalPlaces: Number(e.target.value) })}>
+                          {Array.from({ length: 11 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+                        </select>
+                      </label>
+                      <details>
+                        <summary className="cursor-pointer">Token có thể tham chiếu</summary>
+                        <div className="font-mono break-all max-h-28 overflow-auto">{formulaReferences.filter((name) => name !== r.key).join(', ')}</div>
+                      </details>
+                      <p>Hỗ trợ +, −, *, /, SUM, ROUND, IF. Tỷ lệ phần trăm: chia tổng rồi nhân 100; đặt dấu % trong Word.</p>
+                    </div>
+                  )}
+                  {b?.source === 'input' && (
+                    <div className="grid gap-2 mt-2 sm:grid-cols-2 text-xs">
+                      <label>Nhãn nhập liệu
+                        <input aria-label={`Nhãn ${r.key}`} className="input input-bordered input-xs w-full" value={b.label || ''} maxLength={200} onChange={(e) => setInputBinding(r.key, { label: e.target.value })} />
+                      </label>
+                      <label>Kiểu dữ liệu
+                        <select aria-label={`Kiểu ${r.key}`} className="select select-bordered select-xs w-full" value={b.type} onChange={(e) => setInputBinding(r.key, { type: e.target.value, defaultValue: '' })}>
+                          <option value="text">Văn bản</option><option value="textarea">Nhiều dòng</option><option value="number">Số</option><option value="date">Ngày</option>
+                        </select>
+                      </label>
+                      <label>Giá trị mặc định
+                        <input aria-label={`Mặc định ${r.key}`} className="input input-bordered input-xs w-full" type={b.type === 'date' ? 'date' : 'text'} value={b.defaultValue ?? ''} maxLength={10000} onChange={(e) => setInputBinding(r.key, { defaultValue: e.target.value })} />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input className="checkbox checkbox-xs" type="checkbox" checked={!!b.required} onChange={(e) => setInputBinding(r.key, { required: e.target.checked })} />
+                        Bắt buộc khi hoàn thiện BCĐX
+                      </label>
+                    </div>
+                  )}
                   {b && b.source === 'datalist' && (
                     <div className="flex items-center gap-2 mt-1">
                       <input className="input input-bordered input-xs flex-1 min-w-0" placeholder="Cột khóa (vd loai_hinh)"
