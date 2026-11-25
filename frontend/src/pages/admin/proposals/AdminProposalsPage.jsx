@@ -21,14 +21,14 @@ import LocationMapModal, {
 import DuplicateCheckPanel from "../../../components/DuplicateCheckPanel";
 import DeadlineCountdown from "../../../components/DeadlineCountdown";
 import RecordDetailPopup from "../../../components/admin/RecordDetailPopup";
-import ProposalActivityPopup from "../../../components/admin/ProposalActivityPopup";
+import ProposalActivityPopup from "./components/ProposalActivityPopup";
 import ProposalRequestsTab from "../../../components/admin/ProposalRequestsTab";
 import ProposalCompletedTab from "../../../components/admin/ProposalCompletedTab";
 import {
   ProposalCodeLink,
   ProposalProposerCell,
 } from "../../../components/admin/ProposalLinkCells";
-import ProposalFlowInfo from "../../../components/admin/ProposalFlowInfo";
+import ProposalFlowInfo from "./components/ProposalFlowInfo";
 import HistoricalOnImportModal from "../../../components/admin/HistoricalOnImportModal";
 import {
   PROPOSAL_CONTEXT_COLUMNS,
