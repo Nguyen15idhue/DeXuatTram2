@@ -1,21 +1,20 @@
-import { useNavigate } from 'react-router-dom';
 import UserChip from '../dynamic/UserChip';
 
 export const PROPOSAL_LINK_CLASS = 'link link-primary underline cursor-pointer text-left';
 
 export const ProposalCodeLink = ({ id, code, to }) => {
-  const navigate = useNavigate();
-
   if (!id) return <span className="field-empty">-</span>;
+  const href = to || `/admin/proposals/chi-tiet/${id}`;
   return (
-    <button
-      type="button"
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
       className={PROPOSAL_LINK_CLASS}
-      title="Xem chi tiết đề xuất"
-      onClick={() => navigate(to || `/admin/proposals/chi-tiet/${id}`)}
+      title="Xem chi tiết đề xuất (tab mới)"
     >
       {code || `#${id}`}
-    </button>
+    </a>
   );
 };
 

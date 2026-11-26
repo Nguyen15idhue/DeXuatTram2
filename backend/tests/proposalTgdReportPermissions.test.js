@@ -58,7 +58,7 @@ test('TGĐ cannot upload reports even as owner/assignee; detail permissions deny
   const detail = await reports.getProposalDetail({ user: tgd, id: proposal.id });
   assert.equal(detail.permissions.canUpload, false);
   await assert.rejects(reports.uploadReport({ user: tgd, id: proposal.id, files: [{ id: 1 }] }), { statusCode: 403 });
-  await assert.rejects(require('../src/services/proposalReportGenerationService').generate({
+  await assert.rejects(require('../src/services/proposalReportGenerationService').listPreviewOptions({
     user: tgd, proposalId: proposal.id
   }), { statusCode: 403 });
   assert.equal(queries.some(query => /^\s*(UPDATE|INSERT|DELETE)/.test(query.sql)), false);
@@ -108,4 +108,38 @@ test('report-upload task notifications do not target TGĐ even as owner or ances
     assert.equal(ids.includes(7), false);
     assert.equal(ids.includes(1), true);
   }
+});
+
+test('Back Office can handle report tasks for unrelated proposals without broadening other users', async t => {
+  for (const role of ['ADMIN', 'SALES']) {
+    const user = { id: 6, role };
+    const scope = { userId: 6, role, isBackOffice: true, roleKey: 'GDTTKD' };
+    assert.equal(await reports.canUploadReport(scope, proposal), true);
+    assert.deepEqual(await access.buildReportTaskScopeSql(user, 'p', scope), { sql: '1 = 1', params: [] });
+  }
+  assert.equal(await reports.canUploadReport({ userId: 8, role: 'SALES', isBackOffice: false, roleKey: 'TGD' }, proposal), false);
+  t.mock.method(pool, 'query', async () => [[
+    { id: 6, role: 'SALES', custom_data: { department: 'Back Office' } },
+    { id: 8, role: 'CTV', custom_data: { department: 'Back Office' } },
+    { id: 1, role: 'SUPER_ADMIN', custom_data: {} }
+  ]]);
+  t.mock.method(require('../src/services/adminUserService'), 'getAncestorIds', async () => []);
+  const recipients = require('../src/services/proposalStepRecipients');
+  for (const status of ['PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_UPDATING']) {
+    const ids = await recipients.resolveStepRecipients(status, proposal);
+    assert.ok(ids.includes(6));
+    assert.ok(!ids.includes(8));
+  }
+});
+
+test('Back Office pending list exposes unrelated report tasks and upload permission', async t => {
+  const previousQuery = pool.query;
+  t.mock.method(pool, 'query', async (sql, params) => {
+    if (sql.includes('FROM users WHERE id')) return [[{ custom_data: { department: 'Back Office' } }]];
+    return previousQuery(sql, params);
+  });
+  const result = await reports.listProposals({ user: { id: 6, role: 'SALES' }, tab: 'pending', page: 1, limit: 1 });
+  assert.equal(result.pagination.total, 1);
+  assert.equal(result.proposals[0].can_upload, true);
+  assert.match(queries.find(query => /COUNT\(\*\) AS total/.test(query.sql)).sql, /1\s*=\s*1/);
 });

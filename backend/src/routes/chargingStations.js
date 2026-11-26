@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireSuperAdmin, requireChargingStationViewer } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin, requireChargingStationViewer, requireChargingStationManager } = require('../middlewares/auth');
 const { excelLimiter } = require('../middlewares/rateLimits');
 const chargingStationController = require('../controllers/chargingStationController');
 
@@ -123,11 +123,11 @@ router.get('/task-counts', requireChargingStationViewer, chargingStationControll
  *       200:
  *         description: Tóm tắt phiếu xuất, hóa đơn, phiếu nhập giữ lại và lượng trụ cộng kho
  *       403:
- *         description: Chỉ SUPER_ADMIN được xem trước thao tác xóa
+ *         description: Chỉ Back Office hoặc SUPER_ADMIN được xem trước thao tác xóa
  *       409:
  *         description: Dữ liệu tồn kho không thể rollback an toàn
  */
-router.get('/:id/delete-preview', requireSuperAdmin, chargingStationController.deletePreview);
+router.get('/:id/delete-preview', requireChargingStationManager, chargingStationController.deletePreview);
 
 /**
  * @swagger
@@ -135,7 +135,7 @@ router.get('/:id/delete-preview', requireSuperAdmin, chargingStationController.d
  *   post:
  *     tags: [Charging Stations]
  *     summary: Xóa ON trạm và rollback các phiếu liên quan
- *     description: Chỉ SUPER_ADMIN. Phiếu xuất và hóa đơn bị xóa; tồn kho được cộng lại theo số lượng xuất ròng; phiếu nhập giữ lại và bỏ liên kết ON trạm; đề xuất giữ nguyên trạng thái.
+ *     description: Chỉ Back Office hoặc SUPER_ADMIN. Phiếu xuất và hóa đơn bị xóa; tồn kho được cộng lại theo số lượng xuất ròng; phiếu nhập giữ lại và bỏ liên kết ON trạm; đề xuất giữ nguyên trạng thái.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -162,11 +162,11 @@ router.get('/:id/delete-preview', requireSuperAdmin, chargingStationController.d
  *       200:
  *         description: Đã xóa ON trạm trong một transaction
  *       403:
- *         description: Chỉ SUPER_ADMIN được xóa
+ *         description: Chỉ Back Office hoặc SUPER_ADMIN được xóa
  *       409:
  *         description: Dữ liệu thay đổi sau khi xem trước hoặc tồn kho không thể rollback an toàn
  */
-router.post('/:id/delete', requireSuperAdmin, chargingStationController.remove);
+router.post('/:id/delete', requireChargingStationManager, chargingStationController.remove);
 
 /**
  * @swagger
@@ -261,7 +261,7 @@ router.get('/:id/activity', requireChargingStationViewer, chargingStationControl
  *   post:
  *     tags: [Charging Stations]
  *     summary: Hủy ON trạm và lưu trữ đề xuất liên kết
- *     description: Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD trong phạm vi quản lý.
+ *     description: Back Office, SUPER_ADMIN hoặc GĐTTKD trong phạm vi quản lý.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -286,7 +286,7 @@ router.post('/:id/cancel', requireChargingStationViewer, chargingStationControll
  *   post:
  *     tags: [Charging Stations]
  *     summary: Khôi phục ON trạm bị hủy thủ công
- *     description: Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD trong phạm vi quản lý; khôi phục cả trạng thái đề xuất đã lưu.
+ *     description: Back Office, SUPER_ADMIN hoặc GĐTTKD trong phạm vi quản lý; khôi phục cả trạng thái đề xuất đã lưu.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -310,7 +310,7 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  * /api/admin/charging-stations/{id}:
  *   put:
  *     tags: [Charging Stations]
- *     summary: SUPER_ADMIN điều chỉnh toàn bộ hồ sơ ON trạm
+ *     summary: Back Office hoặc SUPER_ADMIN điều chỉnh toàn bộ hồ sơ ON trạm
  *     description: Whitelist thông tin, ngày/hạn, trạng thái hợp đồng/hạ tầng/tài chính/cọc, trạng thái phụ, người nghiệm thu và tài liệu. Không sửa ID/mã trạm, đề xuất nguồn, giao dịch kho, hóa đơn hay nhật ký. Ghi nguồn admin_override; không tạo chứng từ khi ghi đè trạng thái. expected_token lấy từ chi tiết.
  *     security:
  *       - bearerAuth: []
@@ -338,13 +338,13 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  *               delivery_completed:
  *                 type: boolean
  *                 enum: [true]
- *                 description: SUPER_ADMIN xác nhận nhận đủ trụ, tạo phiếu xuất nội bộ cho phần còn thiếu và mở việc Lắp trụ; không thay đổi tồn kho, không cần file hoặc hóa đơn tài chính. Gửi riêng với reason và expected_token.
+ *                 description: Back Office hoặc SUPER_ADMIN xác nhận nhận đủ trụ, tạo phiếu xuất nội bộ cho phần còn thiếu và mở việc Lắp trụ; không thay đổi tồn kho, không cần file hoặc hóa đơn tài chính. Gửi riêng với reason và expected_token.
  *               contract_file_ids: { type: array, items: { type: integer } }
  *               image_ids: { type: array, items: { type: integer } }
  *               acceptance_file_id: { type: integer, nullable: true }
  *               deployment_updates:
  *                 type: array
- *                 description: SUPER_ADMIN sửa hồ sơ nghiệm thu đã đạt hoặc ngày/ghi chú phần trụ đã ON; cùng transaction với hồ sơ trạm, bắt buộc reason chung.
+ *                 description: Back Office hoặc SUPER_ADMIN sửa hồ sơ nghiệm thu đã đạt hoặc ngày/ghi chú phần trụ đã ON; cùng transaction với hồ sơ trạm, bắt buộc reason chung.
  *                 items:
  *                   type: object
  *                   required: [id, expected_version]
@@ -385,14 +385,14 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  *       403:
  *         description: Không có quyền
  */
-router.put('/:id', requireSuperAdmin, chargingStationController.update);
+router.put('/:id', requireChargingStationManager, chargingStationController.update);
 
 /**
  * @swagger
  * /api/admin/charging-stations/{id}/commitments:
  *   get:
  *     tags: [Charging Stations]
- *     summary: Xem trụ chốt hoặc quy mô đề xuất mặc định (SUPER_ADMIN)
+ *     summary: Xem trụ chốt hoặc quy mô đề xuất mặc định (Back Office hoặc SUPER_ADMIN)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -410,7 +410,7 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  *         description: Dữ liệu cần đối soát
  *   put:
  *     tags: [Charging Stations]
- *     summary: Cập nhật trụ chốt, không thay đổi tồn kho (SUPER_ADMIN)
+ *     summary: Cập nhật trụ chốt, không thay đổi tồn kho (Back Office hoặc SUPER_ADMIN)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -449,11 +449,11 @@ router.put('/:id', requireSuperAdmin, chargingStationController.update);
  *         description: Phiên bản cũ hoặc số lượng thấp hơn đã xuất ròng
  */
 const commitmentService = require('../services/chargingStationCommitmentService');
-router.get('/:id/commitments', requireSuperAdmin, async (req, res) => {
+router.get('/:id/commitments', requireChargingStationManager, async (req, res) => {
   try { res.json({ success: true, data: await commitmentService.get(req.params.id, req.user) }); }
   catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' }); }
 });
-router.put('/:id/commitments', requireSuperAdmin, async (req, res) => {
+router.put('/:id/commitments', requireChargingStationManager, async (req, res) => {
   try { res.json({ success: true, data: await commitmentService.update(req.params.id, req.body, req.user, { ip: req.ip }) }); }
   catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' }); }
 });
@@ -498,7 +498,7 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *   post:
  *     tags: [Charging Stations]
  *     summary: Gắn file hợp đồng và hoàn tất thủ tục (Back Office)
- *     description: Cho phép chọn DONE từ NOT/DOING/DONE; có thể dùng lại file đã gắn hoặc file mới do chính người thực hiện tải lên.
+ *     description: Cho phép chọn DONE từ NOT/DOING/DONE; số hợp đồng là bắt buộc, kể cả khi lưu lại hợp đồng cũ. Có thể dùng lại số và file đã gắn.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -521,6 +521,10 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *                 minItems: 1
  *                 items:
  *                   type: integer
+ *               contract_number:
+ *                 type: string
+ *                 maxLength: 255
+ *                 description: Bắt buộc nếu chưa có số đã lưu; không được để trống.
  *               contract_effective_date:
  *                 type: string
  *                 format: date
@@ -614,8 +618,8 @@ router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, 
  *     summary: Cập nhật trạng thái, ngày và ghi chú hạ tầng
  *     description: >
  *       Người đề xuất, nguoi_phu_trach, sales_quan_ly và quản lý nhánh hợp lệ được cập nhật, kể cả CTV/NPP được giao.
- *       Back Office và Setup/Vận hành vẫn được cập nhật nhưng không nhận task chỉ vì thuộc phòng.
- *       SUPER_ADMIN toàn quyền. Chọn NOT/DOING/DONE; lùi giữ ngày và ghi chú cũ, không tự lùi các bước khác.
+ *       Back Office, Setup/Vận hành và SUPER_ADMIN nhận task theo quyền ON trạm.
+ *       Chọn NOT/DOING/DONE; lùi giữ ngày và ghi chú cũ, không tự lùi các bước khác.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -870,16 +874,16 @@ router.put('/:id/acceptance/result', requireChargingStationViewer, chargingStati
  * @swagger
  * /api/admin/charging-stations/acceptance/bulk/preview:
  *   get:
- *     summary: Xem trước tất cả trạm đủ điều kiện nghiệm thu hàng loạt (chỉ SUPER_ADMIN)
+ *     summary: Xem trước tất cả trạm đủ điều kiện nghiệm thu hàng loạt (Back Office hoặc SUPER_ADMIN)
  *     tags: [Charging Stations]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200: { description: Danh sách không phụ thuộc bộ lọc hoặc phân trang; trả request_id, batch_size và token cho mỗi trạm }
- *       403: { description: Chỉ SUPER_ADMIN }
+ *       403: { description: Chỉ Back Office hoặc SUPER_ADMIN }
  * /api/admin/charging-stations/acceptance/bulk:
  *   post:
- *     summary: Đánh dấu nghiệm thu đạt hàng loạt, không tạo hồ sơ (chỉ SUPER_ADMIN)
+ *     summary: Đánh dấu nghiệm thu đạt hàng loạt, không tạo hồ sơ (Back Office hoặc SUPER_ADMIN)
  *     tags: [Charging Stations]
  *     security:
  *       - bearerAuth: []
@@ -906,10 +910,10 @@ router.put('/:id/acceptance/result', requireChargingStationViewer, chargingStati
  *     responses:
  *       200: { description: Tổng hợp updated/skipped/failed và kết quả từng trạm; trạm thay đổi sau xem trước bị bỏ qua }
  *       400: { description: Nội dung yêu cầu không hợp lệ }
- *       403: { description: Chỉ SUPER_ADMIN }
+ *       403: { description: Chỉ Back Office hoặc SUPER_ADMIN }
  */
-router.get('/acceptance/bulk/preview', requireSuperAdmin, chargingStationController.previewBulkAcceptance);
-router.post('/acceptance/bulk', requireSuperAdmin, chargingStationController.executeBulkAcceptance);
+router.get('/acceptance/bulk/preview', requireChargingStationManager, chargingStationController.previewBulkAcceptance);
+router.post('/acceptance/bulk', requireChargingStationManager, chargingStationController.executeBulkAcceptance);
 
 /**
  * @swagger
@@ -945,7 +949,7 @@ router.post('/:id/configuration/complete', requireChargingStationViewer, chargin
  * /api/admin/charging-stations/{id}/on-station/mark-active:
  *   post:
  *     tags: [Charging Stations]
- *     summary: SUPER_ADMIN xác nhận ON trạm và chuyển đề xuất sang ACTIVE
+ *     summary: Back Office hoặc SUPER_ADMIN xác nhận ON trạm và chuyển đề xuất sang ACTIVE
  *     description: Hoàn tất hợp đồng/hạ tầng và task giao/lắp/nghiệm thu/ON bằng workflow_override, kể cả dữ liệu trụ cần đối soát. Không thay đổi kho, phiếu giao, tài chính/cọc/hoàn cọc, không tự tạo tài liệu. Giữ cảnh báo đối soát. Không thể kích hoạt lại bản ghi đã hủy.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
@@ -967,17 +971,17 @@ router.post('/:id/configuration/complete', requireChargingStationViewer, chargin
  *               expected_token: { type: string }
  *     responses:
  *       200: { description: ON trạm và đề xuất đã chuyển sang Hoạt động }
- *       403: { description: Chỉ SUPER_ADMIN được sử dụng }
+ *       403: { description: Chỉ Back Office hoặc SUPER_ADMIN được sử dụng }
  *       409: { description: Bản ghi đã hủy hoặc trạng thái đề xuất không phù hợp }
  */
-router.post('/:id/on-station/mark-active', requireSuperAdmin, chargingStationController.markOnStationActive);
+router.post('/:id/on-station/mark-active', requireChargingStationManager, chargingStationController.markOnStationActive);
 
 /**
  * @swagger
  * /api/admin/charging-stations/{id}/status:
  *   post:
  *     tags: [Charging Stations]
- *     summary: SUPER_ADMIN ghi đè trạng thái quy trình ON trạm, tiến/lùi tùy ý
+ *     summary: Back Office hoặc SUPER_ADMIN ghi đè trạng thái quy trình ON trạm, tiến/lùi tùy ý
  *     description: OPERATING dùng chung nghiệp vụ mark-active và yêu cầu mã CMS/ngày ON. CANCELLED dùng nghiệp vụ hủy và lưu trữ đề xuất. Hồ sơ đã hủy phải khôi phục trước. Các trạng thái khác không xóa kết quả đã lưu ở bước sau.
  *     security:
  *       - bearerAuth: []
@@ -1013,7 +1017,7 @@ router.post('/:id/on-station/mark-active', requireSuperAdmin, chargingStationCon
  *       403:
  *         description: Không có quyền
  */
-router.post('/:id/status', requireSuperAdmin, chargingStationController.changeStatus);
+router.post('/:id/status', requireChargingStationManager, chargingStationController.changeStatus);
 
 /**
  * @swagger

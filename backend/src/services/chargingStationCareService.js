@@ -28,7 +28,7 @@ const payload = (data = {}) => {
   return { content, contact_time: normalizeDateTime(data.contact_time) };
 };
 const canCreate = async (id, user) => {
-  if (user.role === 'SUPER_ADMIN') return true;
+  if (await access.hasFullControl(user)) return true;
   const [rows] = await pool.query(
     `SELECT p.user_id, CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data,'$.nguoi_phu_trach.id')) AS UNSIGNED) AS assignee_id
      FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=?`, [id]);
@@ -50,7 +50,7 @@ const canCreate = async (id, user) => {
 };
 const permissions = async (id, user) => {
   await access.assertView(toInt(id), user);
-  return { create: await canCreate(id, user), manage: user.role === 'SUPER_ADMIN' };
+  return { create: await canCreate(id, user), manage: await access.hasFullControl(user) };
 };
 const SELECT_LOGS = `SELECT c.id,c.charging_station_id,c.employee_user_id,c.created_by,
   DATE_FORMAT(c.contact_time,'%Y-%m-%dT%H:%i:%s') AS contact_time,c.content,c.created_at,c.updated_at,
@@ -89,7 +89,7 @@ const createCareLog = async (id, data, user, ctx = {}) => {
   } finally { connection.release(); }
 };
 const mutate = async (id, data, user, ctx, remove) => {
-  if (user.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được sửa/xóa dòng tiến độ', 403);
+  await access.assertFullControl(user);
   id = toInt(id);
   const [rows] = await pool.query('SELECT charging_station_id FROM charging_station_care_logs WHERE id=?', [id]);
   if (!rows.length) throw err('Không tìm thấy dòng tiến độ', 404);

@@ -22,9 +22,7 @@ const centsOf = value => {
   return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
 };
 const money = cents => `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
-const assertSuper = user => {
-  if (user?.role !== 'SUPER_ADMIN') throw fail('Chỉ SUPER_ADMIN được cập nhật trụ chốt', 403);
-};
+const assertFullControl = user => require('./chargingStationAccessService').assertFullControl(user);
 
 const proposedRows = data => {
   const model = String(cell(data.mo_hinh_dau_tu) || '').toUpperCase();
@@ -114,7 +112,7 @@ const load = async (db, id, lock = false) => {
 };
 
 exports.get = async (id, user) => {
-  assertSuper(user);
+  await assertFullControl(user);
   const state = await load(pool, id);
   return { rows: state.rows, token: state.token, from_proposal: !state.snapshot.length,
     needs_review: Boolean(Number(state.station.fulfillment_review_required)),
@@ -122,7 +120,7 @@ exports.get = async (id, user) => {
 };
 
 exports.update = async (id, body, user, ctx = {}) => {
-  assertSuper(user);
+  await assertFullControl(user);
   const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
   if (reason.length < 3 || reason.length > 5000) throw fail('Lý do cập nhật phải từ 3 đến 5000 ký tự');
   if (!Array.isArray(body.rows) || !body.rows.length || body.rows.length > 50) throw fail('Cần từ 1 đến 50 dòng trụ chốt');

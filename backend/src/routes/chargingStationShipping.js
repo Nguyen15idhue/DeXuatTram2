@@ -99,7 +99,7 @@ router.post('/:id/shipments', controller.create);
  *       Chờ hoàn khóa triển khai; xác nhận hoàn mới cộng kho, giữ lịch sử phần trụ đã trả.
  *       FAILED chỉ áp dụng khi chưa nhận trụ và chưa có yêu cầu hoàn; không tự cộng lại kho.
  *       Không chuyển phiếu đã xuất về Chưa giao. Ghi chú bắt buộc khi giao thất bại/hoàn hàng;
- *       SUPER_ADMIN luôn nhập lý do từ 3 ký tự. Retry cùng request_id không cộng kho lặp.
+ *       Back Office và SUPER_ADMIN luôn nhập lý do từ 3 ký tự. Retry cùng request_id không cộng kho lặp.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }

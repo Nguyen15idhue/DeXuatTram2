@@ -65,7 +65,7 @@ test('contract summaries cover partial payments and refunds; Back Office reuses 
     { deposit_total: 100, payment_total: 900, refund_total: 100, deposit_refund_required: 1, label: 'Đang thanh toán' }
   ].map((row, index) => ({ id: 501 + index, ma_tram: `ON-${501 + index}`, proposal_id: 77,
     status: 'OPERATING', sub_status: 'ACTIVE', contract_status: 'DONE', contract_amount: 1000,
-    contract_effective_date: '2026-11-01', contract_expiry_date: '2027-11-01',
+    contract_number: 'HD-01', contract_effective_date: '2026-11-01', contract_expiry_date: '2027-11-01',
     contract_files: [{ id: 11 }, { id: 12 }], permissions: { back_office: true }, ...row }));
   await page.route('**/api/**', async route => {
     const request = route.request();
@@ -101,7 +101,7 @@ test('contract summaries cover partial payments and refunds; Back Office reuses 
   await expect(page.getByText('Giữ 2 file hợp đồng đã lưu.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0]).toMatchObject({ file_ids: [11, 12], expected_status: 'DONE' });
+  expect(requests[0]).toMatchObject({ file_ids: [11, 12], contract_number: 'HD-01', expected_status: 'DONE' });
   expect(errors).toEqual([]);
 });
 

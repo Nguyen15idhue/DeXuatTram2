@@ -98,6 +98,8 @@ router.get('/', requireAuth, requireUserManager, proposalDesignController.list);
  */
 router.get('/filter-options', requireAuth, requireUserManager, proposalDesignController.filterOptions);
 
+router.get('/download-layout-files', requireAuth, requireUserManager, proposalDesignController.downloadLayoutFiles);
+
 /**
  * @swagger
  * /api/admin/proposal-layouts/{id}:

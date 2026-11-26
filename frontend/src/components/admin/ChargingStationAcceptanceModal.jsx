@@ -4,7 +4,7 @@ import { chargingStationService } from '../../services/api';
 import { Button, Dialog } from '../ui';
 import ChargingStationAcceptanceFields, { acceptancePayload } from './ChargingStationAcceptanceFields';
 import ChargingStationStepHistory from './ChargingStationStepHistory';
-import { ACCEPTANCE_LABELS, canOperateStation, formatDeploymentScale, portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
+import { ACCEPTANCE_LABELS, canOperateStation, formatDeploymentScale, isOnStationFullManager, portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
 
 const ACTIONS = { NOT: 'acceptance-reset', FAILED: 'acceptance-failed', PASSED: 'acceptance-passed' };
 
@@ -41,10 +41,10 @@ const ChargingStationAcceptanceModal = ({ station, portionId, portionIds, initia
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [station.id, idsKey, initialStatus, token]);
-  const canEdit = record && (!record.workflow_override?.completed || user?.role === 'SUPER_ADMIN')
+  const canEdit = record && (!record.workflow_override?.completed || isOnStationFullManager(user))
     && record.status !== 'CANCELLED' && canOperateStation(user, record, 'setup');
   const eligible = rows.filter(row => !portionUnavailable(row)
-    && (user?.role === 'SUPER_ADMIN' || row.installation_status === 'DONE'
+    && (isOnStationFullManager(user) || row.installation_status === 'DONE'
       || status === 'NOT' || (status === 'FAILED' && row.acceptance_status === 'PASSED')));
   const blocked = rows.filter(row => !eligible.includes(row));
   const uploading = Object.values(uploads).some(Boolean);

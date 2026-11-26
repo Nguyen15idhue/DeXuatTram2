@@ -86,6 +86,29 @@ test('report files do not fall back to proposal region for GĐTTKD', async t => 
   assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, req), true);
 });
 
+test('Back Office can read unrelated proposal files while preparing a report', async t => {
+  const files = require('../src/controllers/fileController');
+  const review = require('../src/services/proposalReviewService');
+  t.mock.method(review, 'resolveReviewer', async () => ({ managementScope: {
+    id: 7, region: null, managedIds: new Set([7]), accountIds: new Set([7, 99])
+  } }));
+  t.mock.method(require('../src/services/adminUserService'), 'getBranchIds', async () => [7]);
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('SELECT role, token_version, custom_data FROM users')) return [[{
+      role: 'SALES', token_version: 0,
+      custom_data: { department: 'Back Office', chuc_vu: 'Giám đốc Trung tâm Kinh doanh' }
+    }]];
+    if (sql === 'SELECT user_id, status, review_level, custom_data FROM station_proposals') {
+      return [[{ user_id: 99, status: 'PROPOSAL_REPORT_CREATING', review_level: null,
+        custom_data: { file_bc_dx: [{ id: 101, name: 'report.pdf' }] } }]];
+    }
+    return [[]];
+  });
+  assert.equal(await files.canAccessFile({ id: 101, uploaded_by: 99 }, {
+    user: { id: 7, role: 'SALES', tokenVersion: 0 }
+  }), true);
+});
+
 for (const department of ['Phòng Tài chính và Kế toán', 'Back Office']) {
 test(`${department} file access is restricted to eligible chairman proposal attachments`, async t => {
   const files = require('../src/controllers/fileController');

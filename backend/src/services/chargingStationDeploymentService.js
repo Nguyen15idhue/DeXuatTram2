@@ -30,9 +30,11 @@ const notify = async (connection, station, ctx, title, details, finance = false)
   for (const user of users) {
     if (user.role === 'ADMIN' && finance) continue;
     const department = normalize((json(user.custom_data) || {}).department);
+    const backOffice = ['ADMIN', 'SALES'].includes(user.role)
+      && (department.includes('back office') || department.includes('backoffice'));
     const matches = finance
       ? department.includes('tai chinh') || department.includes('back office')
-      : department.includes('setup') && department.includes('van hanh');
+      : (department.includes('setup') && department.includes('van hanh')) || backOffice;
     if (!matches && user.role !== 'SUPER_ADMIN') continue;
     await connection.query(
       `INSERT INTO notifications (user_id, type, title, message, entity_type, entity_id, is_read, created_by)
@@ -242,6 +244,7 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
   const access = require('./chargingStationAccessService');
   await access.assertSetup(user);
   await access.assertView(stationId, user);
+  const fullControl = await access.hasFullControl(user);
   stationId = idOf(stationId);
   if (!Array.isArray(body.items) || !body.items.length || body.items.length > 1000) throw fail('Danh sách lắp đặt không hợp lệ');
   const ids = new Set();
@@ -277,7 +280,7 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
       return json(events[0].result);
     }
     if (station.status === 'CANCELLED') throw fail('ON trạm đã hủy', 409);
-    if (json(station.workflow_override)?.completed && user.role !== 'SUPER_ADMIN') throw fail('Trạm đã hoàn tất bằng ghi đè', 409);
+    if (json(station.workflow_override)?.completed && !fullControl) throw fail('Trạm đã hoàn tất bằng ghi đè', 409);
     const [portions] = await connection.query('SELECT * FROM charging_station_deployments WHERE charging_station_id=? AND id IN (?) ORDER BY id FOR UPDATE', [stationId, [...ids]]);
     if (portions.length !== items.length) throw fail('Phần trụ không thuộc trạm này', 409);
     for (const item of items) {
@@ -295,7 +298,7 @@ const updateInstallation = async (stationId, body, user, ctx = {}) => {
         installation_version=installation_version+1,workflow_version=workflow_version+1,stage=?,sub_status=? WHERE id=?`,
       [item.status, nextNote, next.stage, next.sub, item.id]);
       await log(connection, stationId, 'installation_updated', current.stage, next.stage,
-        { ...ctx, source: user.role === 'SUPER_ADMIN' && (delta < 0 || delta > 1) ? 'admin_override' : 'user' }, item.note, {
+        { ...ctx, source: fullControl && (delta < 0 || delta > 1) ? 'admin_override' : 'user' }, item.note, {
         deployment_id: item.id, installation_status: { old: current.installation_status, new: item.status },
         installation_note: { old: current.installation_note, new: nextNote },
         later_results_preserved: current.stage !== 'INSTALLING'

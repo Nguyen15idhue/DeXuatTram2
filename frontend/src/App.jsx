@@ -26,6 +26,7 @@ import {
   isLeadPortal,
 } from "./utils/leadAccess";
 import RouteFallback from "./components/RouteFallback";
+import { isOnStationFullManager } from "./utils/chargingFulfillment";
 
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
@@ -530,7 +531,7 @@ function AppRoutes() {
           <Route
             path="/admin/on-tram/thong-tin-chung/:id/edit"
             element={
-              <RoleRoute allowed={SUPER_ONLY}>
+              <RoleRoute allowed={CHARGING_ROLES} accessCheck={isOnStationFullManager}>
                 <AdminChargingStationEditPage />
               </RoleRoute>
             }

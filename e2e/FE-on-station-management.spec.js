@@ -64,7 +64,7 @@ test('admin can cancel queued ON Sheet jobs with confirmation even when Sheet is
   expect(requests).toBe(1);
 });
 
-async function setup(page, role = 'SUPER_ADMIN') {
+async function setup(page, role = 'SUPER_ADMIN', department = 'Phòng Setup và Vận hành') {
   const errors = [];
   const mutations = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -76,7 +76,7 @@ async function setup(page, role = 'SUPER_ADMIN') {
       mutations.push({ path: pathname, data: request.postDataJSON() });
       data = station;
     } else if (pathname.endsWith('/auth/me')) {
-      data = { user: { id: 1, full_name: 'UI Fixture', role, custom_data: { department: 'Phòng Setup và Vận hành' } } };
+      data = { user: { id: 1, full_name: 'UI Fixture', role, custom_data: { department } } };
     } else if (pathname.endsWith('/users/options/all')) data = [];
     else if (pathname.endsWith('/shipping-carriers')) data = [{ id: 1, name: 'Carrier A', active: 1, used: 0 }];
     else if (pathname.endsWith('/501/deployments')) data = [portion];
@@ -106,6 +106,59 @@ async function setup(page, role = 'SUPER_ADMIN') {
   return { errors, mutations };
 }
 
+for (const role of ['ADMIN', 'SALES']) {
+  test(`Back Office ${role} can access ON management actions`, async ({ page }) => {
+    const { errors } = await setup(page, role, 'Back Office');
+    await page.goto('/admin/on-tram/thong-tin-chung');
+    await page.getByRole('button', { name: 'Thao tác khác TEST-501' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Sửa', exact: true })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Xóa ON trạm', exact: true })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Sửa', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Sửa ON trạm · TEST-501' })).toBeVisible();
+    await page.goto('/admin/on-tram/nghiem-thu');
+    await expect(page.getByRole('button', { name: 'Nghiệm thu hàng loạt' })).toBeVisible();
+    await page.goto('/admin/on-tram/giao-tru');
+    await expect(page.getByRole('button', { name: 'Đổi trạng thái', exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
+
+test('ordinary ADMIN does not receive ON management actions', async ({ page }) => {
+  await setup(page, 'ADMIN', 'Phòng khác');
+  await page.goto('/admin/on-tram/nghiem-thu');
+  await expect(page.getByRole('button', { name: 'Nghiệm thu hàng loạt' })).toHaveCount(0);
+  await page.goto('/admin/on-tram/giao-tru');
+  await expect(page.getByRole('button', { name: 'Đổi trạng thái', exact: true })).toHaveCount(0);
+});
+
+test('all ON list stages show proposal context without changing nested tables', async ({ page }) => {
+  const { errors } = await setup(page);
+  const record = {
+    ...station, mo_hinh_dau_tu: 'NQ', chot_so_luong_tru: [{ mo_hinh: 'NQ', so_luong: 2, loai_tru: 'DC60' }],
+    province: 'Hà Nội', latitude: 0, longitude: 106.25,
+    user_id: 3, user_name: 'Tài khoản tạo', nguoi_de_xuat: { id: 4, label: 'Người đề xuất' },
+    owner_department: 'Kinh doanh', nguoi_phu_trach: { id: 5, label: 'Phụ trách' },
+    nguoi_giao_phu_trach: { id: 6, label: 'Giám đốc' }
+  };
+  await page.route('**/api/admin/charging-stations?**', route => route.fulfill({ json: {
+    success: true, data: [record], pagination: { page: 1, total: 1, totalPages: 1 }
+  } }));
+  for (const stage of ['thong-tin-chung', 'khoi-tao-hop-dong', 'xay-dung-ha-tang', 'giao-tru', 'lap-tru', 'nghiem-thu', 'on-tram']) {
+    await page.goto(`/admin/on-tram/${stage}?tab=all`);
+    const table = page.locator('table').first();
+    for (const label of ['Mô hình đầu tư', 'Quy mô trụ chốt', 'Tỉnh/Thành phố', 'Vĩ độ', 'Kinh độ',
+      'Người đề xuất', 'Phòng ban đề xuất', 'Người phụ trách', 'Giám đốc TTKD']) {
+      await expect(table.getByRole('columnheader', { name: label, exact: true })).toHaveCount(1);
+    }
+    const row = table.locator('tbody tr').first();
+    for (const value of ['Nhượng quyền', 'DC60', 'Hà Nội', '106.25', 'Người đề xuất', 'Kinh doanh', 'Phụ trách', 'Giám đốc']) {
+      await expect(row.getByText(value, { exact: false }).first()).toBeVisible();
+    }
+    await expect(row.getByText('0', { exact: true }).first()).toBeVisible();
+  }
+  expect(errors).toEqual([]);
+});
+
 test('contract completion calculates expected ON date and validates nonnegative integer days', async ({ page }) => {
   const { errors, mutations } = await setup(page);
   await page.route('**/api/admin/charging-stations?**', route => route.fulfill({ json: {
@@ -119,6 +172,10 @@ test('contract completion calculates expected ON date and validates nonnegative 
   const date = modal.getByLabel('Ngày dự kiến ON trạm', { exact: true });
   await expect(days).toHaveCount(0);
   await modal.getByLabel('Trạng thái hợp đồng', { exact: true }).selectOption('DONE');
+  await modal.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(modal.getByRole('alert')).toContainText('số hợp đồng');
+  expect(mutations).toEqual([]);
+  await modal.getByLabel('Số hợp đồng', { exact: true }).fill('HD-01');
   await expect(days).toHaveValue('90');
   await expect(date).toHaveText('28/05/2028');
   await modal.getByLabel('Thời hạn hợp đồng (năm)', { exact: true }).fill('1');
@@ -139,7 +196,7 @@ test('contract completion calculates expected ON date and validates nonnegative 
   await expect(modal).toBeHidden();
   expect(mutations).toHaveLength(1);
   expect(mutations[0].data).toMatchObject({
-    file_ids: [12], contract_effective_date: '2027-12-31', contract_expiry_date: '2028-12-31',
+    file_ids: [12], contract_number: 'HD-01', contract_effective_date: '2027-12-31', contract_expiry_date: '2028-12-31',
     expected_on_days: 0, expected_status: 'NOT'
   });
   expect(errors).toEqual([]);
@@ -149,7 +206,7 @@ test('contract modal retains saved expected ON days and resets unsaved edits on 
   const { errors, mutations } = await setup(page);
   await page.route('**/api/admin/charging-stations?**', route => route.fulfill({ json: {
     success: true, data: [{ ...station, contract_status: 'DONE', contract_file_id: 12,
-      contract_effective_date: '2026-11-22', contract_expiry_date: '2027-11-22', expected_on_days: 30 }],
+      contract_number: 'OLD-01', contract_effective_date: '2026-11-22', contract_expiry_date: '2027-11-22', expected_on_days: 30 }],
     pagination: { page: 1, total: 1, totalPages: 1 }
   } }));
   await page.goto('/admin/on-tram/khoi-tao-hop-dong');
@@ -157,6 +214,7 @@ test('contract modal retains saved expected ON days and resets unsaved edits on 
   await open.click();
   const modal = page.locator('.modal-box').filter({ has: page.getByRole('heading', { name: 'Cập nhật hợp đồng — TEST-501' }) });
   const days = modal.getByRole('spinbutton', { name: 'Số ngày dự kiến ON trạm' });
+  await expect(modal.getByLabel('Số hợp đồng', { exact: true })).toHaveValue('OLD-01');
   await expect(days).toHaveValue('30');
   await expect(modal.getByLabel('Ngày dự kiến ON trạm', { exact: true })).toHaveText('22/12/2026');
   await days.fill('7');

@@ -13,6 +13,7 @@ import ChargingStationEarlyDeliveryDialog from './ChargingStationEarlyDeliveryDi
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import { formatChotTruRows } from '../../utils/proposalSignature';
 import { notifyBellRefresh } from '../layout/NotificationBell';
+import { isOnStationFullManager } from '../../utils/chargingFulfillment';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
@@ -48,7 +49,7 @@ const ChargingStationTab = ({ stage }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'all';
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const isFullManager = isOnStationFullManager(user);
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -285,7 +286,7 @@ const ChargingStationTab = ({ stage }) => {
     },
     { key: 'owner_name', label: 'Chủ trạm', render: (value) => value || '—' },
     { key: 'owner_phone', label: 'SĐT', render: (value) => value || '—' },
-    { key: 'chot_so_luong_tru', label: 'Số lượng trụ chốt',
+    { key: 'chot_so_luong_tru', label: 'Quy mô trụ chốt',
       render: (value) => <span className="whitespace-normal">{formatChotTruRows(value)}</span> },
     {
       key: 'address',
@@ -341,7 +342,7 @@ const ChargingStationTab = ({ stage }) => {
     { key: 'on_date', label: 'Ngày ON', render: (value) => <span className="whitespace-nowrap">{formatCsDate(value)}</span> }
   ], [location.pathname, location.search]);
 
-  const renderActions = row => (isSuperAdmin || (stage === 'thong-tin-chung' && row.can_request_early_delivery) || (user?.role !== 'ADMIN'
+  const renderActions = row => (isFullManager || (stage === 'thong-tin-chung' && row.can_request_early_delivery) || (user?.role !== 'ADMIN'
     && (row.can_cancel_on_station || row.can_restore_on_station))) ? (
     <button type="button" className="btn btn-ghost btn-xs btn-square" aria-label={`Thao tác khác ${row.ma_tram || row.id}`}
       aria-haspopup="menu" onClick={event => {
@@ -358,7 +359,7 @@ const ChargingStationTab = ({ stage }) => {
         <div className="fixed inset-0 z-[9998]" onClick={() => setMenu(null)} />
         <div role="menu" className="fixed z-[9999] w-[220px] rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl"
           style={{ left: menu.left, top: menu.top }}>
-          {isSuperAdmin && <>
+          {isFullManager && <>
             <Link role="menuitem" className="btn btn-ghost btn-sm w-full justify-start"
               to={`/admin/on-tram/thong-tin-chung/${menu.row.id}/edit`} onClick={() => setMenu(null)}>Sửa</Link>
             <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
@@ -371,19 +372,19 @@ const ChargingStationTab = ({ stage }) => {
           {stage === 'thong-tin-chung' && menu.row.can_request_early_delivery &&
             <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start"
               onClick={() => { setEarlyStation(menu.row); setMenu(null); }}>Đề xuất đi trụ sớm</button>}
-          {user?.role !== 'ADMIN' && menu.row.can_cancel_on_station && <button role="menuitem"
+          {(isFullManager || user?.role !== 'ADMIN') && menu.row.can_cancel_on_station && <button role="menuitem"
             className="btn btn-ghost btn-sm w-full justify-start text-error" onClick={() => {
               setStatusDialog({ open: true, action: 'cancel', row: menu.row }); setMenu(null);
             }}>Hủy ON trạm</button>}
-          {user?.role !== 'ADMIN' && menu.row.can_restore_on_station && <button role="menuitem"
+          {(isFullManager || user?.role !== 'ADMIN') && menu.row.can_restore_on_station && <button role="menuitem"
             className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
               setStatusDialog({ open: true, action: 'restore', row: menu.row }); setMenu(null);
             }}>Khôi phục</button>}
-          {isSuperAdmin && menu.row.can_mark_on_station_active
+          {isFullManager && menu.row.can_mark_on_station_active
             && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start text-success" onClick={() => {
               openOnStationDialog(menu.row); setMenu(null);
             }}>Đã ON Trạm</button>}
-          {isSuperAdmin && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start text-error"
+          {isFullManager && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start text-error"
             onClick={() => { setDeleteTarget(menu.row); setMenu(null); }}>Xóa ON trạm</button>}
         </div>
       </>, document.body)}
@@ -399,7 +400,7 @@ const ChargingStationTab = ({ stage }) => {
         onClose={() => { if (!mutationBusy) setChangeStation(null); }}>
         {changeStation && <div className="space-y-3">
           <p className="text-sm">Trạng thái hiện tại: {CS_STATUS_LABELS[changeStation.row.status]}</p>
-          <p className="text-sm text-warning">SUPER_ADMIN điều chỉnh trực tiếp tiến/lùi quy trình. Kết quả các bước sau được giữ nguyên; mọi thay đổi được ghi nhật ký.</p>
+          <p className="text-sm text-warning">Back Office hoặc SUPER_ADMIN điều chỉnh trực tiếp tiến/lùi quy trình. Kết quả các bước sau được giữ nguyên; mọi thay đổi được ghi nhật ký.</p>
           <label className="block text-sm">Trạng thái đích
             <select className="select select-bordered mt-1 w-full" value={changeStation.to_status}
               disabled={mutationBusy} onChange={event => setChangeStation({ ...changeStation, to_status: event.target.value })}>
@@ -548,7 +549,7 @@ const ChargingStationTab = ({ stage }) => {
                 rows={3}
                 value={onStationDialog.reason}
                 onChange={(event) => setOnStationDialog((prev) => ({ ...prev, reason: event.target.value }))}
-                placeholder="Nhập lý do SUPER_ADMIN xác nhận trạm đã ON..."
+                placeholder="Nhập lý do xác nhận trạm đã ON..."
                 disabled={onStationSaving}
               />
             </div>
@@ -616,6 +617,7 @@ const ChargingStationTab = ({ stage }) => {
       </FilterBar>
 
       <ChargingStationTable
+        showProposalColumns
         columns={columns}
         data={items}
         loading={loading}

@@ -6,13 +6,13 @@ const pool = require('../src/utils/db');
 
 test.after(async () => pool.end());
 
-test('ADMIN can perform only the workflow steps assigned to their department', async (t) => {
+test('ADMIN Back Office has ON workflow rights while other departments retain their scope', async (t) => {
   let department;
   t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql',
     async () => ({ sql: 'p.user_id=?', params: [1] }));
   t.mock.method(pool, 'query', async () => [[{ custom_data: { department } }]]);
   for (const [name, backOffice, setup] of [
-    ['Back Office', true, false],
+    ['Back Office', true, true],
     ['Phòng Setup và Vận hành', false, true],
     ['Phòng Tài chính', false, false],
     ['Phòng khác', false, false]
@@ -20,7 +20,7 @@ test('ADMIN can perform only the workflow steps assigned to their department', a
     department = name;
     const user = { id: 1, role: 'ADMIN' };
     assert.deepEqual(await access.permissions(user), {
-      back_office: backOffice, setup, finance: false, request_early: false
+      back_office: backOffice, setup, finance: false, request_early: backOffice
     });
     const { expressions } = await work.actionable(user);
     assert.equal(expressions.contract !== '0', backOffice, `${name}: contract`);
@@ -61,7 +61,7 @@ test('infrastructure worklist and badge use the same scope without duplicating S
   }
 });
 
-test('setup ADMIN receives installation notifications but not finance notifications', async () => {
+test('setup and Back Office ADMIN receive installation notifications but not finance notifications', async () => {
   const deployments = require('../src/services/chargingStationDeploymentService');
   const inserted = [];
   const connection = { query: async (sql, params) => {
@@ -74,7 +74,7 @@ test('setup ADMIN receives installation notifications but not finance notificati
     return [{}];
   } };
   await deployments.notifyProgress(connection, { id: 1 }, {}, 'Test', 'Test');
-  assert.deepEqual(inserted, [1, 3]);
+  assert.deepEqual(inserted, [1, 2, 3]);
   inserted.length = 0;
   await deployments.notifyProgress(connection, { id: 1 }, {}, 'Test', 'Test', true);
   assert.deepEqual(inserted, [3]);

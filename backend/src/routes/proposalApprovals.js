@@ -252,6 +252,8 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  */
 router.get('/:id/signature-anchors', requireAuth, requireUserManager, proposalApprovalController.detectSignatureAnchors);
 
+router.get('/:id/download-all-files', requireAuth, requireUserManager, proposalApprovalController.downloadAllFiles);
+
 /**
  * @swagger
  * /api/admin/proposal-approvals/{id}/signature-config:

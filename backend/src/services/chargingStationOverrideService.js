@@ -27,9 +27,8 @@ const dateOf = (value) => {
   }
   return value;
 };
-const assertSuper = (ctx) => {
-  if (ctx.actorRole !== 'SUPER_ADMIN') throw fail('Chỉ SUPER_ADMIN được sửa/ghi đè ON trạm', 403);
-};
+const assertFullControl = (ctx) => require('./chargingStationAccessService')
+  .assertFullControl({ id: ctx.actorId, role: ctx.actorRole });
 const reasonOf = (value) => {
   const reason = typeof value === 'string' ? value.trim() : '';
   if (reason.length < 3 || reason.length > 5000) throw fail('Lý do bắt buộc từ 3–5000 ký tự');
@@ -64,7 +63,7 @@ const writeLog = async (connection, stationId, action, current, patch, ctx, reas
     reason, ctx.actorId, ctx.actorRole, ctx.ip || null]);
 };
 const update = async (id, body, ctx) => {
-  assertSuper(ctx);
+  await assertFullControl(ctx);
   const reason = reasonOf(body.reason);
   const allowed = new Set([...Object.keys(ENUM_FIELDS), ...DATE_FIELDS, ...DATETIME_FIELDS, ...TEXT_FIELDS, ...FILE_FIELDS,
     'acceptance_user_id', 'deadline_extension_count', 'sub_status', 'expected_token', 'reason', 'deployment_updates', 'delivery_completed']);
@@ -199,4 +198,4 @@ const update = async (id, body, ctx) => {
   return require('./chargingStationService').getChargingStationDetail(id, { id: ctx.actorId, role: ctx.actorRole });
 };
 
-module.exports = { update, getEditToken, assertToken, assertSuper, reasonOf, dateOf, writeLog };
+module.exports = { update, getEditToken, assertToken, assertFullControl, reasonOf, dateOf, writeLog };

@@ -76,6 +76,7 @@ test('GĐTTKD report list reflects scoped tasks and ADMIN read-only rows', async
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data, meta, pagination }) });
   });
+
   await page.goto('/admin/proposals/lap-to-trinh');
   await expect(page.locator('tbody').getByText('TRONG-NHANH', { exact: true })).toBeVisible();
   await expect(page.locator('tbody').getByText('NGOAI-NHANH', { exact: true })).toHaveCount(0);
@@ -88,3 +89,29 @@ test('GĐTTKD report list reflects scoped tasks and ADMIN read-only rows', async
   await expect(foreignRow.getByRole('button', { name: /Cập nhật/ })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+for (const role of ['ADMIN', 'SALES']) {
+  test(`Back Office ${role} can start an unrelated report from the task list`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => localStorage.setItem('token', 'report-backoffice-fixture'));
+    await page.route('**/api/**', async route => {
+      const path = new URL(route.request().url()).pathname;
+      let data = [];
+      if (path.endsWith('/auth/me')) data = { user: { id: 6, role, full_name: 'Back Office',
+        custom_data: { department: 'Back Office' } } };
+      else if (path.endsWith('/admin/proposal-reports')) data = [{
+        id: 101, ma_de_xuat: 'NGOAI-NHANH', status: 'PROPOSAL_REPORT_CREATING', can_upload: true, custom_data: {}
+      }];
+      else if (path.endsWith('/generation-options')) data = { templates: [] };
+      else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], provinces: [], models: [], regions: [] };
+      await route.fulfill({ json: { success: true, data, pagination: { page: 1, total: 1, limit: 20, totalPages: 1 } } });
+    });
+    await page.goto('/admin/proposals/lap-to-trinh?tab=pending');
+    const row = page.locator('tbody tr').filter({ hasText: 'NGOAI-NHANH' });
+    await expect(row.getByRole('button', { name: 'Cập nhật' })).toBeVisible();
+    await row.getByRole('button', { name: 'Xem thử mẫu' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}

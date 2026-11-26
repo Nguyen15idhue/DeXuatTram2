@@ -4,7 +4,7 @@ import { chargingStationService } from '../../services/api';
 import { Button, Dialog } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationStepHistory from './ChargingStationStepHistory';
-import { formatDeploymentScale, requestKeyForIntent, shipmentNextStatuses, SHIPMENT_STATUS_LABELS } from '../../utils/chargingFulfillment';
+import { formatDeploymentScale, isOnStationFullManager, requestKeyForIntent, shipmentNextStatuses, SHIPMENT_STATUS_LABELS } from '../../utils/chargingFulfillment';
 
 const ChargingStationShipmentHistory = ({ station, shipments, canEdit, onChanged, inlineEditor = false, onBusyChange }) => {
   const { token, user } = useAuth();
@@ -15,7 +15,7 @@ const ChargingStationShipmentHistory = ({ station, shipments, canEdit, onChanged
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const request = useRef(null);
-  const reasonRequired = user?.role === 'SUPER_ADMIN' || ['FAILED', 'RETURN_PENDING', 'RETURNED'].includes(status);
+  const reasonRequired = isOnStationFullManager(user) || ['FAILED', 'RETURN_PENDING', 'RETURNED'].includes(status);
   const begin = row => {
     setSelected(row);
     setStatus(row.transport_status === 'PENDING' ? 'SHIPPING' : row.transport_status);

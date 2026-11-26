@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireChargingStationViewer, requireSuperAdmin } = require('../middlewares/auth');
+const { requireAuth, requireChargingStationViewer, requireChargingStationManager } = require('../middlewares/auth');
 const controller = require('../controllers/chargingStationCareController');
 
 router.use(requireAuth);
@@ -29,7 +29,7 @@ router.get('/:id/care-logs', requireChargingStationViewer, controller.list);
  *   post:
  *     tags: [Charging Station Care]
  *     summary: Thêm tiến độ ON trạm
- *     description: SUPER_ADMIN, chủ đề xuất SALES, người phụ trách, cấp trên của chủ đề xuất hoặc Setup và Vận hành. Tác giả tự lấy tài khoản đăng nhập; không nhận người cập nhật từ payload.
+ *     description: Back Office, SUPER_ADMIN, chủ đề xuất SALES, người phụ trách, cấp trên của chủ đề xuất hoặc Setup và Vận hành. Tác giả tự lấy tài khoản đăng nhập; không nhận người cập nhật từ payload.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -58,7 +58,7 @@ router.post('/:id/care-logs', requireChargingStationViewer, controller.create);
  * /api/admin/charging-stations/care-logs/{id}:
  *   put:
  *     tags: [Charging Station Care]
- *     summary: SUPER_ADMIN sửa thời gian/nội dung tiến độ, không đổi người tạo
+ *     summary: Back Office hoặc SUPER_ADMIN sửa thời gian/nội dung tiến độ, không đổi người tạo
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -68,14 +68,14 @@ router.post('/:id/care-logs', requireChargingStationViewer, controller.create);
  *     responses:
  *       200: { description: Thành công }
  */
-router.put('/care-logs/:id', requireSuperAdmin, controller.update);
+router.put('/care-logs/:id', requireChargingStationManager, controller.update);
 
 /**
  * @swagger
  * /api/admin/charging-stations/care-logs/{id}:
  *   delete:
  *     tags: [Charging Station Care]
- *     summary: SUPER_ADMIN xóa dòng tiến độ và lưu nhật ký
+ *     summary: Back Office hoặc SUPER_ADMIN xóa dòng tiến độ và lưu nhật ký
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path
@@ -85,7 +85,7 @@ router.put('/care-logs/:id', requireSuperAdmin, controller.update);
  *     responses:
  *       200: { description: Đã xóa }
  */
-router.delete('/care-logs/:id', requireSuperAdmin, controller.remove);
+router.delete('/care-logs/:id', requireChargingStationManager, controller.remove);
 
 /**
  * @swagger

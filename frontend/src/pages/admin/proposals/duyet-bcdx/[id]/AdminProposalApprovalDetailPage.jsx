@@ -42,6 +42,7 @@ import {
 } from "../../../../../utils/proposalApproval";
 import ProposalProgressiveDetails from "../../components/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
+import DynamicForm from "../../../../../components/dynamic/DynamicForm";
 import ProposalStaticInfo from "../../components/ProposalStaticInfo";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";
 
@@ -327,6 +328,18 @@ const AdminProposalApprovalDetailPage = () => {
       </section>
 
       <ProposalStaticInfo record={proposal} onViewFile={setFileViewing} />
+
+      <section className="rounded-lg border bg-base-100 p-4">
+        <h2 className="mb-3 font-semibold">Tất cả thông tin đề xuất</h2>
+        <DynamicForm
+          entity="station_proposals"
+          purpose="view"
+          initialData={proposal}
+          readOnlyKeys="*"
+          hideActions
+          onSubmit={() => {}}
+        />
+      </section>
       {documents.length > 0 && (
         <section className="space-y-2 rounded-lg border p-4">
           <h2 className="font-semibold">Tài liệu BCĐX và bản gốc</h2>
@@ -358,6 +371,43 @@ const AdminProposalApprovalDetailPage = () => {
                 ...file,
                 original_name: file.name || `Tệp #${file.id || index + 1}`,
               };
+              const isPdf = (file.mime_type || '').toLowerCase().includes('pdf')
+                || String(file.name || file.original_name || '').toLowerCase().endsWith('.pdf');
+              const isDocx = (file.mime_type || '').toLowerCase().includes('word')
+                || String(file.name || file.original_name || '').toLowerCase().endsWith('.docx')
+                || String(file.name || file.original_name || '').toLowerCase().endsWith('.doc');
+              if (isPdf || isDocx) {
+                const viewUrl = file.id
+                  ? `${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`
+                  : file.url;
+                return (
+                  <div key={file.id || file.name || index} className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate">
+                        {file.name || `Tệp #${file.id || index + 1}`}
+                      </span>
+                      {file.id && (
+                        <a
+                          className="btn btn-ghost btn-xs gap-1"
+                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Tải xuống file"
+                        >
+                          <Download size={14} />
+                          <span className="hidden sm:inline">Tải xuống</span>
+                        </a>
+                      )}
+                    </div>
+                    <iframe
+                      src={viewUrl}
+                      title={file.name || `Tệp #${file.id || index + 1}`}
+                      className="w-full rounded border"
+                      style={{ height: '70vh' }}
+                    />
+                  </div>
+                );
+              }
               return (
                 <FileViewer
                   key={file.id || file.name || index}
@@ -378,7 +428,7 @@ const AdminProposalApprovalDetailPage = () => {
                       {file.id && (
                         <a
                           className="btn btn-ghost btn-xs gap-1"
-                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || "")}`}
+                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`}
                           target="_blank"
                           rel="noreferrer"
                           title="Tải xuống file"
@@ -448,6 +498,14 @@ const AdminProposalApprovalDetailPage = () => {
             <XCircle size={16} /> Từ chối duyệt
           </button>
         )}
+        <a
+          className="btn btn-outline btn-primary gap-2"
+          href={`${API_URL}/admin/proposal-approvals/${proposal.id}/download-all-files?token=${encodeURIComponent(token || "")}`}
+          download
+          title="Tải toàn bộ ảnh và file của BCĐX (ZIP)"
+        >
+          <Download size={16} /> Tải toàn bộ file (ZIP)
+        </a>
         <button
           type="button"
           className="btn btn-ghost gap-2"

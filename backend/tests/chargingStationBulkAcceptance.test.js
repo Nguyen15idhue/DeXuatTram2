@@ -10,7 +10,8 @@ const admin = { id: 2, role: 'ADMIN' };
 
 test.after(() => pool.end());
 
-test('bulk acceptance requires SUPER_ADMIN and validates the reason and preview targets before writing', async t => {
+test('bulk acceptance requires a full ON manager and validates the reason and preview targets before writing', async t => {
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({ isBackOffice: false }));
   const query = t.mock.method(pool, 'query', () => assert.fail('Unexpected query'));
   const connect = t.mock.method(pool, 'getConnection', () => assert.fail('Unexpected connection'));
   const body = { request_id: 'preview-1', reason: 'Audit reason', stations: [{ id: 1, token: 'a'.repeat(64) }] };

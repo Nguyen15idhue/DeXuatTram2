@@ -439,7 +439,7 @@ const receiveItem = async (connection, stationId, itemId, quantity) => {
 };
 
 const completeDeliveryWithoutStock = async (connection, station, ctx, reason) => {
-  require('./chargingStationOverrideService').assertSuper(ctx);
+  await require('./chargingStationOverrideService').assertFullControl(ctx);
   if (station.status === 'CANCELLED' || parseJson(station.workflow_override)?.completed) {
     throw fail('ON trạm đã hủy hoặc đã hoàn tất bằng ghi đè', 409);
   }
@@ -579,7 +579,7 @@ const updateShipmentStatus = async (stationId, exportId, body = {}, user, ctx = 
   const reason = text(body.reason);
   if (reason.length > 5000) throw fail('Ghi chú tối đa 5000 ký tự');
   if (['FAILED', 'RETURN_PENDING', 'RETURNED'].includes(status) && !reason) throw fail('Bắt buộc nhập lý do giao thất bại hoặc hoàn hàng');
-  if (user?.role === 'SUPER_ADMIN' && reason.length < 3) throw fail('Lý do bắt buộc từ 3–5000 ký tự');
+  if (await require('./chargingStationAccessService').hasFullControl(user) && reason.length < 3) throw fail('Lý do bắt buộc từ 3–5000 ký tự');
   if (!['PENDING', 'SHIPPING', 'DELIVERED', 'FAILED', 'RETURN_PENDING'].includes(body.expected_status)) {
     throw fail('Thiếu trạng thái hiện tại của đơn; hãy tải lại');
   }

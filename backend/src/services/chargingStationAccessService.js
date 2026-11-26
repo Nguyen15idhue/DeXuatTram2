@@ -9,6 +9,17 @@ const isSetup = (department) => {
   return text.includes('setup') && text.includes('van hanh');
 };
 
+const hasFullControl = async (user) => {
+  if (!user?.id) return false;
+  if (user.role === 'SUPER_ADMIN') return true;
+  if (!['ADMIN', 'SALES'].includes(user.role)) return false;
+  return (await reports.resolveScope(user)).isBackOffice;
+};
+
+const assertFullControl = async (user) => {
+  if (!await hasFullControl(user)) throw error('Chỉ Back Office hoặc SUPER_ADMIN được thao tác');
+};
+
 const permissions = async (user) => {
   if (!user?.id) return { back_office: false, setup: false, finance: false, request_early: false };
   if (user.role === 'SUPER_ADMIN') return { back_office: true, setup: true, finance: true, request_early: true };
@@ -17,9 +28,9 @@ const permissions = async (user) => {
   const readOnly = user?.role === 'ADMIN';
   return {
     back_office: superAdmin || scope.isBackOffice,
-    setup: superAdmin || isSetup(scope.department),
+    setup: superAdmin || scope.isBackOffice || isSetup(scope.department),
     finance: superAdmin || (!readOnly && (scope.isFinance || scope.isBackOffice)),
-    request_early: !readOnly && (superAdmin || !scope.isBackOffice)
+    request_early: scope.isBackOffice || (!readOnly && (superAdmin || !scope.isBackOffice))
   };
 };
 
@@ -44,7 +55,7 @@ const buildInfrastructureTaskScope = async (user, basePermissions) => {
 
 const recordPermissions = async (id, user, basePermissions) => {
   const base = basePermissions || await permissions(user);
-  if (user?.role === 'SUPER_ADMIN') return { ...base, infrastructure: true, infrastructure_task: true };
+  if (user?.role === 'SUPER_ADMIN' || base.back_office) return { ...base, infrastructure: true, infrastructure_task: true };
   const scope = await buildInfrastructureTaskScope(user, base);
   const [rows] = await pool.query(`SELECT (${scope.sql}) AS infrastructure_task
     FROM charging_stations cs JOIN station_proposals p ON p.id=cs.proposal_id WHERE cs.id=?`,
@@ -123,7 +134,7 @@ const assertOwner = async (user, ownerId) => {
 };
 
 module.exports = {
-  permissions, buildViewScope, assertView, assertOwner, assertFinanceViewer, isSetup,
+  permissions, hasFullControl, assertFullControl, buildViewScope, assertView, assertOwner, assertFinanceViewer, isSetup,
   buildInfrastructureOwnerScope, buildInfrastructureTaskScope, recordPermissions, assertInfrastructure,
   assertBackOffice: requirePermission('back_office', 'Chỉ Back Office hoặc SUPER_ADMIN được thao tác'),
   assertSetup: requirePermission('setup', 'Chỉ Phòng Setup và Vận hành hoặc SUPER_ADMIN được thao tác'),

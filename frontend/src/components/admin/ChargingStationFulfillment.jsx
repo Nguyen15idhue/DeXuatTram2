@@ -16,6 +16,7 @@ import FileViewer from "../dynamic/FileViewer";
 import { formatCsDate } from "../../utils/chargingStation";
 import {
   canOperateStation,
+  isOnStationFullManager,
   deploymentActions,
   DEPLOYMENT_ACTION_LABELS,
   requestKeyForIntent,
@@ -95,7 +96,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const canShip = canOperateStation(user, record, "back_office");
   const canSetup =
     canOperateStation(user, record, "setup") &&
-    (!record.workflow_override?.completed || user?.role === "SUPER_ADMIN") &&
+    (!record.workflow_override?.completed || isOnStationFullManager(user)) &&
     record.status !== "CANCELLED";
   const showShipping = !stage || stage === "giao-tru";
   const showPortions = !stage || stage !== "giao-tru";
@@ -276,13 +277,13 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       {loading && <span className="loading loading-spinner loading-sm" />}
       {record.workflow_override?.completed && (
         <div className="alert alert-info">
-          Hoàn tất quy trình bằng ghi đè của SUPER_ADMIN. Số liệu giao/nhận và
+          Hoàn tất quy trình bằng ghi đè của Back Office hoặc SUPER_ADMIN. Số liệu giao/nhận và
           tồn kho bên dưới là số liệu thực tế, không được tự hoàn tất.
         </div>
       )}
       {showShipping && record.workflow_override?.delivery_completed && (
         <div className="alert alert-info">
-          SUPER_ADMIN xác nhận giao trực tiếp bằng phiếu xuất nội bộ, không thay đổi tồn kho.
+          Back Office hoặc SUPER_ADMIN xác nhận giao trực tiếp bằng phiếu xuất nội bộ, không thay đổi tồn kho.
           Tiến độ Giao trụ và Lắp trụ được tính theo số lượng giao/nhận thực tế bên dưới.
         </div>
       )}

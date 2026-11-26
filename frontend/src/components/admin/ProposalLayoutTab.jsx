@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { proposalLayoutService } from '../../services/api';
+import { proposalLayoutService, API_URL } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useMediaQuery from '../../hooks/useMediaQuery';
@@ -30,7 +30,7 @@ import {
   getProposalPhone
 } from '../../utils/proposalGrading';
 import { getSupplementCount } from '../../utils/proposalDesign';
-import { Pencil, RotateCcw, Search } from 'lucide-react';
+import { Download, Pencil, RotateCcw, Search } from 'lucide-react';
 
 const EMPTY_FILTERS = {
   proposalStatus: '',
@@ -271,6 +271,26 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
 
   const activeFilterCount = Object.values(filters).filter(hasFilterValue).length;
 
+  const downloadUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('tab', tab);
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    const filterKeys = {
+      proposalStatus: 'proposal_status',
+      model: 'model',
+      province: 'province',
+      region: 'region',
+      ownerUserId: 'owner_user_id',
+      managerUserId: 'manager_user_id',
+      dateFrom: 'date_from',
+      dateTo: 'date_to'
+    };
+    Object.entries(filterKeys).forEach(([key, queryKey]) => {
+      appendMultiFilter(params, queryKey, appliedFilters[key]);
+    });
+    return `${API_URL}/admin/proposal-layouts/download-layout-files?${params.toString()}&token=${encodeURIComponent(token || '')}`;
+  }, [tab, debouncedSearch, appliedFilters, token]);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -286,6 +306,14 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
           <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
         </button>
         <FilterToggle open={showFilter} onToggle={() => setShowFilter((value) => !value)} count={activeFilterCount} />
+        <a
+          className="btn btn-outline btn-primary btn-sm gap-1 shrink-0"
+          href={downloadUrl}
+          download
+          title="Tải toàn bộ file bản vẽ layout theo bộ lọc hiện tại (ZIP)"
+        >
+          <Download size={14} /> <span className="hidden sm:inline">Tải bản vẽ layout (ZIP)</span>
+        </a>
       </div>
 
       <FilterBody

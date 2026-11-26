@@ -133,6 +133,19 @@ exports.detectSignatureAnchors = async (req, res) => {
   }
 };
 
+exports.downloadAllFiles = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.downloadAllProposalFiles({
+      user: req.user,
+      id: req.params.id
+    });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    res.send(result.buffer);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
 exports.configureSignature = async (req, res) => {
   try {
     const body = req.body || {};

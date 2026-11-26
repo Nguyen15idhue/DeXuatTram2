@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import ChargingStationStepHistory from './ChargingStationStepHistory';
 import { api, chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { canOperateStation } from '../../utils/chargingFulfillment';
+import { canOperateStation, isOnStationFullManager } from '../../utils/chargingFulfillment';
 import { calculateContractExpiry, calculateExpectedOnDate, getContractTermYears } from '../../utils/contractDates';
 import ChargingStationNeedBadge from './ChargingStationNeedBadge';
 import ChargingStationTable from './ChargingStationTable';
@@ -56,6 +56,7 @@ const ChargingStationContractTabs = () => {
   const [uploadStation, setUploadStation] = useState(null);
   const [contractFiles, setContractFiles] = useState([]);
   const [uploadedContractIds, setUploadedContractIds] = useState([]);
+  const [contractNumber, setContractNumber] = useState('');
   const [contractEffectiveDate, setContractEffectiveDate] = useState('');
   const [contractTermYears, setContractTermYears] = useState('');
   const [expectedOnDays, setExpectedOnDays] = useState('90');
@@ -115,6 +116,7 @@ const ChargingStationContractTabs = () => {
     setUploadedContractIds((row.contract_files || []).map(file => file.id || file.file_id));
     if (!row.contract_files?.length && row.contract_file_id) setUploadedContractIds([row.contract_file_id]);
     setContractStatus(row.contract_status || 'NOT');
+    setContractNumber(row.contract_number || '');
     setContractEffectiveDate(row.contract_effective_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
     setContractTermYears(getContractTermYears(row.contract_effective_date, row.contract_expiry_date));
     setExpectedOnDays(String(row.expected_on_days ?? 90));
@@ -180,7 +182,7 @@ const ChargingStationContractTabs = () => {
             <span className={`text-xs ${expired ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>
-            {canExtend && user?.role !== 'ADMIN' && canOperateStation(user, row, 'back_office') && (
+            {canExtend && (user?.role !== 'ADMIN' || isOnStationFullManager(user)) && canOperateStation(user, row, 'back_office') && (
               <Button
                 variant="outline-warning"
                 size="xs"
@@ -239,6 +241,10 @@ const ChargingStationContractTabs = () => {
       setModalError('Vui lòng chọn file hợp đồng');
       return;
     }
+    if (!contractNumber.trim()) {
+      setModalError('Vui lòng nhập số hợp đồng');
+      return;
+    }
     if (contractFiles.some(file => !CONTRACT_MIME_TYPES.includes(file.type))) {
       setModalError('File hợp đồng phải có định dạng PDF hoặc DOCX');
       return;
@@ -275,6 +281,7 @@ const ChargingStationContractTabs = () => {
       }
       const completed = await chargingStationService.completeContract(uploadStation.id, {
         file_ids: fileIds,
+        contract_number: contractNumber.trim(),
         contract_effective_date: contractEffectiveDate,
         contract_expiry_date: contractExpiryDate,
         expected_on_days: Number(expectedOnDays),
@@ -352,6 +359,7 @@ const ChargingStationContractTabs = () => {
       </FilterBar>
 
       <ChargingStationTable
+        showProposalColumns
         columns={columns}
         data={items}
         loading={loading}
@@ -409,6 +417,8 @@ const ChargingStationContractTabs = () => {
           />
           {contractFiles.length > 0 && <ul className="list-disc pl-5 text-sm">{contractFiles.map((file, index) => <li key={index} className="break-all">{file.name}</li>)}</ul>}
           {!contractFiles.length && uploadedContractIds.length > 0 && <p className="text-sm">Giữ {uploadedContractIds.length} file hợp đồng đã lưu. Có thể chọn file mới để thay thế.</p>}
+          <Input label="Số hợp đồng" aria-label="Số hợp đồng" required maxLength={255}
+            value={contractNumber} disabled={uploading} onChange={event => setContractNumber(event.target.value)} />
           <Input label="Ngày hiệu lực hợp đồng" aria-label="Ngày hiệu lực hợp đồng" type="date" required
             value={contractEffectiveDate} disabled={uploading} onChange={event => setContractEffectiveDate(event.target.value)} />
           <Input label="Thời hạn hợp đồng (năm)" aria-label="Thời hạn hợp đồng (năm)" inputMode="numeric" required={!preserveLegacyExpiry}

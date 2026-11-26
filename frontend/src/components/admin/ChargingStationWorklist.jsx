@@ -11,7 +11,7 @@ import ChargingStationGroupedProgress from "./ChargingStationGroupedProgress";
 import ChargingStationOnModal from "./ChargingStationOnModal";
 import ChargingStationShipmentHistory from "./ChargingStationShipmentHistory";
 import { formatProposalScale } from "../../utils/proposalGrading";
-import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRATION_LABELS, deliverySummary } from "../../utils/chargingFulfillment";
+import { acceptanceSummary, ACCEPTANCE_SUMMARY_LABELS, onStationStatus, INTEGRATION_LABELS, deliverySummary, isOnStationFullManager } from "../../utils/chargingFulfillment";
 import {
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
@@ -277,7 +277,7 @@ const ChargingStationWorklist = ({ stage }) => {
     <div className="space-y-4">
       {stage === "nghiem-thu" && (
         <PageHeader title={getStageConfig(stage).title} subtitle="Quản lý ON trạm từ đề xuất đã ký"
-          actions={user?.role === "SUPER_ADMIN" ? <BulkAcceptanceAction token={token} onChanged={() => load(page)} /> : undefined}
+          actions={isOnStationFullManager(user) ? <BulkAcceptanceAction token={token} onChanged={() => load(page)} /> : undefined}
         />
       )}
       <div role="tablist" className="tabs tabs-boxed w-fit">
@@ -318,6 +318,7 @@ const ChargingStationWorklist = ({ stage }) => {
           disabled={query !== search} token={token} />}
       </FilterBar>
       <ChargingStationTable
+        showProposalColumns
         loading={loading}
         data={items}
         startIndex={(page - 1) * 20}
@@ -438,7 +439,7 @@ const ChargingStationWorklist = ({ stage }) => {
           }] : []),
         ]}
         actions={
-          ["lap-tru", "on-tram"].includes(stage) || (stage === "giao-tru" && user?.role !== "SUPER_ADMIN")
+          ["lap-tru", "on-tram"].includes(stage) || (stage === "giao-tru" && !isOnStationFullManager(user))
             ? undefined
             : (row) => (
                 <div className="flex items-center gap-1">
@@ -449,7 +450,7 @@ const ChargingStationWorklist = ({ stage }) => {
                   >
                     Cập nhật trạng thái
                   </Button>}
-                  {stage === "giao-tru" && user?.role === "SUPER_ADMIN"
+                  {stage === "giao-tru" && isOnStationFullManager(user)
                     && row.status !== "CANCELLED" && !row.workflow_override?.completed && (
                       <Button size="xs" variant="outline" onClick={() => openDelivery(row)}>
                         Đổi trạng thái

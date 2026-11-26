@@ -752,6 +752,51 @@ exports.detectSignatureAnchors = async ({ user, id, documentId } = {}) => {
   return { ...(await detectAnchorsForPdf(proposal, context, pdfBuffer)), document_id: document.id };
 };
 
+exports.downloadAllProposalFiles = async ({ user, id } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
+  const proposal = await loadProposal(id);
+
+  const fileIds = new Set();
+  const documents = await proposalReportDocumentService.listDocuments(proposal.id);
+  for (const document of documents || []) {
+    [document.source_file_id, document.pdf_file_id, document.signing_file_id].forEach((value) => {
+      const numeric = Number(value);
+      if (Number.isInteger(numeric) && numeric > 0) fileIds.add(numeric);
+    });
+  }
+
+  const [fieldRows] = await pool.query(
+    "SELECT `key` FROM field_definitions WHERE entity = 'station_proposals' AND type = 'file' AND status = 'active'"
+  );
+  const fileKeys = (fieldRows || []).map((row) => row.key);
+  const custom = parseCustomData(proposal.custom_data);
+  const collectFileId = (value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const numeric = Number(value.id ?? value.file_id);
+      if (Number.isInteger(numeric) && numeric > 0) fileIds.add(numeric);
+      return;
+    }
+    if (Array.isArray(value)) value.forEach(collectFileId);
+  };
+  for (const key of fileKeys) collectFileId(custom[key]);
+
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  let count = 0;
+  for (const fileId of fileIds) {
+    const located = await require('./fileService').getFilePath(fileId);
+    if (!located) continue;
+    const data = await require('fs/promises').readFile(located.filePath);
+    const baseName = located.file.original_name || `file_${fileId}`;
+    zip.file(baseName, data);
+    count += 1;
+  }
+  if (count === 0) throw err('Đề xuất chưa có file nào để tải', 400);
+  const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const fileName = `BCDX_${proposal.ma_de_xuat_gen || proposal.id}_files.zip`;
+  return { buffer, fileName };
+};
 const configureSignature = async ({ user, id, fileId, signers, documents: requestedDocuments, ip, mutationConnection } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
   assertApprovalAccess(scope);

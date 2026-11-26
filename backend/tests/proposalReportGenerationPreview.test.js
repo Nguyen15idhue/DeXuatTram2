@@ -286,6 +286,16 @@ test('GĐKV can obtain preview options only for a proposal in the permitted bran
   await assert.rejects(generation.listPreviewOptions({ proposalId: 4, user: { id: 44, role: 'SALES' } }), { statusCode: 403 });
 });
 
+test('Back Office can obtain preview options for an unrelated proposal', async (t) => {
+  const proposal = { id: 4, user_id: 7, status: 'PROPOSAL_REPORT_CREATING', custom_data: { mo_hinh_dau_tu: 'NQ_LK' } };
+  t.mock.method(pool, 'query', async () => [[proposal]]);
+  t.mock.method(reports, 'resolveScope', async () => ({ role: 'SALES', userId: 44, isBackOffice: true }));
+  t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => fields);
+  t.mock.method(templates, 'listTemplates', async () => [template]);
+  t.mock.method(reports, 'getGenerationDraft', async () => ({ revision: 'r' }));
+  assert.equal((await generation.listPreviewOptions({ proposalId: 4, user: { id: 44, role: 'SALES' } })).templates.length, 1);
+});
+
 test('preview uses temporary finalized poles and current catalogue prices without saving', async (t) => {
   const queries = [];
   t.mock.method(pool, 'query', async (sql) => {

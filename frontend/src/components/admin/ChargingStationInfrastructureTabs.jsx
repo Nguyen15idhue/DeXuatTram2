@@ -297,6 +297,7 @@ const ChargingStationInfrastructureTabs = () => {
       </FilterBar>
 
       <ChargingStationTable
+        showProposalColumns
         columns={columns}
         data={items}
         loading={loading}

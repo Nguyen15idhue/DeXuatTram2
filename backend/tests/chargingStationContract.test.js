@@ -6,7 +6,7 @@ const access = require('../src/services/chargingStationAccessService');
 
 const user = { id: 1, role: 'SUPER_ADMIN' };
 const body = {
-  file_ids: [11, 12], contract_effective_date: '2026-11-12',
+  file_ids: [11, 12], contract_number: ' HD-01 ', contract_effective_date: '2026-11-12',
   contract_expiry_date: '2027-11-12', contract_note: ' Signed contract '
 };
 test.after(() => pool.end());
@@ -104,15 +104,73 @@ test('completes with multiple files, dates, trimmed note and audit in the same t
   const result = await service.completeContract(1, body, user, { actorId: 1, actorRole: 'SUPER_ADMIN' });
   assert.equal(result.contract_files.length, 2);
   const update = calls.find(([sql]) => sql.includes('SET contract_status'));
-  assert.deepEqual(update[1], [11, '2026-11-12', '2027-11-12', 'Signed contract', 1]);
+  assert.deepEqual(update[1], [11, 'HD-01', '2026-11-12', '2027-11-12', 'Signed contract', 1]);
   const insert = calls.find(([sql]) => sql.includes('INSERT INTO charging_station_contract_files'));
   assert.deepEqual(insert[1], [[[1, 11, 0], [1, 12, 1]]]);
   const audit = calls.find(([sql]) => sql.includes('INSERT INTO charging_station_activity_logs'));
   const changes = JSON.parse(audit[1][4]);
   assert.equal(changes.contract_files.new, '11, 12');
+  assert.equal(changes.contract_number.new, 'HD-01');
   assert.equal(changes.contract_expiry_date.new, '2027-11-12');
   assert.ok(calls.indexOf(audit) < calls.findIndex(([sql]) => sql === 'commit'));
   assert.equal(calls.some(([sql]) => sql === 'rollback'), false);
+});
+
+test('requires a valid contract number, including when saving a legacy signed contract', async t => {
+  const { calls, connection } = setup(t, {}, 'DONE');
+  for (const number of ['', '   ', null, {}, 'x'.repeat(256), undefined]) {
+    calls.length = 0;
+    await assert.rejects(service.completeContract(1, { ...body, contract_number: number }, user), { statusCode: 400 });
+    assert.ok(calls.some(([sql]) => sql === 'rollback'));
+    assert.equal(calls.some(([sql]) => sql.includes('SET contract_status')), false);
+  }
+  const query = connection.query;
+  connection.query = async (sql, params) => {
+    if (sql.includes('WHERE id = ? FOR UPDATE')) {
+      return [[{ id: 1, proposal_id: 2, status: 'ONBOARDING', contract_status: 'DONE',
+        contract_number: 'OLD-01', payment_status: 'NOT' }]];
+    }
+    return query(sql, params);
+  };
+  await service.completeContract(1, { ...body, contract_number: undefined }, user);
+  assert.equal(calls.find(([sql]) => sql.includes('SET contract_status'))[1][1], 'OLD-01');
+});
+
+test('ON list resolves proposal people in one batch without changing pagination or owner', async t => {
+  const { calls } = setup(t);
+  const rows = [
+    { id: 1, proposal_user_id: 1, proposer_value: '2', responsible_value: '3', director_value: '4',
+      latitude: 0, longitude: 106.25, status: 'ONBOARDING', contract_status: 'NOT' },
+    { id: 2, proposal_user_id: 1, proposer_value: null, responsible_value: 'Tên cũ', director_value: null,
+      status: 'ONBOARDING', contract_status: 'NOT' }
+  ];
+  t.mock.method(pool, 'query', async (sql, params) => {
+    calls.push([sql, params]);
+    if (sql.includes('COUNT(*) AS total')) return [[{ total: 2 }]];
+    if (sql.includes('AS proposer_value')) return [rows];
+    if (sql.includes('FROM users WHERE id IN')) return [[
+      { id: 1, full_name: 'Creator', department: 'Sales' },
+      { id: 2, full_name: 'Proposer' }, { id: 3, full_name: 'Assignee' }, { id: 4, full_name: 'Director' }
+    ]];
+    return [[]];
+  });
+  t.mock.method(require('../src/services/chargingStationWorkService'), 'getFilter', async () => ({ sql: '1=1', params: [] }));
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({ role: 'SUPER_ADMIN' }));
+  t.mock.method(access, 'permissions', async () => ({}));
+  t.mock.method(access, 'recordPermissions', async () => ({}));
+  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerMatcher', async () => () => false);
+  t.mock.method(require('../src/services/chargingStationShippingService'), 'getSummary', async () => ({ items: [] }));
+  const result = await service.listChargingStations({ stage: 'thong-tin-chung', tab: 'all', page: 1, limit: 20, user });
+  assert.equal(result.pagination.total, 2);
+  assert.deepEqual(result.items[0].nguoi_de_xuat, { id: 2, label: 'Proposer' });
+  assert.deepEqual(result.items[0].nguoi_phu_trach, { id: 3, label: 'Assignee' });
+  assert.deepEqual(result.items[0].nguoi_giao_phu_trach, { id: 4, label: 'Director' });
+  assert.equal(result.items[0].user_id, 1);
+  assert.equal(result.items[0].owner_department, 'Sales');
+  assert.equal(result.items[0].latitude, 0);
+  assert.equal(result.items[1].nguoi_de_xuat, null);
+  assert.equal(result.items[1].nguoi_phu_trach, 'Tên cũ');
+  assert.equal(calls.filter(([sql]) => sql.includes('FROM users WHERE id IN')).length, 1);
 });
 
 test('stores expected ON date from effective date and days in the contract transaction', async t => {

@@ -766,8 +766,8 @@ exports.transitionOnStation = async (connection, proposalId, toStatus, {
   let manualOverride = false;
 
   if (toStatus === 'ACTIVE') {
-    if (!directActivation || actorRole !== 'SUPER_ADMIN') {
-      throw err('Chỉ SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
+    if (!directActivation || !await require('./chargingStationAccessService').hasFullControl({ id: actorId, role: actorRole })) {
+      throw err('Chỉ Back Office hoặc SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
     }
     if (!['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING'].includes(fromStatus)) {
       throw err(`Không thể chuyển đề xuất sang Hoạt động từ trạng thái "${fromStatus}"`, 409);
@@ -791,7 +791,7 @@ exports.transitionOnStation = async (connection, proposalId, toStatus, {
     await connection.query(
       `UPDATE proposal_requests
           SET status = 'CANCELLED', resolved_by = ?, resolved_at = NOW(),
-              resolution_note = 'Đã đánh dấu ON trạm trực tiếp bởi SUPER_ADMIN'
+              resolution_note = 'Đã đánh dấu ON trạm trực tiếp'
         WHERE proposal_id = ? AND status = 'OPEN'`,
       [actorId, proposalId]
     );

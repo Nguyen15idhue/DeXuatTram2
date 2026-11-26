@@ -113,7 +113,7 @@ const scopeClause = async (scope, params) => {
 };
 
 const canUploadReport = async (scope, proposal) => {
-  if (scope.role === 'SUPER_ADMIN') return true;
+  if (scope.role === 'SUPER_ADMIN' || scope.isBackOffice) return true;
   if (scope.roleKey === 'TGD') return false;
   if (scope.roleKey === 'GDTTKD') {
     return require('./proposalReviewScope').matches(await getManagementScope(scope), proposal);
