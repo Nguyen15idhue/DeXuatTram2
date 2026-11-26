@@ -22,7 +22,7 @@ test('mixed-model shipping selects suppliers and restores only the actual suppli
       release: () => {}
     };
   };
-  const shipping = require('./src/services/chargingStationShippingService');
+  const shipping = require('./src/services/chargingStation/chargingStationShippingService');
   const suffix = Date.now();
   try {
     const [user] = await connection.query(
@@ -67,7 +67,7 @@ test('mixed-model shipping selects suppliers and restores only the actual suppli
     assert.equal(summary.pole_requirements.length, 2);
     assert.equal(summary.shipping_options.length, 4);
     assert.equal(summary.pole_requirements.find((row) => row.pole_id === poles[0]).remaining_quantity, 2);
-    const warehouseItems = await require('./src/services/chargingStationService').getCommittedExportItems(id);
+    const warehouseItems = await require('./src/services/chargingStation/chargingStationService').getCommittedExportItems(id);
     assert.equal(warehouseItems.length, 2);
     assert.equal(warehouseItems.find((row) => row.pole_id === poles[0]).remaining_quantity, 2);
     assert.equal(warehouseItems.find((row) => row.pole_id === poles[0]).stock_quantity, 20);

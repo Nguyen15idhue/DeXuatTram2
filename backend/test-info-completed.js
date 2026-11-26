@@ -1,7 +1,7 @@
 const pool = require('./src/utils/db');
 const worker = require('./src/workers/proposalLifecycleWorker');
-const proposalLifecycle = require('./src/services/proposalLifecycle');
-const adminProposalService = require('./src/services/adminProposalService');
+const proposalLifecycle = require('./src/services/proposal/proposalLifecycle');
+const adminProposalService = require('./src/services/admin/adminProposalService');
 const myProposalService = require('./src/services/myProposalService');
 
 const API = 'http://localhost:3000';

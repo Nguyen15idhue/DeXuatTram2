@@ -1,13 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const leads = require('../src/services/leadService');
-const access = require('../src/services/leadAccessService');
-const proposals = require('../src/services/proposalService');
+const leads = require('../src/services/lead/leadService.js');
+const access = require('../src/services/lead/leadAccessService.js');
+const proposals = require('../src/services/proposal/proposalService.js');
 const journey = require('../src/services/journeyActivityService');
 const sync = require('../src/services/journeySyncService');
-const requirement = require('../src/services/leadProposalRequirement');
-const service = require('../src/services/leadProposalService');
+const requirement = require('../src/services/lead/leadProposalRequirement.js');
+const service = require('../src/services/lead/leadProposalService.js');
 
 const actor = { id: 8, role: 'SUPER_ADMIN' };
 const lead = { id: 3, journey_id: 4, sales_outcome: null, assigned_user_id: 8 };

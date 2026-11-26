@@ -1,6 +1,6 @@
 require('dotenv').config();
 const pool = require('../src/utils/db');
-const { LOCK_NAME } = require('../src/services/proposalSheetSyncService');
+const { LOCK_NAME } = require('../src/services/proposal/proposalSheetSyncService');
 
 const backfill = async (connection, apply) => {
   const counts = { eligible: 0, missing: 0, mismatch: 0, updated: 0, concurrent: 0 };

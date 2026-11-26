@@ -4,7 +4,7 @@ const express = require('express');
 const Module = require('node:module');
 process.env.JWT_SECRET ||= 'historical-import-route-test-only';
 const { requireSuperAdmin } = require('../src/middlewares/auth');
-const { verifyProof } = require('../src/services/historicalOnImportProof');
+const { verifyProof } = require('../src/services/historicalOnImport/historicalOnImportProof');
 
 test('preview and confirmation require SUPER_ADMIN and bind confirmation to the validated file', async () => {
   const nativeLoad = Module._load;
@@ -21,11 +21,11 @@ test('preview and confirmation require SUPER_ADMIN and bind confirmation to the 
     if (parent?.filename.endsWith('historicalOnImport.js')) {
       if (request === '../middlewares/auth') return auth;
       if (request === '../middlewares/rateLimits') return { excelLimiter: (req, res, next) => next() };
-      if (request === '../services/historicalOnImportPreview') return {
+      if (request === '../services/historicalOnImport/historicalOnImportPreview') return {
         loadCatalog: async () => ({ poles: [{ id: 1, name: 'AC 22kW' }] }),
         preview: async buffer => [{ row: 2, action: 'create', errors: buffer.toString() === 'invalid' ? ['Sai'] : [], warnings: [] }]
       };
-      if (request === '../services/historicalOnImportTransaction') return {
+      if (request === '../services/historicalOnImport/historicalOnImportTransaction') return {
         executeConfirmation: async ({ buffer, proof, actor, writeRow }) => {
           verifyProof(proof, buffer, actor);
           assert.equal(typeof writeRow, 'function');
@@ -84,3 +84,4 @@ test('preview and confirmation require SUPER_ADMIN and bind confirmation to the 
     await new Promise(resolve => server.close(resolve));
   }
 });
+

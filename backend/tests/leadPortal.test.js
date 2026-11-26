@@ -7,7 +7,7 @@ process.env.JWT_SECRET = 'lead-portal-test';
 process.env.LEAD_PORTAL_USER_ID = '51';
 const pool = require('../src/utils/db');
 const { restrictLeadPortal, requireAuth, requireLeadManager, requireLeadWriter } = require('../src/middlewares/auth');
-const leadAccess = require('../src/services/leadAccessService');
+const leadAccess = require('../src/services/lead/leadAccessService.js');
 
 test('only the configured active MKT can manage all leads, without changing its actor role', async () => {
   const executor = {

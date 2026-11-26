@@ -294,7 +294,7 @@ exports.createProposalFromReport = async (id, userId, actorRole) => {
   } catch {
     cd = {};
   }
-  const proposalService = require("./proposalService");
+  const proposalService = require("./proposal/proposalService");
   const proposal = await proposalService.createProposal(
     userId,
     {

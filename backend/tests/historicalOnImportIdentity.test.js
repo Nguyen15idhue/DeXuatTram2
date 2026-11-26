@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveIdentity, resolveOwner } = require('../src/services/historicalOnImportIdentity');
+const { resolveIdentity, resolveOwner } = require('../src/services/historicalOnImport/historicalOnImportIdentity');
 
 test('matches by pair, keeps different proposals sharing a CMS separate', () => {
   const candidates = [

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const dataListController = require('../controllers/dataListController');
-const excelService = require('../services/excelService');
+const excelService = require('../services/excel/excelService');
 
 /**
  * @swagger

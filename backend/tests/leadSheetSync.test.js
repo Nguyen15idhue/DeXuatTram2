@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const pool = require('../src/utils/db');
-const { HEADERS, getStatus, startRun, mapLeadToRow, writeRows } = require('../src/services/leadSheetSyncService');
+const { HEADERS, getStatus, startRun, mapLeadToRow, writeRows } = require('../src/services/lead/leadSheetSyncService.js');
 
 const sheetHeaders = 'Mã khách hàng|Họ và tên|Số điện thoại|Email|Địa chỉ|Phường/Xã|Tỉnh/Thành phố|Vùng miền|Nguồn Lead|Ghi chú chung|Giai đoạn|Phân loại khách hàng|Trạng thái tư vấn|Kết quả TVBH|Ngày tạo|Ngày cập nhật|ID người phụ trách|Người phụ trách|Chức vụ|Phòng ban hiện tại|Phòng ban được phân chia|Thời điểm phân chia|Ghi chú TVBH|GĐKV phân loại KH|Thời gian GĐKV phân loại KH|Ghi chú GĐKV phân loại KH|Thời gian gọi lần đầu|Thời gian chốt kết quả cuối cùng|Lịch sử tư vấn'.split('|');
 

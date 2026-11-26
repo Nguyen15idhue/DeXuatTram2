@@ -140,7 +140,7 @@ exports.sourceProposal = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Trạm chưa liên kết đề xuất nào' });
     }
-    const adminProposalService = require('../services/adminProposalService');
+    const adminProposalService = require('../services/admin/adminProposalService');
     const scope = req.user.role === 'SALES'
       ? { role: 'SALES', branchIds: await adminProposalService.getBranchUserIds(req.user.id) }
       : { role: req.user.role };

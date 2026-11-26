@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const mysql = require('mysql2/promise');
 const pool = require('../src/utils/db');
-const bulk = require('../src/services/chargingStationBulkAcceptanceService');
-const work = require('../src/services/chargingStationWorkService');
+const bulk = require('../src/services/chargingStation/chargingStationBulkAcceptanceService.js');
+const work = require('../src/services/chargingStation/chargingStationWorkService.js');
 
 const superAdmin = { id: 1, role: 'SUPER_ADMIN' };
 const admin = { id: 2, role: 'ADMIN' };

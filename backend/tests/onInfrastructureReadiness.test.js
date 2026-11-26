@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const readiness = require('../src/services/chargingStationReadiness');
-const work = require('../src/services/chargingStationWorkService');
-const stationService = require('../src/services/chargingStationService');
+const readiness = require('../src/services/chargingStation/chargingStationReadiness.js');
+const work = require('../src/services/chargingStation/chargingStationWorkService.js');
+const stationService = require('../src/services/chargingStation/chargingStationService.js');
 
 const readyStation = (overrides = {}) => ({
   contract_status: 'DONE',

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const service = require('../src/services/chargingStationCommitmentService');
+const service = require('../src/services/chargingStation/chargingStationCommitmentService.js');
 
 const superAdmin = { id: 8, role: 'SUPER_ADMIN' };
 test.after(() => pool.end());

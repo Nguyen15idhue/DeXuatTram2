@@ -417,7 +417,7 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   if (!['STATION', 'WAREHOUSE', 'PROJECT', 'OTHER'].includes(destinationType)) throw err('Loại nơi nhận không hợp lệ', 400);
   const chargingStationId = destinationType === 'STATION' ? toInt(data.charging_station_id, 'Trạm sạc') : null;
   if (destinationType === 'STATION') {
-    const shippingService = require('./chargingStationShippingService');
+    const shippingService = require('./chargingStation/chargingStationShippingService');
     const actor = ctx.user || { id: ctx.userId || ctx.actorId };
     const shipment = await shippingService.createExportWithinTransaction(
       conn,

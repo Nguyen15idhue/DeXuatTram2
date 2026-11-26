@@ -1,7 +1,7 @@
 const pool = require('../utils/db');
 const ttlCache = require('../utils/ttlCache');
-const leadService = require('./leadService');
-const adminProposalService = require('./adminProposalService');
+const leadService = require('./lead/leadService');
+const adminProposalService = require('./admin/adminProposalService');
 
 const METRIC_REGISTRY = [
   'lead_funnel',

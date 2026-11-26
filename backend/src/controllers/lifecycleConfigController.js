@@ -1,4 +1,4 @@
-const proposalLifecycle = require('../services/proposalLifecycle');
+const proposalLifecycle = require('../services/proposal/proposalLifecycle');
 
 exports.get = async (req, res) => {
   try {

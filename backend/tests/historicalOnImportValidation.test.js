@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateRecord, validateExistingRecord, dateValue, amountValue } = require('../src/services/historicalOnImportValidation');
+const { validateRecord, validateExistingRecord, dateValue, amountValue } = require('../src/services/historicalOnImport/historicalOnImportValidation');
 
 test('existing workflow statuses and proposal code drivers cannot change through import', () => {
   const snapshot = {

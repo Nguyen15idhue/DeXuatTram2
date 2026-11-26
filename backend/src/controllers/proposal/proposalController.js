@@ -1,0 +1,96 @@
+const proposalService = require('../../services/proposal/proposalService');
+const proximityService = require('../../services/proximityService');
+const { forMap } = require('../../services/proposal/proposalMapDisplay');
+
+exports.getAll = async (req, res) => {
+  try {
+    const proposals = await proposalService.getAllProposals();
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: proposals.map(p => forMap(p, req.user)) });
+  } catch (error) {
+    console.error('Get proposals error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getById = async (req, res) => {
+  try {
+    const proposal = await proposalService.getProposalById(req.params.id);
+    if (!proposal) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: forMap(proposal, req.user) });
+  } catch (error) {
+    console.error('Get proposal error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.create = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const formId = req.query.formId ? parseInt(req.query.formId, 10) : null;
+    const proposal = await proposalService.createProposal(user_id, req.body, {
+      actorRole: req.user.role || null,
+      ip: req.ip || null,
+      formId
+    });
+    const { autoInfoCompleted, ...data } = proposal;
+    res.status(201).json({ success: true, data, infoCompleted: autoInfoCompleted || null, message: 'Tạo đề xuất thành công' });
+  } catch (error) {
+    console.error('Create proposal error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.checkNearby = async (req, res) => {
+  try {
+    const { latitude, longitude, radius_m = 200, exclude_id = null } = req.body;
+    const result = await proximityService.checkNearby(latitude, longitude, radius_m, exclude_id);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.createGuest = async (req, res) => {
+  try {
+    const ip = req.ip || req.connection?.remoteAddress || null;
+    const { proposal, warnings } = await proposalService.createGuestProposal(req.body, ip);
+    const { autoInfoCompleted, ...data } = proposal;
+    res.status(201).json({ success: true, data, infoCompleted: autoInfoCompleted || null, warnings: warnings || [], message: 'Gửi đề xuất thành công' });
+  } catch (error) {
+    console.error('Create guest proposal error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.checkNearbyPublic = async (req, res) => {
+  try {
+    const { latitude, longitude, radius_m = 200 } = req.body;
+    const result = await proximityService.checkNearby(latitude, longitude, radius_m);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.trackByCode = async (req, res) => {
+  try {
+    const proposal = await proposalService.trackByCode(req.params.code);
+    if (!proposal) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    res.json({ success: true, data: proposal });
+  } catch (error) {
+    console.error('Track proposal error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};

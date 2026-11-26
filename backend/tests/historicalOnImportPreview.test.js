@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
-const { inspectRows, preview } = require('../src/services/historicalOnImportPreview');
-const { createTemplate, FIELDS, POLE_FIELDS } = require('../src/services/historicalOnImportSheet');
+const { inspectRows, preview } = require('../src/services/historicalOnImport/historicalOnImportPreview');
+const { createTemplate, FIELDS, POLE_FIELDS } = require('../src/services/historicalOnImport/historicalOnImportSheet');
 
 const catalog = {
   poles: [{ id: 1, name: 'AC 22kW' }],

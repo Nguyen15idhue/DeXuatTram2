@@ -8,13 +8,13 @@ test('combined save commits and rolls back on MySQL', {
 }, async (t) => {
   assert.equal(process.env.DB_NAME, 'copilot_lead_test');
   const pool = require('../src/utils/db');
-  const leads = require('../src/services/leadService');
-  const access = require('../src/services/leadAccessService');
-  const proposals = require('../src/services/proposalService');
+  const leads = require('../src/services/lead/leadService.js');
+  const access = require('../src/services/lead/leadAccessService.js');
+  const proposals = require('../src/services/proposal/proposalService.js');
   const journey = require('../src/services/journeyActivityService');
   const sync = require('../src/services/journeySyncService');
-  const requirement = require('../src/services/leadProposalRequirement');
-  const service = require('../src/services/leadProposalService');
+  const requirement = require('../src/services/lead/leadProposalRequirement.js');
+  const service = require('../src/services/lead/leadProposalService.js');
   try {
     await pool.query(`CREATE TABLE leads (
       id INT PRIMARY KEY, journey_id INT NOT NULL, sales_outcome VARCHAR(20),

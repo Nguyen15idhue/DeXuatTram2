@@ -5,11 +5,11 @@ const path = require('node:path');
 const os = require('node:os');
 const JSZip = require('jszip');
 const pool = require('../src/utils/db');
-const files = require('../src/services/proposalChairmanFileService');
+const files = require('../src/services/proposal/proposalChairmanFileService.js');
 const fileService = require('../src/services/fileService');
 const fileController = require('../src/controllers/fileController');
-const signatures = require('../src/services/proposalSignatureService');
-const lifecycle = require('../src/services/proposalLifecycle');
+const signatures = require('../src/services/proposal/proposalSignatureService.js');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
 test.after(() => pool.end());
 
 test('common collection validates exact count, IDs, duplicates and legacy payload', () => {
@@ -111,11 +111,11 @@ test('real migration backfills all legacy files idempotently; actual upload atom
     beginTransaction: () => connection.beginTransaction(), commit: () => connection.commit(),
     rollback: () => connection.rollback(), release: () => {}
   }));
-  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope',
+  t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'resolveScope',
     async () => ({ userId: 1, role: 'SUPER_ADMIN', isAdmin: true, isFinance: false }));
-  t.mock.method(require('../src/services/proposalReportDocumentService'), 'getSigningDocuments',
+  t.mock.method(require('../src/services/proposal/proposalReportDocumentService.js'), 'getSigningDocuments',
     async () => [{ id: 11, signing_file_id: 101, source_file_id: 101 }]);
-  t.mock.method(require('../src/services/chargingStationService'), 'createFromApprovedProposal', async () => {});
+  t.mock.method(require('../src/services/chargingStation/chargingStationService.js'), 'createFromApprovedProposal', async () => {});
   t.mock.method(require('../src/services/notificationService'), 'getUserName', async () => 'Tester');
   t.mock.method(files, 'validate', async () => {});
   let failAudit = true;

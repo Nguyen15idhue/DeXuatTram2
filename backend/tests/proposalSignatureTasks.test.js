@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const service = require('../src/services/proposalSignatureService');
-const reports = require('../src/services/proposalReportService');
+const service = require('../src/services/proposal/proposalSignatureService.js');
+const reports = require('../src/services/proposal/proposalReportService.js');
 const dynamic = require('../src/services/dynamicUtils');
 test.after(() => pool.end());
 
@@ -20,9 +20,9 @@ test('signature detail returns the proposal creator name without replacing owner
   };
   t.mock.method(reports, 'resolveScope', async user => profile(user));
   t.mock.method(service, 'canReadChairmanProposal', async () => false);
-  t.mock.method(require('../src/services/proposalReportDocumentService'), 'getSigningDocuments', async () => []);
-  t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({ requests: [], activity: [] }));
-  t.mock.method(require('../src/services/proposalChairmanFileService'), 'list', async () => []);
+  t.mock.method(require('../src/services/proposal/proposalReportDocumentService.js'), 'getSigningDocuments', async () => []);
+  t.mock.method(require('../src/services/proposal/proposalProgressService.js'), 'getProgress', async () => ({ requests: [], activity: [] }));
+  t.mock.method(require('../src/services/proposal/proposalChairmanFileService.js'), 'list', async () => []);
   t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => []);
   t.mock.method(dynamic, 'mergeData', row => row);
   t.mock.method(dynamic, 'enrichUserFields', async row => row);
@@ -58,14 +58,14 @@ test('chairman upload allows Back Office and Finance but denies MKT/CTV departme
 
 test('report files do not fall back to proposal region for GĐTTKD', async t => {
   const files = require('../src/controllers/fileController');
-  const review = require('../src/services/proposalReviewService');
+  const review = require('../src/services/proposal/proposalReviewService.js');
   const scope = {
     id: 7, region: 'Trung', managedIds: new Set([7, 8]), accountIds: new Set([7, 8, 99])
   };
   let custom = { vung_mien: 'Trung', file_bc_dx: [{ id: 101, name: 'report.pdf' }] };
   let status = 'PROPOSAL_REPORT_CREATING';
   t.mock.method(review, 'resolveReviewer', async () => ({ managementScope: scope }));
-  t.mock.method(require('../src/services/adminUserService'), 'getBranchIds', async () => [7]);
+  t.mock.method(require('../src/services/admin/adminUserService.js'), 'getBranchIds', async () => [7]);
   t.mock.method(pool, 'query', async sql => {
     if (sql.includes('SELECT role, token_version, custom_data FROM users')) return [[{
       role: 'SALES', token_version: 0,

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { stockAffectingItems } = require('../src/services/historicalOnImportInventory');
-const { calculateRestockItems } = require('../src/services/chargingStationDeletionService');
+const { stockAffectingItems } = require('../src/services/historicalOnImport/historicalOnImportInventory');
+const { calculateRestockItems } = require('../src/services/chargingStation/chargingStationDeletionService.js');
 
 test('historical shipment rows are excluded from stock-affecting items', () => {
   const items = [

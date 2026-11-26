@@ -4,7 +4,7 @@ exports.getDashboardStats = async (scope = {}) => {
   const isSales = scope.role === 'SALES' && scope.userId;
   let branchIds = null;
   if (isSales) {
-    const adminUserService = require('./adminUserService');
+    const adminUserService = require('./admin/adminUserService');
     branchIds = await adminUserService.getBranchIds(scope.userId);
   }
   const inBranch = (col) => branchIds ? ` AND ${col} IN (${branchIds.map(() => '?').join(',')})` : '';

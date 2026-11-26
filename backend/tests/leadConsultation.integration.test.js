@@ -7,14 +7,14 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
 }, async () => {
   process.env.TZ = 'Asia/Ho_Chi_Minh';
   const pool = require('../src/utils/db');
-  const leads = require('../src/services/leadService');
-  const assignments = require('../src/services/leadAssignmentService');
-  const consultation = require('../src/services/leadConsultationService');
+  const leads = require('../src/services/lead/leadService.js');
+  const assignments = require('../src/services/lead/leadAssignmentService.js');
+  const consultation = require('../src/services/lead/leadConsultationService.js');
   const calendar = require('../src/services/businessCalendarService');
   const worker = require('../src/workers/leadConsultationWorker');
   const importJobs = require('../src/services/importJobService');
-  const tabsService = require('../src/services/leadTabsService');
-  const access = require('../src/services/leadAccessService');
+  const tabsService = require('../src/services/lead/leadTabsService.js');
+  const access = require('../src/services/lead/leadAccessService.js');
   const prefix = `lead-workflow-${crypto.randomUUID()}`;
   const users = [];
   const journeys = [];
@@ -123,7 +123,7 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     assert.equal((await leads.getLeads({ tab: 'completed', search: prefix }, gdkv)).pagination.total, 1);
     assert.equal((await leads.getLeads({ tab: 'allocated', search: prefix }, director)).pagination.total, 1);
     await compareCounts(gdkv);
-    await assert.rejects(() => require('../src/services/leadProposalService').createProposalFromLead(id, {}, tgd), { statusCode: 403 });
+    await assert.rejects(() => require('../src/services/lead/leadProposalService.js').createProposalFromLead(id, {}, tgd), { statusCode: 403 });
 
     const warningId = await newLead('warning');
     await assignments.assignLead(warningId, gdkv.id, director);

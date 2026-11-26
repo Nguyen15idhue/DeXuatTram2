@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 const pool = require('../src/utils/db');
-const reports = require('../src/services/proposalReportService');
-const { buildExport } = require('../src/services/chargingStationExportService');
+const reports = require('../src/services/proposal/proposalReportService.js');
+const { buildExport } = require('../src/services/chargingStation/chargingStationExportService.js');
 
 test('exports all matching rows for a scoped viewer and preserves Excel values and partial progress', async (t) => {
   const user = { id: 17, role: 'CTV' };

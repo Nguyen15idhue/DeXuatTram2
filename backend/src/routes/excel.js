@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireAdmin, requireUserManager, requireLeadManager: requireCustomerManager } = require('../middlewares/auth');
 const { adminLimiter, excelLimiter } = require('../middlewares/rateLimits');
-const excelService = require('../services/excelService');
+const excelService = require('../services/excel/excelService');
 const requireLeadManager = async (req, res, next) => {
   try {
     let entity = req.path === '/export/leads' ? 'leads' : req.path === '/import/confirm'

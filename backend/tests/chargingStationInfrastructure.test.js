@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const service = require('../src/services/chargingStationService');
-const access = require('../src/services/chargingStationAccessService');
+const service = require('../src/services/chargingStation/chargingStationService.js');
+const access = require('../src/services/chargingStation/chargingStationAccessService.js');
 const superUser = { id: 1, role: 'SUPER_ADMIN' };
 const backOffice = { id: 2, role: 'SALES', custom_data: { department: 'Back Office' } };
 const body = { status: 'DOING', expected_status: 'NOT', date: '2026-11-13', note: ' Started ' };
@@ -29,13 +29,13 @@ const setup = (t, overrides = {}) => {
     return sql.includes('SELECT cs.id') ? [[record]] : [[]];
   });
   t.mock.method(access, 'buildViewScope', async () => ({ sql: '1=1', params: [] }));
-  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
+  t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'resolveScope', async user => ({
     isBackOffice: user.id === backOffice.id, department: user.custom_data?.department || ''
   }));
-  t.mock.method(require('../src/services/adminProposalService'), 'getProposalWithUser', async () => ({ id: 2 }));
-  t.mock.method(require('../src/services/chargingStationShippingService'), 'getSummary', async () => ({}));
-  t.mock.method(require('../src/services/chargingStationDeploymentService'), 'getDeployments', async () => []);
-  t.mock.method(require('../src/services/chargingStationOverrideService'), 'getEditToken', async () => 'test-token');
+  t.mock.method(require('../src/services/admin/adminProposalService.js'), 'getProposalWithUser', async () => ({ id: 2 }));
+  t.mock.method(require('../src/services/chargingStation/chargingStationShippingService.js'), 'getSummary', async () => ({}));
+  t.mock.method(require('../src/services/chargingStation/chargingStationDeploymentService.js'), 'getDeployments', async () => []);
+  t.mock.method(require('../src/services/chargingStation/chargingStationOverrideService.js'), 'getEditToken', async () => 'test-token');
   return { calls, record, connection };
 };
 
@@ -98,8 +98,8 @@ test('infrastructure tasks include owners, ancestors and Setup but not unrelated
   const originalQuery = pool.query;
   t.mock.method(pool, 'query', async (sql, params) => sql.includes('AS infrastructure_task')
     ? [[{ infrastructure_task: sql.includes('(1 = 1)') || owners.has(params[0]) ? 1 : 0 }]] : originalQuery(sql, params));
-  t.mock.method(require('../src/services/adminProposalService'), 'getBranchUserIds', async id => [id]);
-  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
+  t.mock.method(require('../src/services/admin/adminProposalService.js'), 'getBranchUserIds', async id => [id]);
+  t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'resolveScope', async user => ({
     isBackOffice: user.id === 2, department: user.id === 8 ? 'Phòng Setup và Vận hành' : ''
   }));
   for (const user of [{ id: 5, role: 'CTV' }, { id: 6, role: 'NPP' }, { id: 7, role: 'SALES' }]) {

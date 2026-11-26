@@ -1,5 +1,5 @@
 const pool = require('../utils/db');
-const consultation = require('../services/leadConsultationService');
+const consultation = require('../services/lead/leadConsultationService');
 const calendarService = require('../services/businessCalendarService');
 const { isGdtt } = require('../constants/salesRanks');
 

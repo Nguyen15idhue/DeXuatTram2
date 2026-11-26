@@ -1,18 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const users = require('../src/services/adminUserService');
-const admin = require('../src/services/adminProposalService');
+const users = require('../src/services/admin/adminUserService.js');
+const admin = require('../src/services/admin/adminProposalService.js');
 const dynamic = require('../src/services/dynamicUtils');
-const access = require('../src/services/proposalAccessService');
-const review = require('../src/services/proposalReviewService');
-const reports = require('../src/services/proposalReportService');
-const layouts = require('../src/services/proposalDesignService');
-const approvals = require('../src/services/proposalApprovalService');
-const signatures = require('../src/services/proposalSignatureService');
-const requests = require('../src/services/proposalRequestService');
-const grading = require('../src/services/proposalGradingService');
-const controller = require('../src/controllers/adminProposalController');
+const access = require('../src/services/proposal/proposalAccessService.js');
+const review = require('../src/services/proposal/proposalReviewService.js');
+const reports = require('../src/services/proposal/proposalReportService.js');
+const layouts = require('../src/services/proposal/proposalDesignService.js');
+const approvals = require('../src/services/proposal/proposalApprovalService.js');
+const signatures = require('../src/services/proposal/proposalSignatureService.js');
+const requests = require('../src/services/proposal/proposalRequestService.js');
+const grading = require('../src/services/proposal/proposalGradingService.js');
+const controller = require('../src/controllers/admin/adminProposalController.js');
 
 const profile = (id, role, department, chuc_vu = '') => ({
   id, role, full_name: `Fixture ${id}`, status: 'ACTIVE',
@@ -37,7 +37,7 @@ let queries = [];
 let mutations = 0;
 const originals = {
   query: pool.query, branch: admin.getBranchUserIds, ancestors: users.getAncestorIds,
-  fields: dynamic.getFieldDefinitionsByEntity, progress: require('../src/services/proposalProgressService').getProgress,
+  fields: dynamic.getFieldDefinitionsByEntity, progress: require('../src/services/proposal/proposalProgressService.js').getProgress,
   byId: admin.getProposalById
 };
 
@@ -45,7 +45,7 @@ test.before(() => {
   admin.getBranchUserIds = async (id) => [Number(id), 20];
   users.getAncestorIds = async (id) => Number(id) === 20 ? [2, 9] : [];
   dynamic.getFieldDefinitionsByEntity = async () => [];
-  require('../src/services/proposalProgressService').getProgress = async () => ({});
+  require('../src/services/proposal/proposalProgressService.js').getProgress = async () => ({});
   admin.getProposalById = async () => proposal;
   pool.query = async (sql, params = []) => {
     queries.push({ sql, params });
@@ -81,7 +81,7 @@ test.after(async () => {
   users.getAncestorIds = originals.ancestors;
   dynamic.getFieldDefinitionsByEntity = originals.fields;
   admin.getProposalById = originals.byId;
-  require('../src/services/proposalProgressService').getProgress = originals.progress;
+  require('../src/services/proposal/proposalProgressService.js').getProgress = originals.progress;
   await pool.end();
 });
 
@@ -132,7 +132,7 @@ test('GĐTTKD must explicitly select scored departments and provide a nonblank r
 });
 
 test('explicit regrade selection creates requests only for chosen departments', async (t) => {
-  const lifecycle = require('../src/services/proposalLifecycle');
+  const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
   const originalQuery = pool.query;
   const created = [];
   t.mock.method(pool, 'query', async (sql, params) => {
@@ -201,7 +201,7 @@ test('report list, filters, task count and upload use the organizational scope; 
 test('report detail and document access deny unrelated SALES while ADMIN can read', async t => {
   proposal.status = 'PROPOSAL_REPORT_CREATING';
   proposal.user_id = 100;
-  t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({ requests: [], activity: [] }));
+  t.mock.method(require('../src/services/proposal/proposalProgressService.js'), 'getProgress', async () => ({ requests: [], activity: [] }));
   const query = pool.query;
   t.mock.method(pool, 'query', async (sql, params = []) => {
     if (/SELECT p\.\*, p\.ma_de_xuat_gen/.test(sql)) {
@@ -234,7 +234,7 @@ test('review detail permissions keep ADMIN read-all while restricting actions to
 });
 
 test('specialist notifications target only professional handlers or legitimate report owners', async () => {
-  const recipients = require('../src/services/proposalStepRecipients');
+  const recipients = require('../src/services/proposal/proposalStepRecipients.js');
   assert.deepEqual(await recipients.resolveStepRecipients('DESIGNING', proposal), [1, 10]);
   assert.deepEqual(await recipients.resolveStepRecipients('PROPOSAL_REPORT_REVIEWING', proposal), [1, 6]);
   const reportRecipients = await recipients.resolveStepRecipients('PROPOSAL_REPORT_CREATING', proposal);

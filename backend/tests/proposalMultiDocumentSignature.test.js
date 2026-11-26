@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { _internals } = require('../src/services/proposalSignatureService');
+const { _internals } = require('../src/services/proposal/proposalSignatureService.js');
 
 test('only canonical PDF or DOCX files can be signed', () => {
   assert.equal(_internals.isSignableFile({ original_name: 'report.pdf', mime_type: 'application/pdf' }), true);

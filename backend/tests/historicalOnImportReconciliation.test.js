@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { checkRealProgress, checkFeasibleProgress } = require('../src/services/historicalOnImportReconciliation');
+const { checkRealProgress, checkFeasibleProgress } = require('../src/services/historicalOnImport/historicalOnImportReconciliation');
 
 const catalog = { poles: [{ id: 8, name: 'AC 22kW' }] };
 const snapshot = {

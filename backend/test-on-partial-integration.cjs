@@ -23,10 +23,10 @@ test('real MySQL partial delivery, returns and parallel activation remain atomic
     };
   };
   const ctx = (user) => ({ actorId: user.id, actorRole: user.role, ip: '127.0.0.1' });
-  const stations = require('./src/services/chargingStationService');
-  const shipping = require('./src/services/chargingStationShippingService');
-  const deployments = require('./src/services/chargingStationDeploymentService');
-  const finance = require('./src/services/chargingFinanceService');
+  const stations = require('./src/services/chargingStation/chargingStationService');
+  const shipping = require('./src/services/chargingStation/chargingStationShippingService');
+  const deployments = require('./src/services/chargingStation/chargingStationDeploymentService');
+  const finance = require('./src/services/chargingStation/chargingFinanceService');
   const request = () => randomUUID();
   const suffix = Date.now();
   try {

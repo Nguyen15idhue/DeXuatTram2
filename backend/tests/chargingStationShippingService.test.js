@@ -6,11 +6,17 @@ const test = require('node:test');
 const serviceDirectory = path.resolve(__dirname, '../src/services');
 
 const loadWithMocks = (filename, mocks) => {
-  const filePath = path.join(serviceDirectory, filename);
+  let filePath = path.join(serviceDirectory, filename);
+  if (!require('node:fs').existsSync(filePath)) {
+    filePath = path.join(serviceDirectory, 'chargingStation', path.basename(filename));
+  }
   const nativeLoad = Module._load;
   delete require.cache[filePath];
   Module._load = function (request, parent, isMain) {
     if (Object.hasOwn(mocks, request)) return mocks[request];
+    const reqBase = path.posix.basename(request);
+    const matchedKey = Object.keys(mocks).find(k => path.posix.basename(k) === reqBase);
+    if (matchedKey) return mocks[matchedKey];
     return nativeLoad.call(this, request, parent, isMain);
   };
   return {
@@ -52,7 +58,7 @@ test('shipment failure checks version and receipt state without restocking or ch
       if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }];
       throw new Error(`Unexpected SQL: ${sql}`);
     });
-    const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+    const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', {
       '../utils/db': { getConnection: async () => connection },
       './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
       './chargingStationService': { writeActivity: async () => {} },
@@ -108,7 +114,7 @@ test('shipment failure checks version and receipt state without restocking or ch
         return [[]];
       }
     };
-    const { service, restore } = loadWithMocks('chargingStationShippingService.js', { '../utils/db': pool });
+    const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', { '../utils/db': pool });
     try {
       const summary = await service.getSummary(5, pool, { allowReview: true });
       assert.equal(summary.needs_review, true);
@@ -129,7 +135,7 @@ test('shipment failure checks version and receipt state without restocking or ch
       query: async sql => sql.includes('snapshot_count')
         ? [[{ id: 5, chot_so_luong_tru: [{}], snapshot_count: 1 }]] : [[]]
     };
-    const { service, restore } = loadWithMocks('chargingStationShippingService.js', { '../utils/db': pool });
+    const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', { '../utils/db': pool });
     try {
       await assert.rejects(service.getSummary(5, pool, { allowReview: true }), /Database unavailable/);
       assert.equal(connection.calls.includes('rollback'), true);
@@ -150,7 +156,7 @@ test('overview reads committed quantities without resolving pole names or starti
       return [[]];
     }
   };
-  const { service, restore } = loadWithMocks('chargingStationShippingService.js', { '../utils/db': pool });
+  const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', { '../utils/db': pool });
   try {
     const summary = await service.getSummary(5, pool, { initialize: false });
     assert.equal(summary.totals.committed, 5);
@@ -171,7 +177,7 @@ test('createExport requires a request id before any inventory or shipment write'
     assertBackOffice: async () => {},
     assertView: async () => {}
   };
-  const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+  const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', {
     '../utils/db': pool,
     './chargingStationAccessService': access
   });
@@ -216,7 +222,7 @@ test('createExport returns an identical prior request without decrementing stock
     assertBackOffice: async () => {},
     assertView: async () => {}
   };
-  const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+  const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', {
     '../utils/db': pool,
     './chargingStationAccessService': access
   });
@@ -303,7 +309,7 @@ test('return requests can reserve undelivered quantities but never return receiv
     assertView: async () => {}
   };
   const stationService = { writeActivity: async () => {} };
-  const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+  const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', {
     '../utils/db': { getConnection: async () => connection },
     './chargingStationAccessService': access,
     './chargingStationService': stationService
@@ -351,7 +357,7 @@ for (const [historical, stockExempt] of [[0, 0], [1, 0], [0, 1]]) {
       if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }];
       throw new Error(`Unexpected query: ${sql}`);
     });
-    const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+    const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', {
       '../utils/db': { getConnection: async () => connection },
       './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
       './chargingStationService': { writeActivity: async () => {} }
@@ -383,7 +389,7 @@ for (const [historical, stockExempt] of [[0, 0], [1, 0], [0, 1]]) {
       if (sql.includes('INSERT INTO charging_station_fulfillment_events')) return [{ insertId: 1 }];
       throw new Error(`Unexpected query: ${sql}`);
     });
-    const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
+    const { service, restore } = loadWithMocks('chargingStation/chargingStationShippingService.js', {
       '../utils/db': { getConnection: async () => connection },
       './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
       './chargingStationService': { writeActivity: async () => {} },
@@ -399,3 +405,4 @@ for (const [historical, stockExempt] of [[0, 0], [1, 0], [0, 1]]) {
     } finally { restore(); }
   });
 }
+

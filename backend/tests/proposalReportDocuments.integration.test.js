@@ -10,7 +10,7 @@ test('real Word conversion, fixed PDF, retry, permissions and legacy preservatio
   skip: process.env.RUN_REPORT_DOCUMENT_TESTS !== '1', timeout: 180000
 }, async () => {
   const pool = require('../src/utils/db');
-  const documents = require('../src/services/proposalReportDocumentService');
+  const documents = require('../src/services/proposal/proposalReportDocumentService.js');
   const converter = require('../src/services/libreOfficeService');
   const prefix = `report-doc-${crypto.randomUUID()}`;
   const users = [];

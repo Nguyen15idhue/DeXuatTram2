@@ -4,12 +4,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const mysql = require('mysql2/promise');
 const pool = require('../src/utils/db');
-const shipping = require('../src/services/chargingStationShippingService');
-const deployment = require('../src/services/chargingStationDeploymentService');
-const completion = require('../src/services/chargingStationCompletionService');
-const work = require('../src/services/chargingStationWorkService');
-const access = require('../src/services/chargingStationAccessService');
-const stations = require('../src/services/chargingStationService');
+const shipping = require('../src/services/chargingStation/chargingStationShippingService.js');
+const deployment = require('../src/services/chargingStation/chargingStationDeploymentService.js');
+const completion = require('../src/services/chargingStation/chargingStationCompletionService.js');
+const work = require('../src/services/chargingStation/chargingStationWorkService.js');
+const access = require('../src/services/chargingStation/chargingStationAccessService.js');
+const stations = require('../src/services/chargingStation/chargingStationService.js');
 
 test.after(() => pool.end());
 test('real SQL: whole received-shipment returns and atomic shared acceptance preserve stock and history', {
@@ -164,7 +164,7 @@ test('real SQL: whole received-shipment returns and atomic shared acceptance pre
       const [{ insertId: firstId }] = await fixture.query(`INSERT INTO charging_station_deployments(charging_station_id,export_item_id,quantity,stage,sub_status,installation_status)
         VALUES(2,6,4,'CONFIGURING','NOT_CONFIGURED','DONE')`);
       const transitions = [];
-      t.mock.method(require('../src/services/proposalLifecycle'), 'transitionOnStationWithinTransaction', async (connection, id, status) => {
+      t.mock.method(require('../src/services/proposal/proposalLifecycle.js'), 'transitionOnStationWithinTransaction', async (connection, id, status) => {
         transitions.push(status);
         await connection.query('UPDATE station_proposals SET status=? WHERE id=?', [status, id]);
       });
@@ -269,7 +269,7 @@ test('real SQL: whole received-shipment returns and atomic shared acceptance pre
         await assert.rejects(access.assertInfrastructure(2, user), { statusCode: 403 });
       }
       await assert.rejects(stations.getChargingStationActivity(2, { id: 9, role: 'CTV' }, { step: 'on-tram' }), { statusCode: 403 });
-      t.mock.method(require('../src/services/adminProposalService'), 'getProposalWithUser', async () => ({ id: 2 }));
+      t.mock.method(require('../src/services/admin/adminProposalService.js'), 'getProposalWithUser', async () => ({ id: 2 }));
       await stations.updateInfrastructureStatus(2, 'power', {
         status: 'NOT', expected_status: 'DOING', date: '2026-11-16', note: 'Owner infrastructure correction'
       }, { id: 10, role: 'CTV' }, { actorId: 10, actorRole: 'CTV' });
@@ -279,7 +279,7 @@ test('real SQL: whole received-shipment returns and atomic shared acceptance pre
       const express = require('express');
       const app = express();
       app.use(express.json());
-      app.use('/api/admin/charging-stations', require('../src/routes/chargingStations'));
+      app.use('/api/admin/charging-stations', require('../src/routes/chargingStation/chargingStations.js'));
       const server = await new Promise(resolve => {
         const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
       });

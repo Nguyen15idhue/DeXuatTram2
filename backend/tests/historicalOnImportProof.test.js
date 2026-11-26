@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 process.env.JWT_SECRET ||= 'test-historical-proof-secret';
 const jwt = require('jsonwebtoken');
-const { createProof, verifyProof } = require('../src/services/historicalOnImportProof');
+const { createProof, verifyProof } = require('../src/services/historicalOnImport/historicalOnImportProof');
 
 test('proof is bound to the exact file, actor, session version and preview targets', () => {
   const file = Buffer.from('file');

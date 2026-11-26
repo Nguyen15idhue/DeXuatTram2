@@ -65,7 +65,13 @@ const harness = async (overrides = {}) => {
   const module = { exports: {} };
   const source = await fs.readFile(filename, 'utf8');
   vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename })(
-    id => { if (!Object.hasOwn(mocks, id)) throw new Error(id); return mocks[id]; }, module, module.exports
+    id => {
+      if (Object.hasOwn(mocks, id)) return mocks[id];
+      const base = path.posix.basename(id);
+      const key = Object.keys(mocks).find(k => path.posix.basename(k) === base);
+      if (key) return mocks[key];
+      throw new Error(id);
+    }, module, module.exports
   );
   const args = { user: { id: 1, role: 'SUPER_ADMIN' }, id: 501, configId: 21, reason: 'Approved recovery', ip: '127.0.0.1' };
   return { service: module.exports, args, config, logs, events, snapshot: () => snapshot };

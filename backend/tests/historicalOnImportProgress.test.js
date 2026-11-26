@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildPortions } = require('../src/services/historicalOnImportProgress');
+const { buildPortions } = require('../src/services/historicalOnImport/historicalOnImportProgress');
 
 test('preserves independent partial ON and acceptance counts', () => {
   const portions = buildPortions({ received: 5, installed: 4, accepted: 2, on: 2, accepted_on: 1 });

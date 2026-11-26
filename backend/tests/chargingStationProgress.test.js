@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const care = require('../src/services/chargingStationCareService');
-const access = require('../src/services/chargingStationAccessService');
-const work = require('../src/services/chargingStationWorkService');
-const station = require('../src/services/chargingStationService');
+const care = require('../src/services/chargingStation/chargingStationCareService.js');
+const access = require('../src/services/chargingStation/chargingStationAccessService.js');
+const work = require('../src/services/chargingStation/chargingStationWorkService.js');
+const station = require('../src/services/chargingStation/chargingStationService.js');
 const value = { contact_time: '2026-11-13T02:03', content: ' Updated progress ' };
 const superUser = { id: 1, role: 'SUPER_ADMIN' };
 test.after(() => pool.end());
@@ -123,7 +123,7 @@ test('HTTP progress routes allow assigned CTV creation but reserve saved-row man
   const express = require('express');
   const app = express();
   app.use(express.json());
-  app.use('/api/admin/charging-stations', require('../src/routes/chargingStationCare'));
+  app.use('/api/admin/charging-stations', require('../src/routes/chargingStation/chargingStationCare.js'));
   const server = await new Promise(resolve => {
     const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
   });

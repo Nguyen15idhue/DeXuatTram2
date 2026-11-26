@@ -1,9 +1,9 @@
 const pool = require('../utils/db');
 const cronMatcher = require('../utils/cronMatcher');
-const proposalLifecycle = require('../services/proposalLifecycle');
+const proposalLifecycle = require('../services/proposal/proposalLifecycle');
 const stationService = require('../services/stationService');
-const chargingStationService = require('../services/chargingStationService');
-const chargingStationReadiness = require('../services/chargingStationReadiness');
+const chargingStationService = require('../services/chargingStation/chargingStationService');
+const chargingStationReadiness = require('../services/chargingStation/chargingStationReadiness');
 const notificationService = require('../services/notificationService');
 
 const TICK_MS = 60 * 1000;

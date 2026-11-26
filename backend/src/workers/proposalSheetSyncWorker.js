@@ -1,4 +1,4 @@
-const proposalSheetSyncService = require('../services/proposalSheetSyncService');
+const proposalSheetSyncService = require('../services/proposal/proposalSheetSyncService');
 
 let timer = null;
 let running = false;

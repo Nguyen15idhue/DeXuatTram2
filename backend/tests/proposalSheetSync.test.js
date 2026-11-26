@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const pool = require('../src/utils/db');
-const service = require('../src/services/proposalSheetSyncService');
+const service = require('../src/services/proposal/proposalSheetSyncService.js');
 const { backfill } = require('../scripts/backfill-proposal-status-changed-at');
 
 const config = { spreadsheetId: 'test', tabName: 'Đề xuất' };

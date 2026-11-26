@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const service = require('../src/services/chargingStationService');
-const access = require('../src/services/chargingStationAccessService');
+const service = require('../src/services/chargingStation/chargingStationService.js');
+const access = require('../src/services/chargingStation/chargingStationAccessService.js');
 
 const user = { id: 1, role: 'SUPER_ADMIN' };
 const body = {
@@ -56,10 +56,10 @@ const setup = (t, fileOverrides = {}, status = 'DOING') => {
     return [[]];
   });
   t.mock.method(access, 'buildViewScope', async () => ({ sql: '1=1', params: [] }));
-  t.mock.method(require('../src/services/adminProposalService'), 'getProposalWithUser', async () => ({ id: 2 }));
-  t.mock.method(require('../src/services/chargingStationShippingService'), 'getSummary', async () => ({}));
-  t.mock.method(require('../src/services/chargingStationDeploymentService'), 'getDeployments', async () => []);
-  t.mock.method(require('../src/services/chargingStationOverrideService'), 'getEditToken', async () => 'test-token');
+  t.mock.method(require('../src/services/admin/adminProposalService.js'), 'getProposalWithUser', async () => ({ id: 2 }));
+  t.mock.method(require('../src/services/chargingStation/chargingStationShippingService.js'), 'getSummary', async () => ({}));
+  t.mock.method(require('../src/services/chargingStation/chargingStationDeploymentService.js'), 'getDeployments', async () => []);
+  t.mock.method(require('../src/services/chargingStation/chargingStationOverrideService.js'), 'getEditToken', async () => 'test-token');
   return { calls, connection, files };
 };
 

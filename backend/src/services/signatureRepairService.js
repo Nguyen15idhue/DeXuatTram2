@@ -59,7 +59,7 @@ exports.repair = async (args) => {
   validate(args);
   const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
   if (!reason || reason.length > 2000) throw error('Vui lòng nhập lý do phục hồi (tối đa 2000 ký tự)', 400);
-  return require('./proposalSignatureService')._internals.withSignatureMutationLock(args.id, async connection => {
+  return require('./proposal/proposalSignatureService')._internals.withSignatureMutationLock(args.id, async connection => {
     await connection.beginTransaction();
     try {
       const initial = await load(args.id, args.configId, connection);
@@ -74,7 +74,7 @@ exports.repair = async (args) => {
       if (!current.length) throw error('Người ký chưa có chữ ký hồ sơ hiện tại', 400);
       const image = await signedDocuments.validateSignature(current[0].id);
       await snapshots.save(config.id, image.bytes, connection);
-      await require('./proposalLifecycle').logActivity({
+      await require('./proposal/proposalLifecycle').logActivity({
         proposalId: Number(args.id), action: 'signature_image_repaired',
         fromStatus: config.proposal_status, toStatus: config.proposal_status,
         reason, actorId: args.user.id, actorRole: args.user.role, source: 'user',

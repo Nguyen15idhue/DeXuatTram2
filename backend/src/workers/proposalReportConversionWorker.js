@@ -1,5 +1,5 @@
 const pool = require('../utils/db');
-const documents = require('../services/proposalReportDocumentService');
+const documents = require('../services/proposal/proposalReportDocumentService');
 
 let timer = null;
 let running = false;

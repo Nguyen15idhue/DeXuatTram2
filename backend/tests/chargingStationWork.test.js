@@ -1,14 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const access = require('../src/services/chargingStationAccessService');
-const work = require('../src/services/chargingStationWorkService');
+const access = require('../src/services/chargingStation/chargingStationAccessService.js');
+const work = require('../src/services/chargingStation/chargingStationWorkService.js');
 const pool = require('../src/utils/db');
 
 test.after(async () => pool.end());
 
 test('ADMIN can perform only the workflow steps assigned to their department', async (t) => {
   let department;
-  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql',
+  t.mock.method(require('../src/services/proposal/proposalAccessService.js'), 'buildOwnerScopeSql',
     async () => ({ sql: 'p.user_id=?', params: [1] }));
   t.mock.method(pool, 'query', async () => [[{ custom_data: { department } }]]);
   for (const [name, backOffice, setup] of [
@@ -41,10 +41,10 @@ test('ADMIN can perform only the workflow steps assigned to their department', a
 
 test('infrastructure worklist and badge use the same scope without duplicating Setup owners', async t => {
   const owner = { sql: 'p.user_id=?', params: [17] };
-  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql', async () => owner);
+  t.mock.method(require('../src/services/proposal/proposalAccessService.js'), 'buildOwnerScopeSql', async () => owner);
   let setup;
   t.mock.method(access, 'permissions', async () => ({ setup, request_early: false }));
-  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({
+  t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'resolveScope', async () => ({
     department: setup ? 'Phòng Setup và Vận hành' : 'Phòng khác'
   }));
   for (setup of [false, true]) {
@@ -62,7 +62,7 @@ test('infrastructure worklist and badge use the same scope without duplicating S
 });
 
 test('setup ADMIN receives installation notifications but not finance notifications', async () => {
-  const deployments = require('../src/services/chargingStationDeploymentService');
+  const deployments = require('../src/services/chargingStation/chargingStationDeploymentService.js');
   const inserted = [];
   const connection = { query: async (sql, params) => {
     if (sql.startsWith('SELECT')) return [[
@@ -134,10 +134,10 @@ test('MySQL infrastructure worklist and badge require signed contracts and prese
   skip: process.env.RUN_INFRASTRUCTURE_INTEGRATION_TESTS !== '1'
 }, async t => {
   t.mock.method(access, 'permissions', async user => ({ setup: user.id === 20, request_early: false }));
-  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
+  t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'resolveScope', async user => ({
     department: user.id === 20 ? 'Phòng Setup và Vận hành' : 'Phòng khác'
   }));
-  t.mock.method(require('../src/services/proposalAccessService'), 'buildOwnerScopeSql', async user => ({
+  t.mock.method(require('../src/services/proposal/proposalAccessService.js'), 'buildOwnerScopeSql', async user => ({
     sql: 'p.user_id=?', params: [user.id === 19 ? 17 : user.id]
   }));
   const fixtures = [

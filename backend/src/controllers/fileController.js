@@ -1,5 +1,5 @@
 const fileService = require('../services/fileService');
-const proposalGradingService = require('../services/proposalGradingService');
+const proposalGradingService = require('../services/proposal/proposalGradingService');
 const pool = require('../utils/db');
 const fs = require('fs');
 
@@ -87,13 +87,13 @@ const canAccessFile = async (file, req) => {
         [recovery.proposal_id, recovery.document_id, recovery.signing_file_id, requesterId]);
       if (assigned.length) return true;
       if (['ADMIN','SALES'].includes(requesterRole)
-        && (require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
-          || require('../services/proposalReportService').isBackOffice(requesterDepartment))
-        && await require('../services/proposalSignatureService').canReadChairmanProposal({
+        && (require('../services/proposal/proposalReportService').isFinanceDepartment(requesterDepartment)
+          || require('../services/proposal/proposalReportService').isBackOffice(requesterDepartment))
+        && await require('../services/proposal/proposalSignatureService').canReadChairmanProposal({
           user: { id: requesterId, role: requesterRole }, id: recovery.proposal_id
         })) return true;
       try {
-        await require('../services/proposalReportService').assertReportReadAccess({ id: requesterId, role: requesterRole }, recovery.proposal_id);
+        await require('../services/proposal/proposalReportService').assertReportReadAccess({ id: requesterId, role: requesterRole }, recovery.proposal_id);
         return true;
       } catch (error) { if (error.statusCode !== 403) throw error; }
     }
@@ -110,7 +110,7 @@ const canAccessFile = async (file, req) => {
         "SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND user_id=? AND status<>'CANCELLED' LIMIT 1",
         [proposal.proposal_id, requesterId]);
       if (assigned.length) return true;
-      const reports = require('../services/proposalReportService');
+      const reports = require('../services/proposal/proposalReportService');
       if (requesterRole === 'SALES' && (reports.isFinanceDepartment(requesterDepartment)
         || reports.isBackOffice(requesterDepartment)) && proposal.signed_file_id) return true;
       try {
@@ -131,13 +131,13 @@ const canAccessFile = async (file, req) => {
         [document.proposal_id, requesterId, document.id, file.id]);
       if (configs.length) return true;
       if (['ADMIN', 'SALES'].includes(requesterRole)
-        && (require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
-          || require('../services/proposalReportService').isBackOffice(requesterDepartment))
-        && await require('../services/proposalSignatureService').canReadChairmanProposal({
+        && (require('../services/proposal/proposalReportService').isFinanceDepartment(requesterDepartment)
+          || require('../services/proposal/proposalReportService').isBackOffice(requesterDepartment))
+        && await require('../services/proposal/proposalSignatureService').canReadChairmanProposal({
           user: { id: requesterId, role: requesterRole }, id: document.proposal_id
         })) return true;
       try {
-        await require('../services/proposalReportService').assertReportReadAccess(
+        await require('../services/proposal/proposalReportService').assertReportReadAccess(
           { id: requesterId, role: requesterRole }, document.proposal_id);
         return true;
       } catch (error) {
@@ -152,7 +152,7 @@ const canAccessFile = async (file, req) => {
       [file.id, file.id]
     );
     if (contractStations.length > 0) {
-      return require('../services/chargingStationService').canViewChargingStation(
+      return require('../services/chargingStation/chargingStationService').canViewChargingStation(
         contractStations[0].id,
         { id: requesterId, role: requesterRole }
       );
@@ -165,7 +165,7 @@ const canAccessFile = async (file, req) => {
     );
     if (invoiceStations.length > 0) {
       try {
-        await require('../services/chargingStationAccessService').assertFinanceViewer({
+        await require('../services/chargingStation/chargingStationAccessService').assertFinanceViewer({
           id: requesterId,
           role: requesterRole
         });
@@ -173,7 +173,7 @@ const canAccessFile = async (file, req) => {
         if (error.statusCode === 403) return false;
         throw error;
       }
-      return require('../services/chargingStationService').canViewChargingStation(
+      return require('../services/chargingStation/chargingStationService').canViewChargingStation(
         invoiceStations[0].charging_station_id,
         { id: requesterId, role: requesterRole }
       );
@@ -192,20 +192,20 @@ const canAccessFile = async (file, req) => {
       [file.id, file.id, file.id, file.id, file.id]
     );
     for (const station of linkedCharging) {
-      if (await require('../services/chargingStationService').canViewChargingStation(
+      if (await require('../services/chargingStation/chargingStationService').canViewChargingStation(
         station.charging_station_id, { id: requesterId, role: requesterRole })) return true;
     }
   }
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
   if (requesterId && requesterRole === 'SALES'
-    && (require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
-      || require('../services/proposalReportService').isBackOffice(requesterDepartment))) {
+    && (require('../services/proposal/proposalReportService').isFinanceDepartment(requesterDepartment)
+      || require('../services/proposal/proposalReportService').isBackOffice(requesterDepartment))) {
     const [proposals] = await pool.query(
       `SELECT id AS proposal_id FROM station_proposals WHERE signed_file_id=?
        UNION SELECT proposal_id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'`,
       [file.id, file.id]);
     for (const proposal of proposals) {
-      if (await require('../services/proposalSignatureService').canReadChairmanProposal({
+      if (await require('../services/proposal/proposalSignatureService').canReadChairmanProposal({
         user: { id: requesterId, role: requesterRole }, id: proposal.proposal_id
       })) return true;
     }
@@ -213,7 +213,7 @@ const canAccessFile = async (file, req) => {
       "SELECT id,custom_data FROM station_proposals WHERE status IN ('SIGNATURE_PENDING','APPROVED') AND custom_data IS NOT NULL");
     for (const proposal of linkedProposals) {
       if (containsFileId(proposal.custom_data, Number(file.id))
-        && await require('../services/proposalSignatureService').canReadChairmanProposal({
+        && await require('../services/proposal/proposalSignatureService').canReadChairmanProposal({
           user: { id: requesterId, role: requesterRole }, id: proposal.id
         })) return true;
     }
@@ -240,20 +240,20 @@ const canAccessFile = async (file, req) => {
     } catch { /* silent */ }
   }
   if (requesterId) {
-    const reviewRole = require('../services/proposalReviewService').resolveRoleKey({
+    const reviewRole = require('../services/proposal/proposalReviewService').resolveRoleKey({
       role: requesterRole, department: requesterDepartment, chucVu: requesterChucVu
     });
     const reviewScope = reviewRole === 'GDTTKD'
-      ? (await require('../services/proposalReviewService').resolveReviewer({ id: requesterId, role: requesterRole })).managementScope
+      ? (await require('../services/proposal/proposalReviewService').resolveReviewer({ id: requesterId, role: requesterRole })).managementScope
       : null;
     try {
       const fid = Number(file.id);
-      const reviewService = require('../services/proposalReviewService');
-      const reportService = require('../services/proposalReportService');
+      const reviewService = require('../services/proposal/proposalReviewService');
+      const reportService = require('../services/proposal/proposalReportService');
       const [props] = await pool.query('SELECT user_id, status, review_level, custom_data FROM station_proposals');
       let branchIds = null;
       if (requesterRole === 'SALES' || requesterRole === 'NPP') {
-        const ids = await require('../services/adminUserService').getBranchIds(requesterId);
+        const ids = await require('../services/admin/adminUserService').getBranchIds(requesterId);
         branchIds = new Set(ids.map(Number));
       }
       const gradingStatuses = new Set([...proposalGradingService.DOWNSTREAM_STATUSES, 'CANCELLED']);
@@ -282,13 +282,13 @@ const canAccessFile = async (file, req) => {
         if (isGdttkdUser
           && reportService.TAB_STATUSES.all.includes(p.status)
           && containsFileId({ files: proposalCustom.file_bc_dx, sources: proposalCustom.file_bc_dx_sources }, fid)
-          && !require('../services/proposalReviewScope').matches({ ...reviewScope, region: null }, p)) continue;
+          && !require('../services/proposal/proposalReviewScope').matches({ ...reviewScope, region: null }, p)) continue;
         if (p.user_id !== null && Number(p.user_id) === Number(requesterId)) return true;
         if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
         if (isTgdUser) return true;
         if (isGradingDepartment && gradingStatuses.has(p.status)) return true;
         if (isGdttkdUser && p.review_level !== null && p.review_level !== undefined) {
-          if (require('../services/proposalReviewScope').matches(reviewScope, p)) return true;
+          if (require('../services/proposal/proposalReviewScope').matches(reviewScope, p)) return true;
           if (['GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING', 'RE_GRADING', 'TGD_REVIEW'].includes(p.status)) continue;
         }
         if ((isGdttkdUser || isTgdUser || isBackOfficeUser) && gradingStatuses.has(p.status)) {

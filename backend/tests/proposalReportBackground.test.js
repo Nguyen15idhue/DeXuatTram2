@@ -1,17 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const reports = require('../src/services/proposalReportService');
-const documents = require('../src/services/proposalReportDocumentService');
-const lifecycle = require('../src/services/proposalLifecycle');
-const requests = require('../src/services/proposalRequestService');
+const reports = require('../src/services/proposal/proposalReportService.js');
+const documents = require('../src/services/proposal/proposalReportDocumentService.js');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
+const requests = require('../src/services/proposal/proposalRequestService.js');
 const worker = require('../src/workers/proposalReportConversionWorker');
 const converter = require('../src/services/libreOfficeService');
 const fileService = require('../src/services/fileService');
 
 test('approval API refuses configuration for pending, failed or non-PDF documents', async (t) => {
-  const approval = require('../src/services/proposalApprovalService');
-  const signature = require('../src/services/proposalSignatureService');
+  const approval = require('../src/services/proposal/proposalApprovalService.js');
+  const signature = require('../src/services/proposal/proposalSignatureService.js');
   t.mock.method(reports, 'resolveScope', async () => ({ role: 'SUPER_ADMIN', isAdmin: true }));
   t.mock.method(signature._internals, 'withSignatureMutationLock', async (_id, action) => action());
   t.mock.method(pool, 'query', async () => [[{ id: 71, status: 'PROPOSAL_REPORT_REVIEWING' }]]);

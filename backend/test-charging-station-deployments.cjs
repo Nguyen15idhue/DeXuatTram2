@@ -97,7 +97,7 @@ Module._load = function (request, parent, isMain) {
   }
   return originalLoad.call(this, request, parent, isMain);
 };
-const service = require('./src/services/chargingStationDeploymentService');
+const service = require('./src/services/chargingStation/chargingStationDeploymentService');
 let serial = 0;
 const act = (id, action, extra = {}) => service.updatePortion(1, id,
   { action, request_id: `test-${++serial}`, ...extra }, setup);

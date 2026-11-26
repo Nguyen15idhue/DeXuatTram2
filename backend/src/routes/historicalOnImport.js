@@ -2,11 +2,11 @@ const express = require('express');
 const multer = require('multer');
 const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const { excelLimiter } = require('../middlewares/rateLimits');
-const { createTemplate } = require('../services/historicalOnImportSheet');
-const service = require('../services/historicalOnImportPreview');
-const { createProof } = require('../services/historicalOnImportProof');
-const { executeConfirmation } = require('../services/historicalOnImportTransaction');
-const { writeRow } = require('../services/historicalOnImportWriter');
+const { createTemplate } = require('../services/historicalOnImport/historicalOnImportSheet');
+const service = require('../services/historicalOnImport/historicalOnImportPreview');
+const { createProof } = require('../services/historicalOnImport/historicalOnImportProof');
+const { executeConfirmation } = require('../services/historicalOnImport/historicalOnImportTransaction');
+const { writeRow } = require('../services/historicalOnImport/historicalOnImportWriter');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });

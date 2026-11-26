@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const grading = require('../src/services/proposalGradingService');
-const lifecycle = require('../src/services/proposalLifecycle');
-const requests = require('../src/services/proposalRequestService');
-const reportGeneration = require('../src/services/proposalReportGenerationService');
+const grading = require('../src/services/proposal/proposalGradingService.js');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
+const requests = require('../src/services/proposal/proposalRequestService.js');
+const reportGeneration = require('../src/services/proposal/proposalReportGenerationService.js');
 
 test('2+2 advances like scores of at least five, without bypassing open regrading or review permissions', async t => {
   let proposal;
@@ -84,7 +84,7 @@ test('2+2 advances like scores of at least five, without bypassing open regradin
 });
 
 test('grading API reports the direct transition to report creation', async t => {
-  const controller = require('../src/controllers/proposalGradingController');
+  const controller = require('../src/controllers/proposal/proposalGradingController.js');
   t.mock.method(grading, 'updateGrading', async () => ({ transition: { status: 'PROPOSAL_REPORT_CREATING' } }));
   let response;
   await controller.update(

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const mysql = require('mysql2');
-const { applyLeadListFilters } = require('../src/services/leadService');
+const { applyLeadListFilters } = require('../src/services/lead/leadService.js');
 
 test('lead filters combine CRM and legacy values, empty values, and independent column filters', () => {
   const where = [];

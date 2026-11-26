@@ -12,7 +12,7 @@ const addProposalAdvancedFilters = async (where, params, filters, regionPattern)
   addInFilter(where, params, 'p.user_id', filters.ownerUserId);
   const managers = values(filters.managerUserId);
   if (managers.length) {
-    const { getBranchIds } = require('../services/adminUserService');
+    const { getBranchIds } = require('../services/admin/adminUserService');
     const branches = await Promise.all(managers.map(id => getBranchIds(Number(id))));
     const ids = [...new Set(branches.flat().map(Number))];
     if (!ids.length) where.push('1 = 0');

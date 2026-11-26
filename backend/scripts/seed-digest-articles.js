@@ -1,5 +1,5 @@
-const helpService = require('./src/services/helpService');
-const pool = require('./src/utils/db');
+const helpService = require('../src/services/helpService');
+const pool = require('../src/utils/db');
 
 const ROLES_ALL = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'guest'];
 

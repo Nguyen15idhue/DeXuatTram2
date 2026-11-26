@@ -1,11 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const service = require('../src/services/proposalSignatureService');
-const reports = require('../src/services/proposalReportService');
+const service = require('../src/services/proposal/proposalSignatureService.js');
+const reports = require('../src/services/proposal/proposalReportService.js');
 const dynamic = require('../src/services/dynamicUtils');
 const notification = require('../src/services/notificationService');
-const lifecycle = require('../src/services/proposalLifecycle');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
 const originals = {
   getConnection: pool.getConnection, query: pool.query, scope: reports.resolveScope,
   fields: dynamic.getFieldDefinitionsByEntity, merge: dynamic.mergeData, create: notification.create,

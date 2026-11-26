@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const mysql = require('mysql2/promise');
 const pool = require('../src/utils/db');
-const { capture, fingerprint, save } = require('../src/services/historicalOnImportSnapshot');
+const { capture, fingerprint, save } = require('../src/services/historicalOnImport/historicalOnImportSnapshot');
 
 test.after(() => pool.end());
 

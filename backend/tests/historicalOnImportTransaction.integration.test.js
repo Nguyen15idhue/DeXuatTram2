@@ -4,12 +4,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const mysql = require('mysql2/promise');
 const pool = require('../src/utils/db');
-const { createTemplate, FIELDS, POLE_FIELDS } = require('../src/services/historicalOnImportSheet');
-const preview = require('../src/services/historicalOnImportPreview');
-const { createProof } = require('../src/services/historicalOnImportProof');
-const { executeConfirmation } = require('../src/services/historicalOnImportTransaction');
-const managedShipments = require('../src/services/historicalOnImportManagedShipments');
-const historicalWriter = require('../src/services/historicalOnImportWriter');
+const { createTemplate, FIELDS, POLE_FIELDS } = require('../src/services/historicalOnImport/historicalOnImportSheet');
+const preview = require('../src/services/historicalOnImport/historicalOnImportPreview');
+const { createProof } = require('../src/services/historicalOnImport/historicalOnImportProof');
+const { executeConfirmation } = require('../src/services/historicalOnImport/historicalOnImportTransaction');
+const managedShipments = require('../src/services/historicalOnImport/historicalOnImportManagedShipments');
+const historicalWriter = require('../src/services/historicalOnImport/historicalOnImportWriter');
 
 test.after(() => pool.end());
 
@@ -140,12 +140,12 @@ test('confirmation saves snapshots atomically, rejects stale previews and is ide
     assert.equal(shipments[0].quantity, 3);
     assert.equal(shipments[0].received_quantity, 3);
     const [savedSnapshots] = await fixture.query('SELECT snapshot FROM historical_on_import_snapshots WHERE batch_key=?',
-      [require('../src/services/historicalOnImportProof').verifyProof(progressProof, validProgress, actor).batch_key]);
+      [require('../src/services/historicalOnImport/historicalOnImportProof').verifyProof(progressProof, validProgress, actor).batch_key]);
     const stored = typeof savedSnapshots[0].snapshot === 'string'
       ? JSON.parse(savedSnapshots[0].snapshot) : savedSnapshots[0].snapshot;
     assert.equal(stored.deployments.length, 2);
 
-    const batchKey = require('../src/services/historicalOnImportProof').verifyProof(progressProof, validProgress, actor).batch_key;
+    const batchKey = require('../src/services/historicalOnImport/historicalOnImportProof').verifyProof(progressProof, validProgress, actor).batch_key;
     await fixture.query(`INSERT INTO warehouse_exports
       (id,exporter_user_id,export_date,charging_station_id,destination_type,historical_import,historical_import_batch_key)
       VALUES (2,1,NOW(),1,'STATION',1,?),(3,1,NOW(),1,'STATION',1,?)`, [batchKey, batchKey]);

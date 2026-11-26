@@ -6,10 +6,10 @@ const crypto = require('node:crypto');
 const JSZip = require('jszip');
 const { PDFDocument, PDFName } = require('pdf-lib');
 const pool = require('../src/utils/db');
-const service = require('../src/services/proposalDocumentRecoveryService');
+const service = require('../src/services/proposal/proposalDocumentRecoveryService.js');
 const files = require('../src/services/fileService');
-const lifecycle = require('../src/services/proposalLifecycle');
-const signatures = require('../src/services/proposalSignatureService');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
+const signatures = require('../src/services/proposal/proposalSignatureService.js');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 test.after(() => pool.end());
 
@@ -87,7 +87,7 @@ test('real SQL: DOCX conversion, frozen snapshots/replacements/manual signing, r
     query, beginTransaction: () => connection.beginTransaction(), commit: () => connection.commit(),
     rollback: () => connection.rollback(), release: () => {}
   }));
-  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope',
+  t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'resolveScope',
     async user => ({ userId: user.id, role: user.role, isAdmin: user.role === 'SUPER_ADMIN',
       isBackOffice: false, isFinance: user.id === 4 }));
   const args = { user: { id: 1, role: 'SUPER_ADMIN' }, id: 1, documentId: 11, reason: 'PDF cũ convert lỗi; phục hồi từ DOCX gốc' };
@@ -285,7 +285,7 @@ test('real SQL: DOCX conversion, frozen snapshots/replacements/manual signing, r
     assert.equal(fileStatus.status, 'active');
     assert.equal(await access(stored.file, { user: { id: 2, role: 'SALES' } }), true);
     await query("INSERT INTO users(id,full_name,email,role,custom_data) VALUES(4,'Unrelated','test4@example.test','SALES','{}')");
-    t.mock.method(require('../src/services/proposalReportService'), 'assertReportReadAccess', async (user) => {
+    t.mock.method(require('../src/services/proposal/proposalReportService.js'), 'assertReportReadAccess', async (user) => {
       if (user.id === 4) throw Object.assign(new Error('Outside scope'), { statusCode: 403 });
     });
     assert.equal(await access(stored.file, { user: { id: 4, role: 'SALES' } }), false);

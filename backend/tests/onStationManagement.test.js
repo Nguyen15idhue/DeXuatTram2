@@ -2,18 +2,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const mysql = require('mysql2/promise');
 const pool = require('../src/utils/db');
-const station = require('../src/services/chargingStationService');
-const override = require('../src/services/chargingStationOverrideService');
-const deployment = require('../src/services/chargingStationDeploymentService');
+const station = require('../src/services/chargingStation/chargingStationService.js');
+const override = require('../src/services/chargingStation/chargingStationOverrideService.js');
+const deployment = require('../src/services/chargingStation/chargingStationDeploymentService.js');
 const carriers = require('../src/services/shippingCarrierService');
-const shipping = require('../src/services/chargingStationShippingService');
-const work = require('../src/services/chargingStationWorkService');
+const shipping = require('../src/services/chargingStation/chargingStationShippingService.js');
+const work = require('../src/services/chargingStation/chargingStationWorkService.js');
 const superUser = { id: 1, role: 'SUPER_ADMIN' };
 const ctx = { actorId: 1, actorRole: 'SUPER_ADMIN' };
 test.after(() => pool.end());
 
 test('new shipments enforce readiness but idempotent retries remain valid', async t => {
-  const access = require('../src/services/chargingStationAccessService');
+  const access = require('../src/services/chargingStation/chargingStationAccessService.js');
   t.mock.method(access, 'assertBackOffice', async () => {});
   t.mock.method(access, 'assertView', async () => {});
   const request = {
@@ -154,7 +154,7 @@ test('HTTP delivery override uses the existing SUPER_ADMIN-only update route', a
   process.env.JWT_SECRET ||= 'delivery-test-only-secret';
   const app = require('express')();
   app.use(require('express').json());
-  app.use('/api/admin/charging-stations', require('../src/routes/chargingStations'));
+  app.use('/api/admin/charging-stations', require('../src/routes/chargingStation/chargingStations.js'));
   const server = await new Promise(resolve => {
     const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
   });
@@ -176,7 +176,7 @@ test('HTTP delivery override uses the existing SUPER_ADMIN-only update route', a
 });
 
 const rollbackFixture = t => {
-  const access = require('../src/services/chargingStationAccessService');
+  const access = require('../src/services/chargingStation/chargingStationAccessService.js');
   const calls = [];
   const portion = { id: 1, stage: 'OPERATING', sub_status: 'ACTIVE', installation_status: 'DONE',
     installation_note: 'Original installation', installation_version: 2,
@@ -256,9 +256,9 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     });
     t.mock.method(pool, 'query', (...args) => fixture.query(...args));
     t.mock.method(pool, 'getConnection', () => fixture.getConnection());
-    t.mock.method(require('../src/services/adminProposalService'), 'getProposalWithUser', async () => ({ id: 1 }));
+    t.mock.method(require('../src/services/admin/adminProposalService.js'), 'getProposalWithUser', async () => ({ id: 1 }));
     t.mock.method(require('../src/services/journeySyncService'), 'onStationStatus', async () => {});
-    const lifecycle = require('../src/services/proposalLifecycle');
+    const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
     t.mock.method(lifecycle, 'transitionOnStation', async (connection, id, status) => {
       await connection.query('UPDATE station_proposals SET status=? WHERE id=?', [status, id]);
       return null;
@@ -283,7 +283,7 @@ test('real SQL: overview override, tasks, separate installation, shipment and ca
     await fixture.query('INSERT INTO warehouse_export_items(id,export_id,pole_id,supplier_id,commitment_id,quantity,received_quantity) VALUES(1,1,1,1,1,1,1)');
     await fixture.query("INSERT INTO charging_station_deployments(id,charging_station_id,export_item_id,quantity,stage,sub_status) VALUES(1,1,1,1,'INSTALLING','NOT_INSTALLED')");
     await t.test('overview SQL orders workflow groups before pagination without changing other tabs or scopes', async t => {
-      const proposals = require('../src/services/adminProposalService');
+      const proposals = require('../src/services/admin/adminProposalService.js');
       t.mock.method(require('../src/services/dynamicUtils'), 'getFieldDefinitionsByEntity', async () => []);
       const statuses = ['PENDING', 'GRADING', 'DESIGNING', 'APPROVED',
         'CANCELLED', 'ARCHIVED', 'PAUSED', 'REJECTED', 'CONTRACT_FAILED'];

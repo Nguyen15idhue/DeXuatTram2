@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const access = require('../src/services/leadAccessService');
-const consultation = require('../src/services/leadConsultationService');
+const access = require('../src/services/lead/leadAccessService.js');
+const consultation = require('../src/services/lead/leadConsultationService.js');
 
 const user = (role, department = '', chuc_vu = '') => ({ role, custom_data: { department, chuc_vu } });
 

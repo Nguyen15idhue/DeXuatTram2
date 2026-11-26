@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
-const sheetImport = require('../src/services/historicalOnImportSheet');
+const sheetImport = require('../src/services/historicalOnImport/historicalOnImportSheet');
 
 const workbookWithRow = async (values = {}) => {
   const workbook = await sheetImport.createTemplate([{ id: 1, name: 'DC 60kW' }]);

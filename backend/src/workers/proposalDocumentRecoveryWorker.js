@@ -1,4 +1,4 @@
-const service = require('../services/proposalDocumentRecoveryService');
+const service = require('../services/proposal/proposalDocumentRecoveryService');
 let timer;
 exports.start = async () => {
   if (timer) return;

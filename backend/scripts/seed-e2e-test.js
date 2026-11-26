@@ -1,6 +1,6 @@
 require('dotenv').config();
 const pool = require('../src/utils/db');
-const chargingStationService = require('../src/services/chargingStationService');
+const chargingStationService = require('../src/services/chargingStation/chargingStationService');
 
 const run = async () => {
   const tag = `E2E${Date.now() % 100000}`;

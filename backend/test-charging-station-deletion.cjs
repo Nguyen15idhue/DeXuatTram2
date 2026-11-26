@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { calculateRestockItems, summarizeInvoices } = require('./src/services/chargingStationDeletionService');
+const { calculateRestockItems, summarizeInvoices } = require('./src/services/chargingStation/chargingStationDeletionService');
 
 test('restock returns only the net exported quantity grouped by supplier and pole', () => {
   const result = calculateRestockItems([

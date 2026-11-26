@@ -1,6 +1,6 @@
 const myProposalService = require('../services/myProposalService');
 const proximityService = require('../services/proximityService');
-const proposalReportService = require('../services/proposalReportService');
+const proposalReportService = require('../services/proposal/proposalReportService');
 
 exports.uploadReport = async (req, res) => {
   try {
@@ -93,7 +93,7 @@ const setInfoCompleted = async (req, res, completed) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    const proposalLifecycle = require('../services/proposalLifecycle');
+    const proposalLifecycle = require('../services/proposal/proposalLifecycle');
     const result = await proposalLifecycle.setInfoCompleted(req.params.id, completed, {
       actorId: req.user.id,
       actorRole: req.user.role || null,
@@ -129,7 +129,7 @@ exports.extendInfo = async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    const proposalLifecycle = require('../services/proposalLifecycle');
+    const proposalLifecycle = require('../services/proposal/proposalLifecycle');
     const info = await proposalLifecycle.getExtendInfo(req.params.id);
     res.json({ success: true, data: info });
   } catch (error) {
@@ -146,7 +146,7 @@ exports.extendDeadline = async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    const proposalLifecycle = require('../services/proposalLifecycle');
+    const proposalLifecycle = require('../services/proposal/proposalLifecycle');
     const result = await proposalLifecycle.extendDeadline(req.params.id, req.body || {}, {
       actorId: req.user.id,
       actorRole: req.user.role || null,

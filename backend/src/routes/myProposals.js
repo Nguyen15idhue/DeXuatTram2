@@ -3,8 +3,8 @@ const router = express.Router();
 const { requireAuth } = require('../middlewares/auth');
 const { validateUpdateProposal } = require('../middlewares/validators');
 const myProposalController = require('../controllers/myProposalController');
-const excelService = require('../services/excelService');
-const reportDocuments = require('../controllers/proposalReportDocumentController');
+const excelService = require('../services/excel/excelService');
+const reportDocuments = require('../controllers/proposal/proposalReportDocumentController');
 
 /**
  * @swagger

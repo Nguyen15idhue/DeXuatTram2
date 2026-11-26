@@ -1,5 +1,5 @@
 const pool = require('./src/utils/db');
-const service = require('./src/services/chargingStationService');
+const service = require('./src/services/chargingStation/chargingStationService');
 
 const results = [];
 const check = (name, ok, extra) => {
@@ -151,7 +151,7 @@ const run = async () => {
     "INSERT INTO proposal_signature_configs (proposal_id, user_id, status, signed_at) VALUES (?, 1, 'SIGNED', NOW())",
     [hookProposalId]
   );
-  const proposalSignatureService = require('./src/services/proposalSignatureService');
+  const proposalSignatureService = require('./src/services/proposal/proposalSignatureService');
   await proposalSignatureService.uploadSignedFile({
     user: { id: 1, role: 'ADMIN' },
     id: hookProposalId,

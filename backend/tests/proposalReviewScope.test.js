@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const scopeService = require('../src/services/proposalReviewScope');
-const reviews = require('../src/services/proposalReviewService');
+const scopeService = require('../src/services/proposal/proposalReviewScope.js');
+const reviews = require('../src/services/proposal/proposalReviewService.js');
 const department = 'Trung tâm KD miền Bắc';
 const profile = (department, chuc_vu = '') => ({ department, chuc_vu });
 const users = [
@@ -61,7 +61,7 @@ test('review detail preserves history after clearing the level without opening a
   });
   t.mock.method(require('../src/services/dynamicUtils'), 'getFieldDefinitionsByEntity', async () => []);
   t.mock.method(require('../src/services/dynamicUtils'), 'mergeData', value => value);
-  t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({ requests, activity }));
+  t.mock.method(require('../src/services/proposal/proposalProgressService.js'), 'getProgress', async () => ({ requests, activity }));
   const user = { id: 1, role: 'SALES' };
   for (const status of ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'CANCELLED', 'APPROVED']) {
     row = { ...row, status };
@@ -111,7 +111,7 @@ test('real SQL review lists, permissions, denied actions and notifications share
         description TEXT, requested_by INT, previous_status VARCHAR(60), current_status VARCHAR(60),
         target_department VARCHAR(100), target_title VARCHAR(100), target_user_id INT,
         round_no INT, note TEXT, status VARCHAR(30), created_at DATETIME, resolved_at DATETIME, resolved_by INT)`);
-      t.mock.method(require('../src/services/proposalProgressService'), 'getProgress', async () => ({}));
+      t.mock.method(require('../src/services/proposal/proposalProgressService.js'), 'getProgress', async () => ({}));
       for (const u of users) await connection.query(
         'INSERT INTO users (id,parent_id,role,status,custom_data) VALUES (?,?,?,?,?)',
         [u.id, u.parent_id || null, u.role, 'ACTIVE', JSON.stringify(u.custom_data)]);
@@ -131,7 +131,7 @@ test('real SQL review lists, permissions, denied actions and notifications share
       const detail = await reviews.getReviewDetail(5, user);
       assert.equal(detail.permissions.canSubmitToTgd, true);
       await assert.rejects(reviews.toTgd({ user, id: 9, reason: 'test' }), { statusCode: 403 });
-      const recipients = require('../src/services/proposalStepRecipients');
+      const recipients = require('../src/services/proposal/proposalStepRecipients.js');
       const ids = await recipients.resolveStepRecipients('RE_GDTTKD_EVALUATING', proposals[0]);
       assert.ok(ids.includes(1));
       assert.ok(!ids.includes(6));
@@ -140,10 +140,10 @@ test('real SQL review lists, permissions, denied actions and notifications share
         assert.equal(recipientsForProposal.includes(1), [1, 2, 4, 5, 6, 7, 8, 11].includes(p.id),
           `notification ${p.id}`);
       }
-      const access = require('../src/services/proposalAccessService');
+      const access = require('../src/services/proposal/proposalAccessService.js');
       assert.equal(await access.canViewProposal(user, proposals[4]), true);
       assert.equal(await access.canViewProposal(user, proposals[8]), false);
-      const requests = require('../src/services/proposalRequestService');
+      const requests = require('../src/services/proposal/proposalRequestService.js');
       for (const p of proposals) {
         const request = { request_type: 'RE_GRADE', target_title: 'Giám đốc Trung tâm Kinh doanh',
           target_department: 'Trung tâm KD miền Trung', owner_id: p.user_id, proposal_custom_data: p.custom_data };
@@ -172,7 +172,7 @@ test('real SQL review lists, permissions, denied actions and notifications share
       await connection.query('UPDATE users SET parent_id = 6 WHERE id = 3');
       const afterMove = await reviews.listReviews({ user, tab: 'all', filters: { ownerUserId: 3 } });
       assert.equal(afterMove.pagination.total, 0);
-      const lifecycle = require('../src/services/proposalLifecycle');
+      const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
       t.mock.method(lifecycle, 'transition', async (id, status) => ({ id, status }));
       t.mock.method(lifecycle, 'logActivity', async () => {});
       t.mock.method(requests, 'closeRequests', async () => {});

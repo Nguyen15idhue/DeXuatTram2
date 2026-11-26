@@ -1,5 +1,5 @@
 require('dotenv').config();
-const leadService = require('../src/services/leadService');
+const leadService = require('../src/services/lead/leadService');
 
 const user = { id: 1, role: 'SUPER_ADMIN', full_name: 'Admin' };
 

@@ -1,6 +1,6 @@
 const ExcelJS = require('exceljs');
 const pool = require('../utils/db');
-const adminUserService = require('./adminUserService');
+const adminUserService = require('./admin/adminUserService');
 
 const PREVIEW_LIMIT = 20;
 const QUERY_BATCH_SIZE = 1000;

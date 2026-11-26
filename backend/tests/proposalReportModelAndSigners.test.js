@@ -1,12 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const reports = require('../src/services/proposalReportService');
-const approval = require('../src/services/proposalApprovalService');
-const users = require('../src/services/adminUserService');
-const documents = require('../src/services/proposalReportDocumentService');
-const lifecycle = require('../src/services/proposalLifecycle');
-const requests = require('../src/services/proposalRequestService');
+const reports = require('../src/services/proposal/proposalReportService.js');
+const approval = require('../src/services/proposal/proposalApprovalService.js');
+const users = require('../src/services/admin/adminUserService.js');
+const documents = require('../src/services/proposal/proposalReportDocumentService.js');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
+const requests = require('../src/services/proposal/proposalRequestService.js');
 
 const user = (id, department, chuc_vu, role = 'SALES') => ({
   id, full_name: `User ${id}`, role, custom_data: { department, chuc_vu }
@@ -113,7 +113,7 @@ test('report submission derives model from committed poles, keeps TDT amounts an
 });
 
 test('saving signature config rejects users excluded by the updated candidate rules', async (t) => {
-  const signature = require('../src/services/proposalSignatureService');
+  const signature = require('../src/services/proposal/proposalSignatureService.js');
   t.mock.method(reports, 'resolveScope', async () => ({ role: 'SUPER_ADMIN', isAdmin: true }));
   t.mock.method(signature._internals, 'withSignatureMutationLock', async (_id, action) => action());
   t.mock.method(documents, 'listDocuments', async () => [{

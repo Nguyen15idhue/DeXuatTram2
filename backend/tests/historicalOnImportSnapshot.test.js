@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { capture, fingerprint, save } = require('../src/services/historicalOnImportSnapshot');
+const { capture, fingerprint, save } = require('../src/services/historicalOnImport/historicalOnImportSnapshot');
 
 test('snapshot includes proposal, station, fulfillment and financial rows under locks', async () => {
   const calls = [];

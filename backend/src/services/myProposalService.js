@@ -120,8 +120,8 @@ const OWNER_EDITABLE_STATUSES = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_
 const assertOwnerEditable = async (proposalId, status, actorRole) => {
   if (actorRole === 'SUPER_ADMIN') return;
   if (OWNER_EDITABLE_STATUSES.includes(status)) return;
-  if (await require('./proposalRequestService').hasOpenOwnerUpdateRequest(proposalId)) return;
-  const proposalLifecycle = require('./proposalLifecycle');
+  if (await require('./proposal/proposalRequestService').hasOpenOwnerUpdateRequest(proposalId)) return;
+  const proposalLifecycle = require('./proposal/proposalLifecycle');
   const step = proposalLifecycle.STATUS_STEP_LABELS[status];
   const where = step ? `Đề xuất đang ở khâu ${step}` : `Đề xuất đang ở trạng thái ${status}`;
   throw Object.assign(
@@ -132,7 +132,7 @@ const assertOwnerEditable = async (proposalId, status, actorRole) => {
 
 const notifyBackOfficeOfOwnerUpdate = async (id, ownerId, actorId, customData) => {
   const notificationService = require('./notificationService');
-  const stepRecipients = require('./proposalStepRecipients');
+  const stepRecipients = require('./proposal/proposalStepRecipients');
   const ids = await stepRecipients.resolveStepRecipients('PROPOSAL_REPORT_REVIEWING', { id, user_id: ownerId, custom_data: customData });
   const code = notificationService.proposalCode(customData, id);
   const actorName = (await notificationService.getUserName(actorId)) || 'Người cập nhật';
@@ -161,7 +161,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   }
   let requestScopedUpdate = false;
   if (opts.deferRequestCompletion && opts.requestId && opts.requestType) {
-    const proposalRequestService = require('./proposalRequestService');
+    const proposalRequestService = require('./proposal/proposalRequestService');
     const request = await proposalRequestService.getRequestById(opts.requestId);
     requestScopedUpdate = !!request
       && Number(request.proposal_id) === Number(id)
@@ -207,7 +207,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
 
   let resetDeadlines = null;
   if (wasRejected) {
-    resetDeadlines = await require('./proposalLifecycle').getDeadlineDates('PENDING');
+    resetDeadlines = await require('./proposal/proposalLifecycle').getDeadlineDates('PENDING');
   }
 
   const prevRow = existing.length > 0 ? existing[0] : {};
@@ -250,7 +250,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   }
 
   try {
-    const proposalLifecycle = require('./proposalLifecycle');
+    const proposalLifecycle = require('./proposal/proposalLifecycle');
     const oldFlat = { ...(existing[0] || {}), ...current };
     const newFlat = {
       ...(existing[0] || {}),
@@ -290,7 +290,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     }
     if (wasWaitingInfo) {
       if (!opts.deferRequestCompletion) {
-        await require('./proposalRequestService').closeRequests(id, ['LAYOUT_SUPPLEMENT'], { resolvedBy: actorId });
+        await require('./proposal/proposalRequestService').closeRequests(id, ['LAYOUT_SUPPLEMENT'], { resolvedBy: actorId });
       }
       await proposalLifecycle.logActivity({
         proposalId: id, action: 'status_change',
@@ -298,7 +298,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
         actorId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
-      await require('./proposalDesignService').notifyInfoSupplemented({ proposalId: id, actorId });
+      await require('./proposal/proposalDesignService').notifyInfoSupplemented({ proposalId: id, actorId });
     }
   } catch { /* silent: khong chan luu vi log */ }
 
@@ -330,7 +330,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   let infoCompleted = null;
   if (!opts.deferRequestCompletion) {
     try {
-      const proposalLifecycle = require('./proposalLifecycle');
+      const proposalLifecycle = require('./proposal/proposalLifecycle');
       infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
         actorId, purpose: 'view', ip: opts.ip || null
       });

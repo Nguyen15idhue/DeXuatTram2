@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeShipmentRows, allocateShipmentRows } = require('./src/services/chargingStationShippingService');
+const { normalizeShipmentRows, allocateShipmentRows } = require('./src/services/chargingStation/chargingStationShippingService');
 
 const commitments = [
   { id: 1, model: 'NQ', pole_id: 60, quantity: 1 },

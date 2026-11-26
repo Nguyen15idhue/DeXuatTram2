@@ -201,7 +201,7 @@ const parseJson = (v) => {
 };
 
 exports.convertProposalToStation = async (proposalId, opts = {}) => {
-  const proposalLifecycle = require('./proposalLifecycle');
+  const proposalLifecycle = require('./proposal/proposalLifecycle');
   const notificationService = require('./notificationService');
   const geocodeService = require('./geocodeService');
 
@@ -220,7 +220,7 @@ exports.convertProposalToStation = async (proposalId, opts = {}) => {
     }
     await pool.query('UPDATE station_proposals SET station_id = NULL, updated_at = NOW() WHERE id = ?', [proposalId]);
     try {
-      const proposalLifecycle = require('./proposalLifecycle');
+      const proposalLifecycle = require('./proposal/proposalLifecycle');
       await proposalLifecycle.logActivity({
         proposalId: p.id, action: 'station_created',
         changedFields: { station_link: { label: 'Liên kết trạm', old: String(p.station_id), new: 'đã xóa (trạm không còn)' } },

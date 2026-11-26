@@ -1,6 +1,6 @@
 require('dotenv').config();
 const pool = require('../src/utils/db');
-const service = require('../src/services/proposalSheetSyncService');
+const service = require('../src/services/proposal/proposalSheetSyncService');
 
 const main = async () => {
   const args = new Set(process.argv.slice(2));

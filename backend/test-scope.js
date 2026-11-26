@@ -1,4 +1,4 @@
-const s = require('./src/services/proposalReportService');
+const s = require('./src/services/proposal/proposalReportService');
 (async () => {
   const u = { id: 1, role: 'SUPER_ADMIN' };
   const sc = await s.resolveScope(u);

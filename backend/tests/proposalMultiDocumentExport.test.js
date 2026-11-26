@@ -9,12 +9,22 @@ const JSZip = require('jszip');
 
 const serviceDirectory = path.resolve(__dirname, '..', 'src', 'services');
 const loadService = async (name, mocks) => {
-  const filename = path.join(serviceDirectory, name);
+  let filename = path.join(serviceDirectory, name);
+  if (!require('node:fs').existsSync(filename)) {
+    filename = path.join(serviceDirectory, 'proposal', path.basename(name));
+  }
+  const dir = path.dirname(filename);
   const nativeRequire = createRequire(filename);
   const module = { exports: {} };
   const source = await fs.readFile(filename, 'utf8');
   const execute = vm.runInThisContext(`(function(require,module,exports,__filename,__dirname){${source}\n})`, { filename });
-  execute((id) => Object.hasOwn(mocks, id) ? mocks[id] : nativeRequire(id), module, module.exports, filename, serviceDirectory);
+  const resolveMock = (id) => {
+    if (Object.hasOwn(mocks, id)) return mocks[id];
+    const base = path.posix.basename(id);
+    const key = Object.keys(mocks).find(k => path.posix.basename(k) === base);
+    return key ? mocks[key] : nativeRequire(id);
+  };
+  execute(resolveMock, module, module.exports, filename, dir);
   return module.exports;
 };
 

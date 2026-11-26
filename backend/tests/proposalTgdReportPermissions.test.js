@@ -1,13 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const reports = require('../src/services/proposalReportService');
-const approvals = require('../src/services/proposalApprovalService');
-const access = require('../src/services/proposalAccessService');
+const reports = require('../src/services/proposal/proposalReportService.js');
+const approvals = require('../src/services/proposal/proposalApprovalService.js');
+const access = require('../src/services/proposal/proposalAccessService.js');
 const dynamic = require('../src/services/dynamicUtils');
-const progress = require('../src/services/proposalProgressService');
-const lifecycle = require('../src/services/proposalLifecycle');
-const requests = require('../src/services/proposalRequestService');
+const progress = require('../src/services/proposal/proposalProgressService.js');
+const lifecycle = require('../src/services/proposal/proposalLifecycle.js');
+const requests = require('../src/services/proposal/proposalRequestService.js');
 const tgd = { id: 7, role: 'ADMIN' };
 let proposal;
 let queries;
@@ -58,7 +58,7 @@ test('TGĐ cannot upload reports even as owner/assignee; detail permissions deny
   const detail = await reports.getProposalDetail({ user: tgd, id: proposal.id });
   assert.equal(detail.permissions.canUpload, false);
   await assert.rejects(reports.uploadReport({ user: tgd, id: proposal.id, files: [{ id: 1 }] }), { statusCode: 403 });
-  await assert.rejects(require('../src/services/proposalReportGenerationService').generate({
+  await assert.rejects(require('../src/services/proposal/proposalReportGenerationService.js').generate({
     user: tgd, proposalId: proposal.id
   }), { statusCode: 403 });
   assert.equal(queries.some(query => /^\s*(UPDATE|INSERT|DELETE)/.test(query.sql)), false);
@@ -101,8 +101,8 @@ test('report-upload task notifications do not target TGĐ even as owner or ances
     { id: 7, role: 'ADMIN', custom_data: { department: 'Ban Tổng giám đốc', chuc_vu: 'Tổng giám đốc' } },
     { id: 1, role: 'SUPER_ADMIN', custom_data: {} }
   ]]);
-  t.mock.method(require('../src/services/adminUserService'), 'getAncestorIds', async () => [7]);
-  const recipients = require('../src/services/proposalStepRecipients');
+  t.mock.method(require('../src/services/admin/adminUserService.js'), 'getAncestorIds', async () => [7]);
+  const recipients = require('../src/services/proposal/proposalStepRecipients.js');
   for (const status of ['PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_UPDATING']) {
     const ids = await recipients.resolveStepRecipients(status, { ...proposal, user_id: 7 });
     assert.equal(ids.includes(7), false);

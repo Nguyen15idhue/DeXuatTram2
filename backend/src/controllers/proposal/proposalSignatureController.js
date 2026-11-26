@@ -1,0 +1,222 @@
+const proposalSignatureService = require('../../services/proposal/proposalSignatureService');
+const signatureRepairService = require('../../services/signatureRepairService');
+
+exports.signatureRepairStatus = async (req, res) => {
+  try {
+    const data = await signatureRepairService.getStatus({ user: req.user, id: req.params.id, configId: req.params.configId });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.repairSignature = async (req, res) => {
+  try {
+    const data = await signatureRepairService.repair({
+      user: req.user, id: req.params.id, configId: req.params.configId, reason: req.body?.reason, ip: req.ip
+    });
+    res.json({ success: true, data, message: 'Đã phục hồi bằng chữ ký hiện tại; giữ nguyên thời điểm ký gốc' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+const sendError = (res, error) => {
+  console.error('Proposal signature error:', error);
+  res.status(error.statusCode || 500).json({
+    success: false,
+    message: error.message || 'Lỗi server'
+  });
+};
+
+exports.list = async (req, res) => {
+  try {
+    const { tab = 'all', search = '', page = 1, limit = 10, sign_status = '', my_status = '', mo_hinh = '' } = req.query;
+    const result = await proposalSignatureService.listProposals({
+      user: req.user,
+      tab,
+      search,
+      page,
+      limit,
+      signStatus: sign_status,
+      myStatus: my_status,
+      moHinh: mo_hinh
+    });
+    res.json({
+      success: true,
+      data: result.proposals,
+      pagination: result.pagination,
+      meta: result.meta
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.detail = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getDetail({
+      user: req.user,
+      id: req.params.id
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.sign = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await proposalSignatureService.sign({
+      user: req.user,
+      id: req.params.id,
+      documentId: body.document_id,
+      fileId: body.file_id,
+      ip: req.ip
+    });
+    res.json({ success: true, data: result, message: 'Đã ký BCĐX' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.completeSigning = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.completeSigning({
+      user: req.user, id: req.params.id, reason: req.body?.reason, ip: req.ip,
+    });
+    res.json({ success: true, data: result, message: 'Đã xác nhận hoàn tất ký; chờ Back Office tải file đã ký' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.reject = async (req, res) => {  try {
+    const result = await proposalSignatureService.reject({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã từ chối duyệt và gửi yêu cầu cập nhật lại BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.requestRework = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.requestRework({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã yêu cầu làm lại BCĐX và chuyển đề xuất về bước lập BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.uploadSignedFile = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await proposalSignatureService.uploadSignedFile({
+      user: req.user,
+      id: req.params.id,
+      files: body.files,
+      documents: body.documents,
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.exportFile = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getExportFile({
+      user: req.user,
+      id: req.params.id,
+      documentId: req.query.document_id,
+      all: req.query.all === '1',
+      ip: req.ip
+    });
+    if (result.bytes) {
+      const filename = String(result.original_name || 'BCDX.zip').replace(/[\\/\r\n"]/g, '_');
+      res.setHeader('Content-Type', result.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', result.bytes.length);
+      return res.send(result.bytes);
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.downloadSignedDocument = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getSignedDocument({
+      user: req.user,
+      id: req.params.id,
+      documentId: req.query.document_id,
+      all: req.query.all === '1',
+      ip: req.ip
+    });
+    const originalName = String(result.original_name || 'BCDX');
+    const filename = originalName
+      .replace(/[\\/\r\n"]/g, '_');
+    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_');
+    const encodedFilename = encodeURIComponent(filename);
+    res.setHeader('Content-Type', result.mime_type || 'application/octet-stream');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Length', result.bytes.length);
+    res.send(result.bytes);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.downloadChairmanFiles = async (req, res) => {
+  try {
+    const result = await require('../../services/proposal/proposalChairmanFileService').download({
+      user: req.user, id: req.params.id, fileId: req.query.file_id, ip: req.ip
+    });
+    const filename = result.original_name.replace(/[\\/\r\n"]/g, '_');
+    res.setHeader('Content-Type', result.mime_type);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.setHeader('Content-Length', result.bytes.length);
+    res.send(result.bytes);
+  } catch (error) { sendError(res, error); }
+};
+
+exports.signatureImage = async (req, res) => {
+  try {
+    const image = await proposalSignatureService.getSignatureImage({
+      user: req.user,
+      id: req.params.id,
+      configId: req.params.configId
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.type(image.contentType).send(image.bytes);
+  } catch (error) {
+    sendError(res, error);
+  }
+};

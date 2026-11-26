@@ -6,7 +6,7 @@ let isRunning = false;
 let pollTimer = null;
 let started = false;
 
-const getRunner = () => require('../services/excelImportRunner');
+const getRunner = () => require('../services/excel/excelImportRunner');
 
 const processJob = async (job) => {
   const rows = await importJobService.getRows(job.id);

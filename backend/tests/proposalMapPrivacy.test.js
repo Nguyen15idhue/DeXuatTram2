@@ -5,9 +5,9 @@ const jwt = require('jsonwebtoken');
 
 process.env.JWT_SECRET ||= 'proposal-map-privacy-test';
 const pool = require('../src/utils/db');
-const proposalService = require('../src/services/proposalService');
-const router = require('../src/routes/proposals');
-const { forMap } = require('../src/services/proposalMapDisplay');
+const proposalService = require('../src/services/proposal/proposalService.js');
+const router = require('../src/routes/proposal/proposals.js');
+const { forMap } = require('../src/services/proposal/proposalMapDisplay.js');
 
 const proposal = {
   id: 10, latitude: 21, longitude: 105, status: 'PENDING',

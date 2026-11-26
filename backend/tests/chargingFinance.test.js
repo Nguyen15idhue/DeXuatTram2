@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const stations = require('../src/services/chargingStationService');
-const deployments = require('../src/services/chargingStationDeploymentService');
-const finance = require('../src/services/chargingFinanceService');
+const stations = require('../src/services/chargingStation/chargingStationService.js');
+const deployments = require('../src/services/chargingStation/chargingStationDeploymentService.js');
+const finance = require('../src/services/chargingStation/chargingFinanceService.js');
 const user = { id: 1, role: 'SUPER_ADMIN' };
 const body = { invoice_type: 'DEPOSIT', amount: 100, evidence_file_id: 11, deposit_refund_required: true };
 test.after(() => pool.end());

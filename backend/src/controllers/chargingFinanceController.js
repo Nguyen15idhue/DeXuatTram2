@@ -1,5 +1,5 @@
-const chargingStationService = require('../services/chargingStationService');
-const chargingFinanceService = require('../services/chargingFinanceService');
+const chargingStationService = require('../services/chargingStation/chargingStationService');
+const chargingFinanceService = require('../services/chargingStation/chargingFinanceService');
 
 const sendError = (res, error) => {
   console.error('Charging finance error:', error);

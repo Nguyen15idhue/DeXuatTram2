@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('../src/utils/db');
-const service = require('../src/services/chargingStationCommitmentService');
+const service = require('../src/services/chargingStation/chargingStationCommitmentService.js');
 
 test.after(() => pool.end());
 
@@ -22,7 +22,7 @@ test('commitment endpoints enforce SUPER_ADMIN and propagate conflict', async t 
   });
   const app = express();
   app.use(express.json());
-  app.use('/api/admin/charging-stations', require('../src/routes/chargingStations'));
+  app.use('/api/admin/charging-stations', require('../src/routes/chargingStation/chargingStations.js'));
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   try {

@@ -1,5 +1,5 @@
 const pool = require('./src/utils/db');
-const proposalService = require('./src/services/proposalService');
+const proposalService = require('./src/services/proposal/proposalService');
 const myProposalService = require('./src/services/myProposalService');
 const fileService = require('./src/services/fileService');
 

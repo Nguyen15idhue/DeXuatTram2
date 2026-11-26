@@ -5,15 +5,15 @@ const fs = require('node:fs');
 const Module = require('node:module');
 const mysql = require('mysql2');
 const pool = require('../src/utils/db');
-const proposals = require('../src/services/adminProposalService');
-const requests = require('../src/services/proposalRequestService');
-const users = require('../src/services/adminUserService');
-const access = require('../src/services/proposalAccessService');
+const proposals = require('../src/services/admin/adminProposalService.js');
+const requests = require('../src/services/proposal/proposalRequestService.js');
+const users = require('../src/services/admin/adminUserService.js');
+const access = require('../src/services/proposal/proposalAccessService.js');
 const dynamic = require('../src/services/dynamicUtils');
 const { values, addInFilter } = require('../src/utils/multiValueFilter');
 const { addProposalAdvancedFilters, patternForNormalizedRegion } = require('../src/utils/proposalAdvancedFilters');
-const approvals = require('../src/services/proposalApprovalService');
-const reports = require('../src/services/proposalReportService');
+const approvals = require('../src/services/proposal/proposalApprovalService.js');
+const reports = require('../src/services/proposal/proposalReportService.js');
 
 test('approval filter options require approval access and restrict options to approval records', async t => {
   t.mock.method(reports, 'resolveScope', async user => user);
@@ -34,8 +34,8 @@ test('proposal APIs accept repeated values and retain existing single-value para
   const express = require('express');
   const app = express();
   app.use((req, res, next) => { req.user = { id: 99, role: 'SUPER_ADMIN' }; next(); });
-  app.get('/proposals', require('../src/controllers/adminProposalController').getAll);
-  app.get('/requests', require('../src/controllers/proposalRequestController').list);
+  app.get('/proposals', require('../src/controllers/admin/adminProposalController.js').getAll);
+  app.get('/requests', require('../src/controllers/proposal/proposalRequestController.js').list);
   let proposalArgs;
   let requestArgs;
   t.mock.method(proposals, 'getAllProposals', async (...args) => {
@@ -199,7 +199,7 @@ test('proposal filters apply unions within each field and preserve scope before 
         (6,NULL,'PENDING','{"vung_mien":"Nam","sales_quan_ly":{"id":10}}',NULL,NULL,'2026-01-06','2026-01-06'),
         (7,NULL,'PENDING','{"vung_mien":"Bac"}',NULL,NULL,'2026-01-07','2026-01-07');
     `);
-    const organizational = await require('../src/services/proposalReviewScope').build(
+    const organizational = await require('../src/services/proposal/proposalReviewScope.js').build(
       { id: 10, department: 'Phòng A, B', region: null },
       [
         { id: 10, parent_id: null, custom_data: { department: 'Phòng A, B' } },
@@ -208,7 +208,7 @@ test('proposal filters apply unions within each field and preserve scope before 
       ]
     );
     const scopeParams = [];
-    const scopeSql = require('../src/services/proposalReviewScope').sql(organizational, scopeParams);
+    const scopeSql = require('../src/services/proposal/proposalReviewScope.js').sql(organizational, scopeParams);
     for (const [id, expected] of [[1, 1], [2, 1], [3, 0], [5, 1], [6, 1], [7, 0]]) {
       const sql = mysql.format(`SELECT COUNT(*) FROM station_proposals p WHERE p.id = ? AND ${scopeSql}`, [id, ...scopeParams]);
       assert.equal(run(`USE \`${database}\`; ${sql};`)[0].total, expected, `proposal ${id}`);

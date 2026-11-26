@@ -137,7 +137,7 @@ const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MKT', 'SALES'];
 
 const requireLeadManager = async (req, res, next) => {
   try {
-    const access = require('../services/leadAccessService');
+    const access = require('../services/lead/leadAccessService');
     const ctx = await access.getContext(req.user);
     access.assertAccess(ctx);
     req.leadAccessGranted = true;

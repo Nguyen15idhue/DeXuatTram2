@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const pool = require('../src/utils/db');
-const readiness = require('../src/services/chargingStationReadiness');
-const stations = require('../src/services/chargingStationService');
-const access = require('../src/services/proposalAccessService');
+const readiness = require('../src/services/chargingStation/chargingStationReadiness.js');
+const stations = require('../src/services/chargingStation/chargingStationService.js');
+const access = require('../src/services/proposal/proposalAccessService.js');
 
 const station = {
   id: 1, proposal_id: 11, proposal_user_id: 7, status: 'OPERATING', sub_status: 'ACTIVE',
