@@ -32,6 +32,7 @@ const normalizeMapping = (m) => {
   const loops = {};
   Object.entries(src.loops || {}).forEach(([k, cfg]) => { loops[k] = normalizeLoopForEdit(cfg); });
   return {
+    ...src,
     tokens: { ...(src.tokens || {}) },
     loops,
     signatureAnchors: Array.isArray(src.signatureAnchors) ? src.signatureAnchors : [],
@@ -188,7 +189,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     if (!item) return;
     const lk = findLoopForToken(tokenName);
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       if (item.kind === 'numbering') {
         if (!lk) return prev;
         next.loops[lk] = { ...normalizeLoopForEdit(next.loops[lk]), stt: true };
@@ -217,9 +218,13 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const dropOnLoop = (loopKey, item) => {
     if (!item) return;
+    if (item.kind !== 'table' && item.kind !== 'datalistLoop') {
+      setToast({ message: 'Hãy kéo cả bảng vào vòng lặp hoặc kéo cột vào token tương ứng', type: 'error' });
+      return;
+    }
     const colTokens = loopColumnTokens(loopKey);
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       if (item.kind === 'table' || item.kind === 'datalistLoop') {
         const loop = normalizeLoopForEdit(next.loops[loopKey]);
         const parts = (loop.parts || []).map((p) => ({ ...p, columns: { ...(p.columns || {}) } }));
@@ -297,7 +302,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const mutateLoop = (loopKey, fn) => {
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       const loop = normalizeLoopForEdit(next.loops[loopKey] || {});
       next.loops[loopKey] = fn(loop);
       return next;
@@ -322,7 +327,13 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   };
 
   const removeLoopGroup = (loopKey, partIdx) => {
-    mutateLoop(loopKey, (loop) => ({ ...loop, parts: (loop.parts || []).filter((_, i) => i !== partIdx) }));
+    mutateLoop(loopKey, (loop) => {
+      const parts = (loop.parts || []).filter((_, i) => i !== partIdx);
+      if (parts.length) return { ...loop, parts };
+      const next = { ...loop, parts };
+      ['source', 'table', 'listId', 'columns', 'key'].forEach((key) => { delete next[key]; });
+      return next;
+    });
   };
 
   const removeLoopScalar = (loopKey, token) => {
@@ -335,7 +346,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const addFooter = (loopKey) => {
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       const cur = next.loops[loopKey] || { columns: {} };
       const footers = [...(cur.footers || []), { id: `f${(cur.footers || []).length + 1}`, label: '', formula: '' }];
       next.loops[loopKey] = { ...cur, footers };
@@ -345,7 +356,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const updateFooter = (loopKey, idx, patch) => {
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       const cur = next.loops[loopKey] || { columns: {} };
       const footers = [...(cur.footers || [])];
       footers[idx] = { ...footers[idx], ...patch };
@@ -356,7 +367,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const removeFooter = (loopKey, idx) => {
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       const cur = next.loops[loopKey] || { columns: {} };
       next.loops[loopKey] = { ...cur, footers: (cur.footers || []).filter((_, i) => i !== idx) };
       return next;
@@ -365,7 +376,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
 
   const updateScalarDatalist = (tokenName, patch) => {
     setMapping((prev) => {
-      const next = { tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
+      const next = { ...prev, tokens: { ...(prev.tokens || {}) }, loops: { ...(prev.loops || {}) } };
       next.tokens[tokenName] = { ...(next.tokens[tokenName] || {}), ...patch };
       return next;
     });
@@ -484,7 +495,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
         }
         if (changed) loops[k] = { ...cfg, parts };
       }
-      return { tokens: nt, loops };
+      return { ...prev, tokens: nt, loops };
     });
   };
 
@@ -602,6 +613,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     () => rows.filter((r) => r.type === 'loop').map((r) => r.key),
     [rows]
   );
+  const unusedLoopKeys = tokens.length ? Object.keys(mapping.loops || {}).filter((key) => !previewLoopKeys.includes(key)) : [];
 
   if (loading) return <Loading />;
 
@@ -629,6 +641,23 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
       </div>
 
 <details className="collapse collapse-arrow bg-base-100 border border-base-300 rounded-lg mb-3"><summary className="collapse-title text-sm font-medium">Cau hinh chu ky (anchor + signer)</summary><div className="collapse-content space-y-2"><div><label className="text-xs font-medium">signatureAnchors (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={4} value={JSON.stringify(mapping.signatureAnchors || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signatureAnchors: v })); } catch { } }} /></div><div><label className="text-xs font-medium">signers (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={6} value={JSON.stringify(mapping.signers || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signers: v })); } catch { } }} /></div></div></details>
+
+            {unusedLoopKeys.length > 0 && (
+              <div className="alert alert-warning mb-3 text-sm">
+                <div>
+                  <p>Cấu hình vòng lặp không có trong Word (chỉ xóa nếu không còn sử dụng):</p>
+                  {unusedLoopKeys.map((key) => (
+                    <button key={key} type="button" className="btn btn-ghost btn-xs gap-1" onClick={() => setMapping((prev) => {
+                      const loops = { ...prev.loops };
+                      delete loops[key];
+                      return { ...prev, loops };
+                    })}>
+                      {key} <Trash2 size={12} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {errors.length > 0 && (
         <div className="alert alert-error mb-3">
@@ -795,7 +824,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
                     </div>
                     <div className="text-[11px] opacity-70 truncate mt-0.5">{r.item.context}</div>
                     {label && (
-                        <LoopColumns loopKey={r.key} groups={loopGroups(r.key)} scalars={loopScalars(r.key)} freeTokens={freeLoopTokens(r.key)} footers={(mapping.loops[r.key] || {}).footers || []} onSetColumn={setLoopColumn} onRemoveColumn={removeLoopColumn} onRemoveGroup={removeLoopGroup} onRemoveScalar={removeLoopScalar} onAddFooter={() => addFooter(r.key)} onUpdateFooter={(i, p) => updateFooter(r.key, i, p)} onRemoveFooter={(i) => removeFooter(r.key, i)} />
+                        <LoopColumns loopKey={r.key} groups={loopGroups(r.key)} scalars={loopScalars(r.key)} freeTokens={freeLoopTokens(r.key)} footers={(mapping.loops[r.key] || {}).footers || []} onSetColumn={(i, token, column) => setLoopColumn(r.key, i, token, column)} onRemoveColumn={(i, token) => removeLoopColumn(r.key, i, token)} onRemoveGroup={(i) => removeLoopGroup(r.key, i)} onRemoveScalar={(token) => removeLoopScalar(r.key, token)} onAddFooter={() => addFooter(r.key)} onUpdateFooter={(i, p) => updateFooter(r.key, i, p)} onRemoveFooter={(i) => removeFooter(r.key, i)} />
                     )}
                   </div>
                 );

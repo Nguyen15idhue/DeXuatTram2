@@ -88,14 +88,15 @@ exports.generate = async (req, res) => {
   try {
     const result = await proposalReportGenerationService.generate({
       proposalId: req.params.id,
-      templateId: req.body ? req.body.template_id : null,
+      proof: req.body?.proof,
+      pdfBuffer: req.file?.buffer,
       user: req.user,
       ip: req.ip
     });
     res.json({
       success: true,
       data: result,
-      message: 'Đã tạo tờ trình BCĐX từ mẫu'
+      message: 'Đã gửi tờ trình BCĐX từ mẫu sang bước duyệt'
     });
   } catch (error) {
     sendError(res, error);
@@ -113,6 +114,18 @@ exports.generationOptions = async (req, res) => {
   }
 };
 
+exports.saveGenerationDraft = async (req, res) => {
+  try {
+    const data = await proposalReportService.saveGenerationDraft({
+      user: req.user, id: req.params.id, chotSoLuongTru: req.body?.chot_so_luong_tru,
+      ngayDuKienOn: req.body?.ngay_du_kien_on, revision: req.body?.revision, ip: req.ip
+    });
+    res.set('Cache-Control', 'no-store').json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.generationPreview = async (req, res) => {
   try {
     const result = await proposalReportGenerationService.preview({
@@ -120,8 +133,21 @@ exports.generationPreview = async (req, res) => {
       templateId: req.body?.template_id,
       values: req.body?.values,
       inputs: req.body?.inputs,
+      chotSoLuongTru: req.body?.chot_so_luong_tru,
+      savedDraftRevision: req.body?.saved_draft_revision,
       user: req.user
     });
+    if (req.query.format === 'json') {
+      return res.set('Cache-Control', 'no-store').json({
+        success: true,
+        data: {
+          pdf: result.pdfBuffer.toString('base64'),
+          warnings: [...(result.warnings || []), ...(result.fontWarnings || [])],
+          blocking: result.blocking || [],
+          proof: result.proof
+        }
+      });
+    }
     res.set({
       'Cache-Control': 'no-store',
       'Content-Type': 'application/pdf',

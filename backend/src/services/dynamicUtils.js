@@ -170,7 +170,7 @@ exports.validateField = (fieldDef, value) => {
   return errors;
 };
 
-exports.validateData = async (entity, data, fieldDefs) => {
+exports.validateData = async (entity, data, fieldDefs, options = {}) => {
   const allErrors = [];
 
   if (!fieldDefs || fieldDefs.length === 0) return allErrors;
@@ -194,12 +194,14 @@ exports.validateData = async (entity, data, fieldDefs) => {
   if (userChecks.length > 0) {
     const ids = [...new Set(userChecks.map(u => u.id))];
     try {
-      const [rows] = await pool.query(`SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      const [rows] = await (options.connection || pool).query(`SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
       const found = new Set(rows.map(r => Number(r.id)));
       for (const { fieldDef, id } of userChecks) {
         if (!found.has(id)) allErrors.push(`${fieldDef.label} không tồn tại`);
       }
-    } catch { /* silent */ }
+    } catch (error) {
+      if (options.strict) throw error;
+    }
   }
 
   return allErrors;

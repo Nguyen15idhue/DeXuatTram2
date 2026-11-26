@@ -1,7 +1,7 @@
 const pool = require('../../utils/db');
 const { values, addInFilter } = require('../../utils/multiValueFilter');
 
-const REQUEST_TYPES = ['UPDATE_INFO', 'SUPPLEMENT', 'LAYOUT_SUPPLEMENT', 'RE_GRADE', 'REVISE_BCDX', 'TGD_REVIEW', 'OTHER'];
+const REQUEST_TYPES = ['UPDATE_INFO', 'SUPPLEMENT', 'LAYOUT_SUPPLEMENT', 'RE_GRADE', 'REVISE_BCDX', 'TGD_REVIEW', 'OTHER', 'ENTRY_APPROVAL'];
 
 const REQUEST_TYPE_LABELS = {
   UPDATE_INFO: 'Yêu cầu cập nhật thông tin',
@@ -10,7 +10,8 @@ const REQUEST_TYPE_LABELS = {
   RE_GRADE: 'Yêu cầu chấm điểm lại',
   REVISE_BCDX: 'Yêu cầu sửa BCĐX',
   TGD_REVIEW: 'Trình Tổng giám đốc',
-  OTHER: 'Yêu cầu khác'
+  OTHER: 'Yêu cầu khác',
+  ENTRY_APPROVAL: 'Duyệt đề xuất để chấm điểm'
 };
 
 const normalizeType = (type) => (REQUEST_TYPES.includes(type) ? type : 'UPDATE_INFO');
@@ -148,19 +149,23 @@ exports.closeRequests = async (proposalId, types = null, { resolvedBy = null, st
   return result.affectedRows || 0;
 };
 
-const scopeClause = async (scope, params, workScope = 'all', user = null) => {
+const scopeClause = async (scope, params, workScope = 'all', user = null, approvableOwners = []) => {
   if (!user?.id) return ' AND 1 = 0';
   const owner = await require('./proposalAccessService').buildOwnerScopeSql(user, 'p', { includeTgdGlobal: false });
   params.push(...owner.params);
-  let sql = ` AND r.request_type IN ('UPDATE_INFO', 'SUPPLEMENT', 'LAYOUT_SUPPLEMENT')
+  let ownerSql = `r.request_type IN ('UPDATE_INFO', 'SUPPLEMENT', 'LAYOUT_SUPPLEMENT')
     AND r.target_user_id = p.user_id
     AND (r.current_status IS NULL OR r.current_status NOT IN ('PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING'))
     AND (${owner.sql})`;
   if (workScope === 'mine') {
-    sql += ' AND (p.user_id = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, \'$.nguoi_phu_trach.id\')) AS UNSIGNED) = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, \'$.sales_quan_ly.id\')) AS UNSIGNED) = ?)';
+    ownerSql += ' AND (p.user_id = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, \'$.nguoi_phu_trach.id\')) AS UNSIGNED) = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, \'$.sales_quan_ly.id\')) AS UNSIGNED) = ?)';
     params.push(user.id, user.id, user.id);
   }
-  return sql;
+  const approvalSql = approvableOwners.length
+    ? `r.request_type = 'ENTRY_APPROVAL' AND (r.status <> 'OPEN' OR p.status = 'PENDING') AND p.user_id IN (${approvableOwners.map(() => '?').join(',')})`
+    : '1 = 0';
+  params.push(...approvableOwners);
+  return ` AND ((${ownerSql}) OR (${approvalSql}))`;
 };
 
 const addProposalFilters = async (where, params, filters = {}, dateField = 'p.created_at') => {
@@ -217,6 +222,9 @@ exports.listRequests = async ({
   const normalizedWorkScope = workScope || (my ? 'mine' : 'all');
   const managerUser = scope.userId ? await loadUserById(scope.userId) : null;
   const reviewProfile = managerUser ? getReviewProfile(managerUser) : {};
+  const approval = require('./proposalEntryApproval');
+  const approvalUsers = managerUser ? await approval.loadUsers() : [];
+  const approvableOwners = managerUser ? approval.approvableOwnerIds(managerUser, approvalUsers) : [];
 
   if (status && ['OPEN', 'DONE', 'CANCELLED'].includes(status)) {
     where.push('r.status = ?');
@@ -258,7 +266,7 @@ exports.listRequests = async ({
       params.push(...ids);
     }
   }
-  const scoped = await scopeClause(effectiveScope, params, normalizedWorkScope, managerUser);
+  const scoped = await scopeClause(effectiveScope, params, normalizedWorkScope, managerUser, approvableOwners);
   const whereClause = `WHERE ${where.length > 0 ? where.join(' AND ') : '1 = 1'}${scoped}`;
 
   const [countRows] = await pool.query(
@@ -309,7 +317,9 @@ exports.listRequests = async ({
     return {
       ...row,
       can_update: await canUpdateProposalForRequest(managerUser, row),
-      can_complete: row.request_type !== 'RE_GRADE' && await canActOnRequest(managerUser, row)
+      can_approve: row.request_type === 'ENTRY_APPROVAL' && row.status === 'OPEN'
+        && row.proposal_status === 'PENDING' && approvableOwners.includes(Number(row.owner_id)),
+      can_complete: !['RE_GRADE', 'ENTRY_APPROVAL'].includes(row.request_type) && await canActOnRequest(managerUser, row)
     };
   }));
 
@@ -497,6 +507,7 @@ exports.hasOpenOwnerUpdateRequest = async (proposalId) => {
 exports.getRequestContext = async (id, user) => {
   const request = await exports.getRequestById(id);
   if (!request) throw err('Không tìm thấy yêu cầu', 404);
+  if (request.request_type === 'ENTRY_APPROVAL') throw err('Yêu cầu duyệt chỉ được hoàn thành bằng thao tác duyệt đề xuất', 400);
   if (!await canActOnRequest(user, request)) throw err('Bạn không có quyền xem yêu cầu này', 403);
   if (request.status !== 'OPEN') throw err('Yêu cầu không còn mở', 400);
   return request;
@@ -506,6 +517,7 @@ exports.getRequestContext = async (id, user) => {
 exports.completeRequest = async (id, { user = null, resolutionNote = null } = {}) => {
   const request = await exports.getRequestById(id);
   if (!request) throw err('Không tìm thấy yêu cầu', 404);
+  if (request.request_type === 'ENTRY_APPROVAL') throw err('Yêu cầu duyệt chỉ được hoàn thành bằng thao tác duyệt đề xuất', 400);
   if (request.status !== 'OPEN') throw err('Yêu cầu đã được xử lý trước đó', 400);
   if (request.proposal_status === 'PAUSED') throw err('Đề xuất đang tạm dừng; không thể hoàn thành yêu cầu trước khi tiếp tục', 400);
   if (!user) throw err('Chưa xác thực', 401);

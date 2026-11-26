@@ -1,6 +1,11 @@
 const pool = require('../../utils/db');
 const path = require('path');
+<<<<<<< HEAD:backend/src/services/proposal/proposalReportService.js
 const dynamicUtils = require('../dynamicUtils');
+=======
+const crypto = require('crypto');
+const dynamicUtils = require('./dynamicUtils');
+>>>>>>> d176a9f1b753f29a3f1f793d06b6b59bcda15dc8:backend/src/services/proposalReportService.js
 const proposalGradingService = require('./proposalGradingService');
 
 const { normalizeText, parseCustomData, normalizeFileEntries, toFileSummaries } = proposalGradingService;
@@ -460,6 +465,14 @@ const normalizeChotRows = (rows, prices) => {
 
 const sumChotTotal = (rows) => rows.reduce((sum, row) => sum + (Number(row.thanh_tien) || 0), 0);
 
+exports.normalizePreviewChotRows = async (rows) => {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw err('Vui lòng nhập ít nhất một dòng số lượng trụ chốt', 400);
+  }
+  const normalized = normalizeChotRows(rows, await loadTruPrices());
+  return { rows: normalized, total: sumChotTotal(normalized) };
+};
+
 const normalizeExpectedOnDate = (value) => {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
@@ -478,7 +491,84 @@ const normalizeExpectedOnDate = (value) => {
   return dateValue;
 };
 
-const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip } = {}) => {
+const draftRevision = (proposal) => crypto.createHash('sha256').update(JSON.stringify([
+  typeof proposal.chot_so_luong_tru === 'string' ? JSON.parse(proposal.chot_so_luong_tru) : proposal.chot_so_luong_tru,
+  proposal.tong_gia_tri_chot === null ? null : String(proposal.tong_gia_tri_chot),
+  proposal.saved_on_date
+])).digest('hex');
+
+exports.getGenerationDraft = async (id) => {
+  const [rows] = await pool.query(
+    "SELECT chot_so_luong_tru, tong_gia_tri_chot, DATE_FORMAT(ngay_du_kien_on, '%Y-%m-%d') AS saved_on_date FROM station_proposals WHERE id=?",
+    [id]
+  );
+  if (!rows.length) throw err('Không tìm thấy đề xuất', 404);
+  const proposal = rows[0];
+  return {
+    chot_so_luong_tru: typeof proposal.chot_so_luong_tru === 'string' ? JSON.parse(proposal.chot_so_luong_tru) : proposal.chot_so_luong_tru,
+    tong_gia_tri_chot: proposal.tong_gia_tri_chot,
+    ngay_du_kien_on: proposal.saved_on_date,
+    revision: draftRevision(proposal)
+  };
+};
+
+exports.saveGenerationDraft = async ({ user, id, chotSoLuongTru, ngayDuKienOn, revision, ip } = {}) => {
+  if (!Number.isSafeInteger(Number(id)) || Number(id) <= 0) throw err('Đề xuất không hợp lệ', 400);
+  const date = normalizeExpectedOnDate(ngayDuKienOn);
+  if (!date) throw err('Vui lòng nhập ngày dự kiến ON', 400);
+  if (typeof revision !== 'string' || !/^[a-f0-9]{64}$/.test(revision)) {
+    throw err('Phiên bản dữ liệu không hợp lệ, vui lòng tải lại', 400);
+  }
+  const { rows, total } = await exports.normalizePreviewChotRows(chotSoLuongTru);
+  const scope = await resolveScope(user);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [proposals] = await connection.query(
+      'SELECT *, DATE_FORMAT(ngay_du_kien_on, \'%Y-%m-%d\') AS saved_on_date FROM station_proposals WHERE id=? FOR UPDATE',
+      [id]
+    );
+    if (!proposals.length) throw err('Không tìm thấy đề xuất', 404);
+    const proposal = proposals[0];
+    if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
+      throw err('Đề xuất không ở trạng thái lập tờ trình BCĐX', 409);
+    }
+    await assertCanUpload(scope, proposal);
+    if (draftRevision(proposal) !== revision) {
+      throw err('Trụ chốt hoặc ngày dự kiến ON đã thay đổi, vui lòng tải lại', 409);
+    }
+    await connection.query(
+      'UPDATE station_proposals SET chot_so_luong_tru=?, tong_gia_tri_chot=?, ngay_du_kien_on=?, updated_at=NOW() WHERE id=?',
+      [JSON.stringify(rows), total, date, proposal.id]
+    );
+    await require('./proposalLifecycle').logActivity({
+      proposalId: proposal.id, action: 'updated', fromStatus: proposal.status, toStatus: proposal.status,
+      actorId: user.id, actorRole: user.role, source: 'user', ip, connection,
+      changedFields: {
+        chot_so_luong_tru: { label: 'Số lượng trụ chốt', old: JSON.stringify(proposal.chot_so_luong_tru || []), new: JSON.stringify(rows) },
+        tong_gia_tri_chot: { label: 'Tổng giá trị chốt', old: String(proposal.tong_gia_tri_chot ?? ''), new: String(total) },
+        ngay_du_kien_on: { label: 'Ngày dự kiến ON', old: proposal.saved_on_date || '', new: date }
+      }
+    });
+    const [saved] = await connection.query(
+      "SELECT chot_so_luong_tru, tong_gia_tri_chot, DATE_FORMAT(ngay_du_kien_on, '%Y-%m-%d') AS saved_on_date FROM station_proposals WHERE id=?",
+      [proposal.id]
+    );
+    const nextRevision = draftRevision(saved[0]);
+    await connection.commit();
+    return {
+      chot_so_luong_tru: rows, tong_gia_tri_chot: total, ngay_du_kien_on: date,
+      revision: nextRevision
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip, expectedDraftRevision, expectedProposalSnapshot, onReportSaved } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -529,8 +619,31 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const [locked] = await connection.query('SELECT status,custom_data FROM station_proposals WHERE id=? FOR UPDATE', [proposal.id]);
+    const [locked] = await connection.query(
+      expectedDraftRevision
+        ? "SELECT *, DATE_FORMAT(ngay_du_kien_on, '%Y-%m-%d') AS saved_on_date FROM station_proposals WHERE id=? FOR UPDATE"
+        : 'SELECT status,custom_data FROM station_proposals WHERE id=? FOR UPDATE',
+      [proposal.id]
+    );
     if (!locked.length || locked[0].status !== proposal.status) throw err('Đề xuất đã đổi trạng thái, vui lòng tải lại', 409);
+    if (expectedDraftRevision) {
+      await assertCanUpload(scope, locked[0]);
+      const { saved_on_date: savedOnDate, ...snapshot } = locked[0];
+      if (draftRevision(locked[0]) !== expectedDraftRevision
+        || require('./proposalReportGenerationService').snapshotHash(snapshot) !== expectedProposalSnapshot) {
+        throw err('Đề xuất đã thay đổi, vui lòng xem lại PDF', 409);
+      }
+      const savedRows = typeof locked[0].chot_so_luong_tru === 'string'
+        ? JSON.parse(locked[0].chot_so_luong_tru) : locked[0].chot_so_luong_tru;
+      const comparable = (list) => list.map((row) => [
+        row.mo_hinh, Number(row.so_luong), row.loai_tru, Number(row.gia_chot),
+        Number(row.gia_niem_yet), Number(row.gia_uu_dai), Number(row.thanh_tien), row.ghi_chu || ''
+      ]);
+      if (!Array.isArray(savedRows) || JSON.stringify(comparable(savedRows)) !== JSON.stringify(comparable(chotRows))
+        || savedOnDate !== nextExpectedOnDate || Number(locked[0].tong_gia_tri_chot) !== totalValue) {
+        throw err('Giá trụ hoặc dữ liệu đã thay đổi, vui lòng xem lại PDF', 409);
+      }
+    }
     const lockedCustom = parseCustomData(locked[0].custom_data);
     previousModel = lockedCustom.mo_hinh_dau_tu || '';
     const nextCustom = {
@@ -545,6 +658,7 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
     [JSON.stringify(nextCustom), JSON.stringify(chotRows), totalValue, nextExpectedOnDate, proposal.id]
     );
     await connection.commit();
+    if (onReportSaved) onReportSaved();
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -602,7 +716,8 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
     actorId: user.id,
     actorRole: user.role,
     source: 'user',
-    ip
+    ip,
+    ...(expectedDraftRevision ? { expectedFromStatus: proposal.status } : {})
   });
 
   return {

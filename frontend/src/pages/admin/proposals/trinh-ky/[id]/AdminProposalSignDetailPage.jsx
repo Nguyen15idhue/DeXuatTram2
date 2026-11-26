@@ -18,8 +18,8 @@ import SignatureRepairAction from "../../../../../components/admin/SignatureRepa
 import ProposalSignedFileModal from "../../../../../components/admin/ProposalSignedFileModal";
 import ProposalDocumentRecoveryModal from "../../../../../components/admin/ProposalDocumentRecoveryModal";
 import ProposalGradingSummary from "../../../../../components/admin/ProposalGradingSummary";
-import ProposalStaticInfo from "../../../../../components/admin/ProposalStaticInfo";
-import ProposalProgressiveDetails from "../../../../../components/admin/ProposalProgressiveDetails";
+import ProposalStaticInfo from "../../components/ProposalStaticInfo";
+import ProposalProgressiveDetails from "../../components/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";
 import { ProposalProposerCell } from "../../../../../components/admin/ProposalLinkCells";

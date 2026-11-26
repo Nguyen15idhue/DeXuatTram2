@@ -5,7 +5,7 @@ import { useAuth } from "../../../../../contexts/AuthContext";
 import { proposalGradingService } from "../../../../../services/api";
 import PageHeader from "../../../../../components/ui/PageHeader";
 import ProposalGradingModal from "../../../../../components/admin/ProposalGradingModal";
-import ProposalProgressiveDetails from "../../../../../components/admin/ProposalProgressiveDetails";
+import ProposalProgressiveDetails from "../../components/ProposalProgressiveDetails";
 import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
 import ProposalTableFieldValue from "../../../../../components/admin/ProposalTableFieldValue";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";

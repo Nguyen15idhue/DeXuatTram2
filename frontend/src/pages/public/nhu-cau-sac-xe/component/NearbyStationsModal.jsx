@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { MapPinned, LayoutGrid } from "lucide-react";
-import { evReportService } from "../services/api";
-import { getMarkerColor } from "../utils/mapHelpers";
-import { getMarkerIcon, getMarkerIconBg } from "../utils/mapMarkerIcons";
-import { getStatusLabel } from "../utils/mapStatuses";
-import { MapBadge } from "./MarkerIcon";
-import useMapStatuses from "../hooks/useMapStatuses";
-import useMapConfig from "../hooks/useMapConfig";
-import MapCanvas from "./map/MapCanvas";
+import { evReportService } from "../../../../services/api";
+import { getMarkerColor } from "../../../../utils/mapHelpers";
+import {
+  getMarkerIcon,
+  getMarkerIconBg,
+} from "../../../../utils/mapMarkerIcons";
+import { getStatusLabel } from "../../../../utils/mapStatuses";
+import { MapBadge } from "../../../../components/MarkerIcon";
+import useMapStatuses from "../../../../hooks/useMapStatuses";
+import useMapConfig from "../../../../hooks/useMapConfig";
+import MapCanvas from "../../../../components/map/MapCanvas";
 
 export const NEARBY_STATION_STATUSES = ["ACTIVE", "DEPLOYING"];
 export const NEARBY_RADIUS_KM = 50;
@@ -40,10 +43,7 @@ function createStationPopup(station) {
   div.className = "popup-content";
   const h3 = document.createElement("h3");
   h3.textContent =
-    station.name ||
-    station.ma_tram ||
-    station.ma_tram_gen ||
-    "Trạm sạc";
+    station.name || station.ma_tram || station.ma_tram_gen || "Trạm sạc";
   div.appendChild(h3);
   const addRow = (label, value) => {
     if (value === undefined || value === null || String(value).trim() === "")
@@ -117,7 +117,10 @@ const NearbyStationsModal = ({
         setStations(res.data);
       })
       .catch(() => {
-        if (!cancelled) setError("Không tải được trạm sạc lân cận. Vui lòng đóng bản đồ và thử lại.");
+        if (!cancelled)
+          setError(
+            "Không tải được trạm sạc lân cận. Vui lòng đóng bản đồ và thử lại.",
+          );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -128,7 +131,8 @@ const NearbyStationsModal = ({
   }, [valid, position]);
 
   const legendItems = useMemo(
-    () => stationStatuses.filter((s) => NEARBY_STATION_STATUSES.includes(s.value)),
+    () =>
+      stationStatuses.filter((s) => NEARBY_STATION_STATUSES.includes(s.value)),
     [stationStatuses],
   );
 
@@ -193,7 +197,9 @@ const NearbyStationsModal = ({
             Bán kính {radiusKm} km
           </span>
           <span className="ml-auto text-xs text-base-content/50">
-            {loading ? "Đang tải trạm sạc..." : !error && `${stations.length} trạm lân cận`}
+            {loading
+              ? "Đang tải trạm sạc..."
+              : !error && `${stations.length} trạm lân cận`}
           </span>
         </div>
 
@@ -251,7 +257,11 @@ const NearbyStationsModal = ({
               </div>
             </div>
           )}
-          {error && <div role="alert" className="location-map-note">{error}</div>}
+          {error && (
+            <div role="alert" className="location-map-note">
+              {error}
+            </div>
+          )}
           {!loading && !error && stations.length === 0 && (
             <div className="location-map-note">
               Không có trạm sạc nào trong bán kính {radiusKm} km.

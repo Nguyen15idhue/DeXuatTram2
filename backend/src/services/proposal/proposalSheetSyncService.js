@@ -2,10 +2,18 @@ const fs = require('fs');
 const { google } = require('googleapis');
 const pool = require('../../utils/db');
 const proposalGradingService = require('./proposalGradingService');
+<<<<<<< HEAD:backend/src/services/proposal/proposalSheetSyncService.js
 const readiness = require('../chargingStation/chargingStationReadiness');
 const stationDisplay = require('../chargingStation/chargingStationDisplay');
 const { isGdkv, isGdtt } = require('../../constants/salesRanks');
 const ttlCache = require('../../utils/ttlCache');
+=======
+const readiness = require('./chargingStationReadiness');
+const stationDisplay = require('./chargingStationDisplay');
+const { isGdkv, isGdtt } = require('../constants/salesRanks');
+const ttlCache = require('../utils/ttlCache');
+const { actualOnDateSerial } = require('../utils/sheetDate');
+>>>>>>> d176a9f1b753f29a3f1f793d06b6b59bcda15dc8:backend/src/services/proposalSheetSyncService.js
 
 const LOCK_NAME = 'proposal_google_sheet_sync_worker';
 const MANUAL_LOCK_NAME = 'proposal_google_sheet_daily_enqueue';
@@ -297,11 +305,11 @@ const formatStatusChangeTime = (value) => {
   return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
 };
 
-const formatDate = (value, { monthFirst = false } = {}) => {
+const formatDate = (value, { padded = false } = {}) => {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    if (monthFirst) {
-      return new Intl.DateTimeFormat('en-US', {
+    if (padded) {
+      return new Intl.DateTimeFormat('vi-VN', {
         timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
       }).format(value);
     }
@@ -309,7 +317,7 @@ const formatDate = (value, { monthFirst = false } = {}) => {
   }
   const text = String(value).slice(0, 10);
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${monthFirst ? match[2] : match[3]}/${monthFirst ? match[3] : match[2]}/${match[1]}` : text;
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : text;
 };
 
 const formatMoney = (value) => {
@@ -642,7 +650,7 @@ const resolveBaseRowValues = (proposal, definitions, serial, usersById) => {
     }),
     __proposal_note: noteLabel,
     __expected_on_date: formatDate(proposal.ngay_du_kien_on),
-    __actual_on_date: formatDate(proposal.actual_on_date, { monthFirst: true }),
+    __actual_on_date: formatDate(proposal.actual_on_date, { padded: true }),
     __updated_at: formatDateTime(proposal.updated_at),
     __map_url: mapUrl
   };
@@ -690,6 +698,9 @@ const resolveFieldValue = (proposal, custom, key, definitions, usersById) => {
 const mapProposalToRow = (proposal, fields, serial = '', usersById = new Map(), definitions = [], tabName) => {
   const custom = parseObject(proposal.custom_data);
   const values = resolveBaseRowValues(proposal, definitions, serial, usersById);
+  if (isDataQt1Tab(tabName)) {
+    values.__actual_on_date = actualOnDateSerial(proposal.actual_on_date, proposal.id);
+  }
   if (isDataQt1Tab(tabName) && proposal.on_station_id != null) {
     const displayLabel = (labels, value, field) => {
       if (value == null || value === '') return '—';
@@ -964,21 +975,29 @@ const assertHeader = async (sheets, config, fields) => {
   throw new Error('Header Google Sheet không khớp cấu hình hiện tại. Hãy sao lưu và đối chiếu cấu trúc trước khi đồng bộ.');
 };
 
-const ensurePaidPercentFormat = async (sheets, config, fields) => {
+const ensureDataQt1Formats = async (sheets, config, fields) => {
   if (!isDataQt1Tab(config.tabName)) return;
-  const index = buildColumns(fields, config.tabName).findIndex((column) => column.kind === 'onPaidPercent');
+  const columns = buildColumns(fields, config.tabName);
+  const formats = [
+    { kind: 'actualOnDate', type: 'DATE', pattern: 'dd/MM/yyyy' },
+    { kind: 'onPaidPercent', type: 'PERCENT', pattern: '0%' }
+  ];
   const metadata = await sheets.spreadsheets.get({
     spreadsheetId: config.spreadsheetId, fields: 'sheets(properties(sheetId,title))'
   });
   const sheet = (metadata.data.sheets || []).find((item) => item.properties?.title === config.tabName);
-  if (!sheet || !Number.isInteger(sheet.properties.sheetId)) throw new Error('Không tìm thấy tab Google Sheet cần định dạng phần trăm');
+  if (!sheet || !Number.isInteger(sheet.properties.sheetId)) throw new Error('Không tìm thấy tab Google Sheet cần định dạng');
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: config.spreadsheetId,
-    requestBody: { requests: [{ repeatCell: {
-      range: { sheetId: sheet.properties.sheetId, startRowIndex: 1, startColumnIndex: index, endColumnIndex: index + 1 },
-      cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0%' } } },
-      fields: 'userEnteredFormat.numberFormat'
-    } }] }
+    requestBody: { requests: formats.map(({ kind, type, pattern }) => {
+      const index = columns.findIndex((column) => column.kind === kind);
+      if (index < 0) throw new Error(`Không tìm thấy cột Google Sheet cần định dạng: ${kind}`);
+      return { repeatCell: {
+        range: { sheetId: sheet.properties.sheetId, startRowIndex: 1, startColumnIndex: index, endColumnIndex: index + 1 },
+        cell: { userEnteredFormat: { numberFormat: { type, pattern } } },
+        fields: 'userEnteredFormat.numberFormat'
+      } };
+    }) }
   });
 };
 
@@ -1146,7 +1165,7 @@ const processBatch = async (limit = BATCH_SIZE) => {
     const sheets = await createSheetsClient(config);
     await assertHeader(sheets, config, fields);
     await writeSheetRows(sheets, config, claimedJobs, proposalsById, fields, definitions, usersById);
-    await ensurePaidPercentFormat(sheets, config, fields);
+    await ensureDataQt1Formats(sheets, config, fields);
 
     for (const job of claimedJobs) await updateSuccessfulJob(job);
     await refreshRunsForJobs(claimedJobs);
@@ -1307,7 +1326,7 @@ exports.processBatch = processBatch;
 exports.mapProposalToRow = mapProposalToRow;
 exports.getExportFields = getExportFields;
 exports.buildColumns = buildColumns;
-exports.ensurePaidPercentFormat = ensurePaidPercentFormat;
+exports.ensureDataQt1Formats = ensureDataQt1Formats;
 exports.getAllFieldDefinitions = getAllFieldDefinitions;
 exports.assertHeader = assertHeader;
 exports.writeSheetRows = writeSheetRows;

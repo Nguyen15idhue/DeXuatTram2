@@ -55,11 +55,16 @@ const denyOutsideBranch = (proposal, scope) => {
 
 const denyOwnerAction = async (proposal, user) => !await proposalAccessService.canActAsProposalOwner(user, proposal);
 
-const permissionsFor = async (proposal, user) => {
+const permissionsFor = async (proposal, user, approvalUsers = null) => {
   const canManageOwner = !await denyOwnerAction(proposal, user);
   const isSuperAdmin = user.role === 'SUPER_ADMIN';
+  const approval = require('../services/proposalEntryApproval');
+  const canApproveEntry = proposal.status === 'PENDING'
+    && ['CTV', 'NPP'].includes(proposal.owner_role)
+    && approval.canApprove(proposal.user_id, user, approvalUsers || await approval.loadUsers());
   return {
     canManageOwner,
+    canApproveEntry,
     canEdit: canManageOwner && (isSuperAdmin
       || ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(proposal.status)
       || await require('../../services/proposal/proposalRequestService').hasOpenOwnerUpdateRequest(proposal.id)),
@@ -96,8 +101,11 @@ exports.getAll = async (req, res) => {
       prioritizeWorkflow: req.query.prioritize_workflow === '1',
       signedApprovalOnly: signed_approval_only === '1'
     });
+    const approvalUsers = result.proposals.some((proposal) => proposal.status === 'PENDING' && ['CTV', 'NPP'].includes(proposal.owner_role))
+      ? await require('../services/proposalEntryApproval').loadUsers()
+      : [];
     const proposals = await Promise.all(result.proposals.map(async (proposal) => ({
-      ...proposal, permissions: await permissionsFor(proposal, req.user)
+      ...proposal, permissions: await permissionsFor(proposal, req.user, approvalUsers)
     })));
     res.json({ success: true, data: proposals, pagination: result.pagination });
   } catch (error) {
@@ -196,7 +204,10 @@ exports.updateStatus = async (req, res) => {
     if (existing.status === 'PAUSED' && status !== 'CANCELLED') {
       return res.status(400).json({ success: false, message: 'Đề xuất đang tạm dừng; chỉ có thể tiếp tục hoặc hủy đề xuất' });
     }
-    if (await denyOwnerAction(existing, req.user)) {
+    const approval = require('../services/proposalEntryApproval');
+    const isEligibleApprover = existing.status === 'PENDING' && status === 'GRADING'
+      && approval.canApprove(existing.user_id, req.user, await approval.loadUsers());
+    if (await denyOwnerAction(existing, req.user) && !isEligibleApprover) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
@@ -286,6 +297,7 @@ exports.update = async (req, res) => {
     const updated = await adminProposalService.updateProposal(id, req.body, {
       actorId: req.user.id,
       actorRole: req.user.role || null,
+      expectedStatus: existing.status,
       ip: req.ip || null
     });
     const proposal = await adminProposalService.getProposalWithUser(id);

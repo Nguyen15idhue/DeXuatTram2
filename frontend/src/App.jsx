@@ -36,7 +36,7 @@ const GuestProposalPage = lazy(
   () => import("./pages/public/GuestProposalPage"),
 );
 const EvReportGuestPage = lazy(
-  () => import("./pages/public/EvReportGuestPage"),
+  () => import("./pages/public/nhu-cau-sac-xe/EvReportGuestPage"),
 );
 const ProfilePage = lazy(() => import("./pages/user/ProfilePage"));
 const HelpPage = lazy(() => import("./pages/public/HelpPage"));
