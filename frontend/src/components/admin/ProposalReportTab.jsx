@@ -325,7 +325,12 @@ const ProposalReportTab = ({ tab }) => {
         onSaved={handleUploaded}
       />
 
-      {previewRecord && <ProposalReportPreviewModal record={previewRecord} onClose={() => setPreviewRecord(null)} />}
+      {previewRecord && <ProposalReportPreviewModal record={previewRecord} onClose={() => setPreviewRecord(null)} onSaved={() => {
+        setPreviewRecord(null);
+        setToastType('success');
+        setToastMessage('Đã gửi BCĐX sang bước duyệt');
+        loadItems(page, pageSize, debouncedSearch, appliedFilters);
+      }} />}
 
       <Toast message={toastMessage} type={toastType} onClose={() => setToastMessage('')} />
     </div>

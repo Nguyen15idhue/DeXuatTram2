@@ -3,8 +3,10 @@ import { X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalReportService } from '../../services/api';
 import { ensureDocumentResponse } from '../../utils/proposalDocuments';
+import ProposalReportUpdateModal from './ProposalReportUpdateModal';
+import ConfirmDialog from '../ConfirmDialog';
 
-const ProposalReportPreviewModal = ({ record, onClose }) => {
+const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
   const { token } = useAuth();
   const mounted = useRef(false);
   const [templates, setTemplates] = useState([]);
@@ -13,9 +15,17 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
   const [inputs, setInputs] = useState({});
   const [previewUrl, setPreviewUrl] = useState('');
   const [warnings, setWarnings] = useState([]);
+  const [blocking, setBlocking] = useState([]);
+  const [previewBlob, setPreviewBlob] = useState(null);
+  const [proof, setProof] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState('');
+  const [poleRows, setPoleRows] = useState(null);
+  const [expectedOnDate, setExpectedOnDate] = useState('');
+  const [draftRevision, setDraftRevision] = useState('');
+  const [editingPoles, setEditingPoles] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -28,7 +38,13 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
     proposalReportService.getGenerationOptions(record.id, token)
       .then((response) => {
         ensureDocumentResponse(response);
-        if (active) setTemplates(response.data?.templates || []);
+        if (active) {
+          setTemplates(response.data?.templates || []);
+          const draft = response.data?.draft;
+          setPoleRows(Array.isArray(draft?.chot_so_luong_tru) && draft.chot_so_luong_tru.length ? draft.chot_so_luong_tru : null);
+          setExpectedOnDate(draft?.ngay_du_kien_on || '');
+          setDraftRevision(draft?.revision || '');
+        }
       })
       .catch((cause) => { if (active) setError(cause.message || 'Không tải được mẫu BCĐX'); })
       .finally(() => { if (active) setLoading(false); });
@@ -52,20 +68,53 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
   };
 
   const renderPreview = async () => {
+    if (!poleRows?.length || !expectedOnDate || !draftRevision) {
+      setError('Vui lòng nhập trụ chốt và ngày dự kiến ON trước khi xem thử.');
+      return;
+    }
     setRendering(true);
     setError('');
     setPreviewUrl('');
     setWarnings([]);
+    let saved = false;
     try {
+      const draftResponse = await proposalReportService.saveGenerationDraft(record.id, {
+        chot_so_luong_tru: poleRows, ngay_du_kien_on: expectedOnDate, revision: draftRevision
+      }, token);
+      ensureDocumentResponse(draftResponse);
+      saved = true;
+      if (!mounted.current) return;
+      setDraftRevision(draftResponse.data.revision);
+      setPoleRows(draftResponse.data.chot_so_luong_tru);
       const result = await proposalReportService.previewGeneration(record.id, {
-        template_id: Number(templateId), values,
+        template_id: Number(templateId),
+        values: Object.hasOwn(values, 'ngay_du_kien_on') ? { ...values, ngay_du_kien_on: expectedOnDate } : values,
+        saved_draft_revision: draftResponse.data.revision,
         ...(template?.input_fields?.length ? { inputs } : {})
       }, token);
       if (!mounted.current) return;
       setPreviewUrl(URL.createObjectURL(result.blob));
       setWarnings(result.warnings);
+      setBlocking(result.blocking);
+      setPreviewBlob(result.blob);
+      setProof(result.proof || '');
     } catch (cause) {
-      if (mounted.current) setError(cause.message || 'Không tạo được bản xem thử');
+      if (mounted.current) setError(`${saved ? 'Đã lưu trụ chốt và ngày ON. ' : ''}${cause.message || 'Không tạo được bản xem thử'}`);
+    } finally {
+      if (mounted.current) setRendering(false);
+    }
+  };
+
+  const sendReport = async () => {
+    setConfirming(false);
+    setRendering(true);
+    setError('');
+    try {
+      const result = await proposalReportService.generate(record.id, previewBlob, proof, token);
+      ensureDocumentResponse(result);
+      if (mounted.current) onSaved?.(result.data);
+    } catch (cause) {
+      if (mounted.current) setError(cause.message || 'Không gửi được BCĐX');
     } finally {
       if (mounted.current) setRendering(false);
     }
@@ -84,7 +133,7 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
           </button>
         </div>
         <div className="alert alert-warning my-3 text-sm">
-          Bản xem thử chưa lưu dữ liệu, chưa gửi duyệt và chưa hỗ trợ cấu hình chữ ký tự động. Để gửi duyệt, tiếp tục dùng chức năng tải tờ trình.
+          Khi xem thử, hệ thống lưu trụ chốt và ngày ON vào đề xuất trước. Các thông tin sửa tạm khác chỉ dùng trong tài liệu. Chữ ký tự động chưa được hỗ trợ.
         </div>
         {error && <div className="alert alert-error mb-3 text-sm">{error}</div>}
         {loading ? <span className="loading loading-spinner" /> : (
@@ -99,9 +148,23 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
             {!templates.length && <p className="text-sm">Chưa có mẫu hoạt động phù hợp với mô hình đề xuất.</p>}
             {template && (
               <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button type="button" className="btn btn-outline btn-sm" disabled={rendering} onClick={() => setEditingPoles(true)}>
+                    Nhập số lượng trụ chốt
+                  </button>
+                  <span className="text-sm">{poleRows ? `Đã nhập ${poleRows.length} dòng cho bản xem thử` : 'Chưa thay đổi bảng trụ chốt của đề xuất'}</span>
+                </div>
+                <label className="form-control max-w-sm">
+                  <span className="label-text mb-1">Ngày dự kiến ON (bắt buộc)</span>
+                  <input className="input input-bordered" type="date" value={expectedOnDate} disabled={rendering} onChange={(event) => {
+                    setExpectedOnDate(event.target.value);
+                    setPreviewUrl('');
+                    setWarnings([]);
+                  }} />
+                </label>
                 <p className="text-sm text-base-content/70">Thông tin từ đề xuất: có thể sửa tạm để xem thử, không ghi ngược vào đề xuất.</p>
                 <div className="grid gap-3 md:grid-cols-2 max-h-72 overflow-y-auto">
-                  {template.fields.map((field) => (
+                  {template.fields.filter((field) => field.key !== 'ngay_du_kien_on').map((field) => (
                     <label className="form-control" key={field.key}>
                       <span className="label-text mb-1">{field.label}</span>
                       {field.type === 'textarea' ? (
@@ -146,16 +209,35 @@ const ProposalReportPreviewModal = ({ record, onClose }) => {
                   </>
                 )}
                 <button type="button" className="btn btn-primary btn-sm" onClick={renderPreview} disabled={rendering}>
-                  {rendering ? 'Đang tạo bản xem thử...' : 'Xem thử PDF'}
+                  {rendering ? 'Đang lưu và tạo bản xem thử...' : 'Lưu trụ, ngày ON và xem thử PDF'}
                 </button>
               </>
             )}
             {warnings.length > 0 && <div className="alert alert-warning text-sm"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
-            {previewUrl && <iframe title="Xem thử BCĐX" src={previewUrl} className="w-full h-[65vh] border border-base-300" />}
+            {previewUrl && blocking.length > 0 && <div className="alert alert-error text-sm"><div>Không thể gửi duyệt:<ul>{blocking.map((item) => <li key={item}>{item}</li>)}</ul></div></div>}
+            {previewUrl && <iframe title="Xem thử BCĐX" src={previewUrl} className="w-full h-screen border border-base-300" />}
+            {previewUrl && <button type="button" className="btn btn-primary" disabled={rendering || !proof || blocking.length > 0} onClick={() => setConfirming(true)}>
+              {rendering ? 'Đang gửi duyệt...' : 'Xác nhận gửi duyệt'}
+            </button>}
           </div>
         )}
       </div>
       <div className="modal-backdrop" />
+      <ConfirmDialog isOpen={confirming} type="warning" title="Gửi duyệt BCĐX"
+        message="Gửi bản PDF đang xem sang bước duyệt BCĐX?" confirmText="Gửi duyệt"
+        onCancel={() => setConfirming(false)} onConfirm={sendReport} />
+      {editingPoles && <ProposalReportUpdateModal
+        open
+        record={{ ...record, chot_so_luong_tru: poleRows || record.chot_so_luong_tru }}
+        initialChotRows={poleRows}
+        onClose={() => setEditingPoles(false)}
+        onSelectPoles={(rows) => {
+          setPoleRows(rows);
+          setPreviewUrl('');
+          setWarnings([]);
+          setEditingPoles(false);
+        }}
+      />}
     </dialog>
   );
 };

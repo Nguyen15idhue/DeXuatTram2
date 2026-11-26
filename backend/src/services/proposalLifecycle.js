@@ -225,7 +225,7 @@ exports.transition = async (id, to, opts = {}) => {
   const {
     reason, actorId, actorRole, source = 'user', manualOverride = false, ip,
     isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false, directOnStation = false,
-    signatureWithdrawal = false
+    signatureWithdrawal = false, expectedFromStatus, legacyEntryReadiness = false, legacyPurpose = 'create'
   } = opts;
   if (!ALL_STATUSES.includes(to)) {
     throw err('Trạng thái không hợp lệ', 400);
@@ -241,6 +241,9 @@ exports.transition = async (id, to, opts = {}) => {
   }
   const proposal = rows[0];
   const from = proposal.status;
+  if (expectedFromStatus !== undefined && from !== expectedFromStatus) {
+    throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+  }
   const isSignatureWithdrawal = signatureWithdrawal === true && from === 'SIGNATURE_PENDING'
     && to === 'PROPOSAL_REPORT_REVIEWING' && source === 'user';
   if (signatureWithdrawal) {
@@ -257,6 +260,12 @@ exports.transition = async (id, to, opts = {}) => {
   const isPausedCancellation = from === 'PAUSED' && to === 'CANCELLED';
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
   const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
+  if (!forceOverride && from === 'PENDING' && to === 'REVIEWING') {
+    const [owners] = await pool.query('SELECT role FROM users WHERE id = ?', [proposal.user_id]);
+    if (['CTV', 'NPP'].includes(owners[0]?.role)) {
+      throw err('Đề xuất CTV/NPP phải được duyệt trực tiếp sang chấm điểm', 400);
+    }
+  }
   const isDirectReportFromReview = from === 'GDTTKD_EVALUATING' && to === 'PROPOSAL_REPORT_CREATING';
   const isDirectOnStation = directOnStation === true
     && to === 'DEPLOYING'
@@ -437,28 +446,102 @@ exports.transition = async (id, to, opts = {}) => {
     } finally {
       connection.release();
     }
+  } else if (from === 'PENDING' && to === 'GRADING' && !forceOverride) {
+    const deadlines = await exports.getDeadlineDates(to, pool, { pendingSupplementFallback: false });
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [lockedRows] = await connection.query('SELECT * FROM station_proposals WHERE id = ? FOR UPDATE', [id]);
+      const locked = lockedRows[0];
+      if (!locked || locked.status !== 'PENDING') {
+        throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+      }
+      const approval = require('./proposalEntryApproval');
+      const users = await approval.loadUsers(connection);
+      const owner = users.find((user) => Number(user.id) === Number(locked.user_id));
+      if (['CTV', 'NPP'].includes(owner?.role)
+        && (source !== 'user' || !approval.canApprove(locked.user_id, { id: actorId }, users))) {
+        throw err('Chỉ GĐKV quản lý hoặc cấp trên hợp lệ được duyệt đề xuất này', 403);
+      }
+      const check = legacyEntryReadiness && source === 'system_auto'
+        ? await exports.checkInfoComplete(require('./dynamicUtils').mergeData(
+          locked, await require('./dynamicUtils').getFieldDefinitionsByEntity('station_proposals')
+        ), { purpose: legacyPurpose })
+        : await require('./proposalEntryReadiness').check(locked, connection);
+      if (!check.complete) {
+        const error = err(`Thông tin chưa đầy đủ, không thể duyệt: ${check.missing[0]}`, 400);
+        error.details = check.missing;
+        throw error;
+      }
+      [updateResult] = await connection.query(
+        `UPDATE station_proposals SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(),
+           updated_at = NOW(), supplement_deadline_at = ?, transition_deadline_at = ?,
+           countdown_calendar_id = ?, info_completed_at = NULL
+         WHERE id = ? AND status = 'PENDING'`,
+        [to, rejectReasonValue, actorId || null, deadlines.supplement, deadlines.transition, deadlines.calendarId, id]
+      );
+      if (updateResult.affectedRows !== 1) throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+      await connection.query(
+        "UPDATE proposal_requests SET status = 'DONE', resolved_by = ?, resolved_at = NOW() WHERE proposal_id = ? AND request_type IN ('ENTRY_APPROVAL', 'UPDATE_INFO', 'SUPPLEMENT') AND status = 'OPEN'",
+        [actorId || null, id]
+      );
+      await exports.logActivity({
+        proposalId: id, action: 'status_change', fromStatus: from, toStatus: to,
+        reason: auditReason, actorId, actorRole, source, manualOverride, ip, connection
+      });
+      await connection.commit();
+      statusActivityLogged = true;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } else {
     const deadlines = isSignedApprovalTarget
       ? { supplement: null, transition: null, calendarId: null }
       : await exports.getDeadlineDates(to, pool, { pendingSupplementFallback: false });
-    [updateResult] = await pool.query(
-      `UPDATE station_proposals
+    const closeEntryTask = from === 'PENDING' || (from === 'PAUSED' && to === 'CANCELLED');
+    const connection = closeEntryTask ? await pool.getConnection() : null;
+    try {
+      if (connection) await connection.beginTransaction();
+      [updateResult] = await (connection || pool).query(
+        `UPDATE station_proposals
        SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW(),
            supplement_deadline_at = ?, transition_deadline_at = ?, countdown_calendar_id = ?,
            info_completed_at = NULL,
            signature_completed_at = CASE WHEN ? = 'SIGNATURE_PENDING' THEN NULL ELSE signature_completed_at END,
            paused_from_status = CASE WHEN ? = 1 THEN NULL ELSE paused_from_status END,
            paused_at = CASE WHEN ? = 1 THEN NULL ELSE paused_at END
-       WHERE id = ?`,
-      [
-        to, rejectReasonValue, actorId || null,
-        deadlines.supplement, deadlines.transition, deadlines.calendarId,
-        to,
-        isPausedCancellation ? 1 : 0,
-        isPausedCancellation ? 1 : 0,
-        id
-      ]
-    );
+       WHERE id = ? AND status = ?`,
+        [
+          to, rejectReasonValue, actorId || null,
+          deadlines.supplement, deadlines.transition, deadlines.calendarId,
+          to, isPausedCancellation ? 1 : 0, isPausedCancellation ? 1 : 0, id, from
+        ]
+      );
+      if (updateResult.affectedRows !== 1) {
+        throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+      }
+      if (connection) {
+        await connection.query(
+          "UPDATE proposal_requests SET status = ?, resolved_by = ?, resolved_at = NOW() WHERE proposal_id = ? AND request_type = 'ENTRY_APPROVAL' AND status = 'OPEN'",
+          [to === 'GRADING' ? 'DONE' : 'CANCELLED', actorId || null, id]
+        );
+        await exports.logActivity({
+          proposalId: id, action: 'status_change', fromStatus: from, toStatus: to, reason: auditReason,
+          actorId, actorRole, source: forceOverride || isEmergencyReopen ? 'admin_override' : source,
+          manualOverride: manualOverride || forceOverride || isEmergencyReopen, ip, connection
+        });
+        await connection.commit();
+        statusActivityLogged = true;
+      }
+    } catch (error) {
+      if (connection) await connection.rollback();
+      throw error;
+    } finally {
+      if (connection) connection.release();
+    }
   }
 
   if (!isPauseTransition && !isResumeTransition) {
@@ -882,6 +965,35 @@ exports.checkInfoComplete = async (flatData, opts = {}) => {
   return { complete: missing.size === 0, missing: [...missing] };
 };
 
+exports.processPendingEntry = async (id, opts = {}) => {
+  const { actorId = null, actorRole = null, ip = null } = opts;
+  const prepared = await require('./proposalEntryApproval').preparePending(id, actorId, actorRole, ip);
+  if (prepared.skipped) return { confirmed: false, skipped: prepared.skipped };
+  if (!prepared.complete) return { confirmed: false, missing: prepared.missing };
+  if (prepared.requiresApproval) {
+    if (prepared.createdTask) {
+      try {
+        await notifyInfoChange(prepared.proposal, true, { actorId, source: 'system_auto' });
+      } catch (error) {
+        console.error(`[ProposalNotifications] Failed to notify info completion for proposal ${id}:`, error);
+        return { confirmed: true, waitingManagerApproval: true, error: 'Đã tạo việc duyệt nhưng không gửi được thông báo' };
+      }
+    }
+    return { confirmed: true, waitingManagerApproval: true };
+  }
+  try {
+    const result = await exports.transition(id, 'GRADING', {
+      actorId, actorRole, source: 'system_auto', ip, expectedFromStatus: 'PENDING'
+    });
+    return { confirmed: true, movedTo: result.status };
+  } catch (error) {
+    const [rows] = await pool.query('SELECT status FROM station_proposals WHERE id = ?', [id]);
+    if (rows[0]?.status !== 'GRADING') throw error;
+    console.error(`[ProposalLifecycle] Proposal #${id} reached GRADING with a post-transition error: ${error.message}`);
+    return { confirmed: true, movedTo: 'GRADING', error: `Đã chuyển bước nhưng có lỗi xử lý sau đó: ${error.message}` };
+  }
+};
+
 // F2 — tự xác nhận khi đủ trường (không throw; dùng cho hook lưu + batch G)
 exports.maybeAutoConfirmInfo = async (id, opts = {}) => {
   try {
@@ -892,6 +1004,9 @@ exports.maybeAutoConfirmInfo = async (id, opts = {}) => {
     );
     if (rows.length === 0) return { confirmed: false, skipped: 'not_found' };
     const row = rows[0];
+    if (row.status === 'PENDING' && opts.entryFlow) {
+      return await exports.processPendingEntry(id, opts);
+    }
     if (!row.supplement_deadline_at) return { confirmed: false, skipped: 'not_in_supplement' };
     const suppStatuses = await exports.getEnabledSupplementStatuses();
     if (!suppStatuses.includes(row.status)) return { confirmed: false, skipped: 'not_in_supplement' };
@@ -905,7 +1020,9 @@ exports.maybeAutoConfirmInfo = async (id, opts = {}) => {
     if (!complete) return { confirmed: false, missing };
 
     try {
-      const result = await exports.setInfoCompleted(id, true, { actorId, source: 'system_auto', ip });
+      const result = await exports.setInfoCompleted(id, true, {
+        actorId, source: 'system_auto', ip, entryFlow: false, legacyPurpose: purpose
+      });
       return { confirmed: true, movedTo: result.movedTo || null, already };
     } catch (e) {
       console.error(`[ProposalLifecycle] Auto-confirm info failed for proposal #${id}: ${e.message}`);
@@ -1309,6 +1426,24 @@ const collectInfoNotifyIds = async (proposal) => {
   return userIds;
 };
 
+const notifyInfoChange = async (proposal, completed, { actorId = null, source = 'user' } = {}) => {
+  const type = completed ? 'INFO_COMPLETED' : 'INFO_REOPENED';
+  const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
+  const actorName = source === 'system_auto' ? 'Hệ thống' : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
+  const userIds = await collectInfoNotifyIds(proposal);
+  userIds.delete(Number(actorId));
+  for (const userId of userIds) {
+    if (!userId) continue;
+    await notificationService.create({
+      userId, type, title: notificationService.statusTitle(type),
+      message: notificationService.statusMessage({
+        code, actorName, status: type, actionLabel: completed ? 'Người xác nhận' : 'Người mở lại'
+      }),
+      entityType: 'station_proposals', entityId: proposal.id, createdBy: actorId
+    });
+  }
+};
+
 exports.notifyStepReceivers = async (id, to, opts = {}) => {
   const { actorId = null, reason = null, includeOwner = false } = opts;
   const stepRecipients = require('./proposalStepRecipients');
@@ -1392,8 +1527,30 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
     throw err('Không tìm thấy đề xuất', 404);
   }
   const proposal = rows[0];
+  if (proposal.status === 'PENDING' && !completed) {
+    const result = await require('./proposalEntryApproval').reopenPending(id, opts);
+    if (!result.unchanged) {
+      try {
+        await notifyInfoChange(result.proposal, false, opts);
+      } catch (error) {
+        console.error(`[ProposalNotifications] Failed to notify info reopening for proposal ${id}:`, error);
+        throw err('Đã mở lại đề xuất nhưng không gửi được thông báo', 500);
+      }
+    }
+    delete result.proposal;
+    return result;
+  }
+  if (proposal.status === 'PENDING' && completed && opts.entryFlow !== false) {
+    const result = await exports.processPendingEntry(id, opts);
+    if (!result.confirmed) {
+      const error = err(`Thông tin chưa đầy đủ: ${result.missing?.[0] || 'đề xuất không còn ở trạng thái mới đề xuất'}`, 400);
+      error.details = result.missing;
+      throw error;
+    }
+    return { id, completed: true, ...result };
+  }
   const [ownerRows] = await pool.query('SELECT role FROM users WHERE id = ?', [proposal.user_id]);
-  const ownerIsCtv = ownerRows.length > 0 && ownerRows[0].role === 'CTV';
+  const ownerIsCtv = ownerRows.length > 0 && ['CTV', 'NPP'].includes(ownerRows[0].role);
   const supplementStatuses = await exports.getEnabledSupplementStatuses();
   // Đảm bảo PENDING luôn có supplement_deadline_at để cho phép xác nhận duyệt
   if (!proposal.supplement_deadline_at && proposal.status === 'PENDING') {
@@ -1418,7 +1575,10 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
   let movedTo = null;
   if (movePendingToGrading) {
     try {
-      const result = await exports.transition(id, 'GRADING', { actorId, actorRole, source, ip });
+      const result = await exports.transition(id, 'GRADING', {
+        actorId, actorRole, source, ip,
+        legacyEntryReadiness: opts.entryFlow === false, legacyPurpose: opts.legacyPurpose
+      });
       if (result?.status !== 'GRADING') throw err('Đề xuất chưa được chuyển sang chấm điểm', 409);
       movedTo = 'GRADING';
     } catch (transitionError) {

@@ -1,6 +1,122 @@
 const { test, expect } = require('@playwright/test');
 test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 
+test('approval task reports missing fields, then approves and refreshes the tab badge', async ({ page }) => {
+  let open = true;
+  let firstAttempt = true;
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
+    else if (path.includes('/dynamic/station_proposals/view/')) data = { fields: [], allFields: [] };
+    else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], workScopes: [{ value: 'all', label: 'Tất cả công việc' }] };
+    else if (path.endsWith('/admin/proposals/77/status') && route.request().method() === 'PUT') {
+      expect(route.request().postDataJSON().status).toBe('GRADING');
+      if (firstAttempt) {
+        firstAttempt = false;
+        await route.fulfill({ status: 400, json: { success: false, message: 'Thông tin chưa đầy đủ', errors: ['Thiếu địa chỉ', 'Thiếu số điện thoại'] } });
+        return;
+      }
+      open = false;
+      data = { id: 77, status: 'GRADING' };
+    } else if (path.endsWith('/admin/proposal-requests') && open && url.searchParams.get('limit') !== '1') {
+      data = [{ id: 3, proposal_id: 77, ma_de_xuat: 'DX-77', owner_id: 8, owner_name: 'NPP',
+        request_type: 'ENTRY_APPROVAL', description: 'Duyệt đề xuất', proposal_status: 'PENDING', can_approve: true }];
+    } else if (path.includes('/countdown') || path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ json: { success: true, data, pagination: {
+      page: 1, limit: 20, total: open && path.endsWith('/admin/proposal-requests') ? 1 : 0, totalPages: 1
+    } } });
+  });
+  await page.goto('/admin/proposals?tab=requests');
+  const tab = page.getByRole('tab', { name: /Các đề xuất cần thực hiện/ });
+  await expect(tab.locator('.badge')).toHaveText('1');
+  await page.getByRole('button', { name: 'Duyệt sang chấm điểm' }).click();
+  await page.getByRole('button', { name: 'Duyệt', exact: true }).click();
+  await expect(page.getByText('Thiếu địa chỉ · Thiếu số điện thoại')).toBeVisible();
+  await expect(tab.locator('.badge')).toHaveText('1');
+  await page.getByRole('button', { name: 'Duyệt sang chấm điểm' }).click();
+  await page.getByRole('button', { name: 'Duyệt', exact: true }).click();
+  await expect(page.getByText('Đã duyệt đề xuất sang chấm điểm')).toBeVisible();
+  await expect(tab.locator('.badge')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('completing an update task reports API failure and post-save warnings', async ({ page }) => {
+  let open = true;
+  let attempts = 0;
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
+    else if (path.includes('/dynamic/station_proposals/view/')) data = { fields: [], allFields: [] };
+    else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], workScopes: [{ value: 'all', label: 'Tất cả công việc' }] };
+    else if (path.endsWith('/admin/proposal-requests/3/complete')) {
+      expect(route.request().postDataJSON().resolution_note).toBe('Đã cập nhật');
+      if (++attempts === 1) {
+        await route.fulfill({ status: 400, json: { success: false, message: 'Không thể hoàn thành' } });
+        return;
+      }
+      open = false;
+      data = { infoCompleted: { confirmed: true, error: 'Đã tạo việc duyệt nhưng không gửi được thông báo' } };
+    } else if (path.endsWith('/admin/proposal-requests') && open && url.searchParams.get('limit') !== '1') {
+      data = [{ id: 3, proposal_id: 77, ma_de_xuat: 'DX-77', owner_id: 8, owner_name: 'NPP',
+        request_type: 'UPDATE_INFO', proposal_status: 'PENDING', can_complete: true }];
+    } else if (path.includes('/countdown') || path.endsWith('/assistant/status')) data = {};
+    await route.fulfill({ json: { success: true, data, pagination: {
+      page: 1, limit: 20, total: open && path.endsWith('/admin/proposal-requests') ? 1 : 0, totalPages: 1
+    } } });
+  });
+  await page.goto('/admin/proposals?tab=requests');
+  await page.getByRole('button', { name: 'Đánh dấu đã hoàn thành' }).click();
+  await page.getByPlaceholder('VD: Đã hoàn thành theo yêu cầu...').fill('Đã cập nhật');
+  await page.getByRole('button', { name: 'Xác nhận hoàn thành' }).click();
+  await expect(page.getByText('Không thể hoàn thành')).toBeVisible();
+  await page.getByRole('button', { name: 'Xác nhận hoàn thành' }).click();
+  await expect(page.getByText('Đã hoàn thành yêu cầu; xử lý tiếp theo: Đã tạo việc duyệt nhưng không gửi được thông báo')).toBeVisible();
+  await expect(page.getByRole('tab', { name: /Các đề xuất cần thực hiện/ }).locator('.badge')).toHaveCount(0);
+});
+
+test('request tab badge counts all scoped open tasks and refreshes independently of filters', async ({ page }) => {
+  let total = 5;
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
+    else if (path.includes('/dynamic/station_proposals/view/')) data = { fields: [], allFields: [] };
+    else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], workScopes: [{ value: 'all', label: 'Tất cả công việc' }] };
+    else if (path.includes('/countdown') || path.endsWith('/assistant/status')) data = {};
+    const isCount = path.endsWith('/admin/proposal-requests')
+      && url.searchParams.get('work_scope') === 'all'
+      && url.searchParams.get('limit') === '1';
+    await route.fulfill({ json: { success: true, data, pagination: {
+      page: 1, limit: 20, total: isCount ? total : 0, totalPages: 1
+    } } });
+  });
+  await page.goto('/admin/proposals');
+  const tab = page.getByRole('tab', { name: /Các đề xuất cần thực hiện/ });
+  await expect(tab.locator('.badge')).toHaveText('5');
+  await tab.click();
+  await expect(page.getByText('0 yêu cầu đang mở')).toBeVisible();
+  await expect(tab.locator('.badge')).toHaveText('5');
+  total = 7;
+  await page.evaluate(() => window.dispatchEvent(new Event('proposal:task-counts-changed')));
+  await expect(tab.locator('.badge')).toHaveText('7');
+  total = 0;
+  await page.evaluate(() => window.dispatchEvent(new Event('proposal:task-counts-changed')));
+  await expect(tab.locator('.badge')).toHaveCount(0);
+});
+
 test('proposal tabs search and combine multiple filters before pagination', async ({ page }) => {
   const errors = [];
   const queries = [];

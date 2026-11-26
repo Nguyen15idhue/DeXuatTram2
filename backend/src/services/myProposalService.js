@@ -173,7 +173,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
         request
       );
   }
-  if (!requestScopedUpdate) assertOwnerEditable(id, st[0].status, opts.actorRole);
+  if (!requestScopedUpdate) await assertOwnerEditable(id, st[0].status, opts.actorRole);
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -190,13 +190,15 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
   const [existing] = await pool.query('SELECT latitude, longitude, custom_data, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description, note, chot_so_luong_tru FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  if (!existing.length || existing[0].status !== st[0].status) {
+    throw Object.assign(new Error('Trạng thái đề xuất vừa thay đổi; hãy tải lại trước khi lưu'), { statusCode: 409 });
+  }
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId, null, current);
   await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, fieldDefs).catch(() => {});
   const mergedDynamic = { ...current, ...dynamicData };
-  const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
   const wasRejected = existing.length > 0 && existing[0].status === 'REJECTED';
   const wasWaitingInfo = existing.length > 0 && existing[0].status === 'INFOR_WAITING';
@@ -219,15 +221,41 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     || (Array.isArray(submittedPoleRows) && submittedPoleRows.length === 0)
     ? prevRow.chot_so_luong_tru
     : submittedPoleRows;
-  await pool.query(
-    `UPDATE station_proposals
+  const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
+  const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
+  const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
+  const exclude = (driversChanged || !codeValid) ? [] : ['ma_de_xuat'];
+  const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });
+  const finalDynamic = { ...mergedDynamic, ...postResults };
+  const connection = await pool.getConnection();
+  let customData;
+  try {
+    await connection.beginTransaction();
+    await require('./fileService').renameProposalFiles({
+      dynamicData: finalDynamic, fieldDefs,
+      maDeXuat: finalDynamic.ma_de_xuat || current.ma_de_xuat || `DX${id}`, connection
+    });
+    customData = Object.keys(finalDynamic).length ? JSON.stringify(finalDynamic) : null;
+    const [updateResult] = await connection.query(
+      `UPDATE station_proposals
      SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, custom_data = ?, status = ?, updated_at = NOW()
+     , tracking_code = COALESCE(?, tracking_code)
      ${resetDeadlines ? ', supplement_deadline_at = ?, transition_deadline_at = ?, countdown_calendar_id = ?, info_completed_at = NULL' : ''}
-     WHERE id = ? AND user_id = ?`,
-    resetDeadlines
-      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, resetDeadlines.supplement, resetDeadlines.transition, resetDeadlines.calendarId, id, userId]
-      : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, id, userId]
-  );
+     WHERE id = ? AND user_id = ? AND status = ?`,
+      resetDeadlines
+        ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, postResults.ma_de_xuat || null, resetDeadlines.supplement, resetDeadlines.transition, resetDeadlines.calendarId, id, userId, prevRow.status]
+        : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, postResults.ma_de_xuat || null, id, userId, prevRow.status]
+    );
+    if (updateResult.affectedRows !== 1) {
+      throw Object.assign(new Error('Trạng thái đề xuất vừa thay đổi; hãy tải lại trước khi lưu'), { statusCode: 409 });
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 
   if (wasRejected && reviewerId) {
     const code = notificationService.proposalCode(customData, id);
@@ -302,37 +330,12 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     }
   } catch { /* silent: khong chan luu vi log */ }
 
-  const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
-  const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
-    const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
-  const exclude = (driversChanged || !codeValid) ? [] : ['ma_de_xuat'];
-  const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });
-  const finalDynamic = { ...mergedDynamic, ...postResults };
-  let filesRenamed = 0;
-  try {
-    const fileService = require('./fileService');
-    filesRenamed = await fileService.renameProposalFiles({
-      dynamicData: finalDynamic,
-      fieldDefs,
-      maDeXuat: finalDynamic.ma_de_xuat || current.ma_de_xuat || `DX${id}`
-    });
-  } catch { /* silent: khong chan luu vi rename */ }
-  if (Object.keys(postResults).length > 0) {
-    if (postResults.ma_de_xuat) {
-      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(finalDynamic), postResults.ma_de_xuat, id]);
-    } else {
-      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
-    }
-  } else if (filesRenamed > 0) {
-    await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
-  }
-
   let infoCompleted = null;
   if (!opts.deferRequestCompletion) {
     try {
       const proposalLifecycle = require('./proposalLifecycle');
       infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
-        actorId, purpose: 'view', ip: opts.ip || null
+        actorId, actorRole: opts.actorRole || null, purpose: 'view', ip: opts.ip || null, entryFlow: true
       });
     } catch { infoCompleted = null; }
   }

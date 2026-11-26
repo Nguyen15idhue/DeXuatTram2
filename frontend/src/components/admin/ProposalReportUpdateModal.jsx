@@ -209,6 +209,8 @@ const ProposalReportUpdateModal = ({
   onClose,
   onSaved,
   onUpload,
+  onSelectPoles,
+  initialChotRows,
 }) => {
   const { token } = useAuth();
   const [files, setFiles] = useState([]);
@@ -262,7 +264,9 @@ const ProposalReportUpdateModal = ({
     );
     setExpectedOnDate(formatExpectedOnDate(record?.ngay_du_kien_on));
     setChotRows(
-      parseRows(record?.chot_so_luong_tru).length > 0
+      Array.isArray(initialChotRows) && initialChotRows.length > 0
+        ? initialChotRows.map((row) => ({ ...row }))
+        : parseRows(record?.chot_so_luong_tru).length > 0
         ? parseRows(record?.chot_so_luong_tru).map((row) => ({
             mo_hinh: row.mo_hinh || "",
             so_luong: row.so_luong ?? "",
@@ -337,7 +341,7 @@ const ProposalReportUpdateModal = ({
   const validate = () => {
     if (uploading) return "Vui lòng đợi tải file gốc lên hoàn tất";
     if (files.length > 10) return "Chỉ được chọn tối đa 10 tài liệu BCĐX";
-    if (!files || files.length === 0)
+    if (!onSelectPoles && (!files || files.length === 0))
       return "Vui lòng tải lên file tờ trình BCĐX";
     if (
       onUpload &&
@@ -347,7 +351,7 @@ const ProposalReportUpdateModal = ({
       return "Ngày dự kiến ON phải đúng định dạng dd-mm-yyyy và là ngày hợp lệ";
     }
     if (
-      [RE_CREATING_STATUS, UPDATING_STATUS].includes(record.status) &&
+      !onSelectPoles && [RE_CREATING_STATUS, UPDATING_STATUS].includes(record.status) &&
       !files.some(
         (file) => file.id && !existingFileIds.includes(Number(file.id)),
       )
@@ -383,6 +387,16 @@ const ProposalReportUpdateModal = ({
     setError(validationMessage);
     if (validationMessage) return;
 
+    if (onSelectPoles) {
+      onSelectPoles(chotRows.map((row) => ({
+        mo_hinh: row.mo_hinh,
+        so_luong: Number(row.so_luong),
+        loai_tru: row.loai_tru,
+        ghi_chu: String(row.ghi_chu || "").trim(),
+      })));
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -417,7 +431,7 @@ const ProposalReportUpdateModal = ({
       <div className="modal-box max-w-5xl">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div>
-            <h3 className="font-bold text-lg">Cập nhật tờ trình BCĐX</h3>
+            <h3 className="font-bold text-lg">{onSelectPoles ? "Nhập số lượng trụ chốt" : "Cập nhật tờ trình BCĐX"}</h3>
             <p className="text-sm text-base-content/70">Mã đề xuất: {code}</p>
             <p className="text-sm text-base-content/70">
               Pháp nhân: {legalName}
@@ -435,7 +449,7 @@ const ProposalReportUpdateModal = ({
         </div>
 
         <div className="space-y-4">
-          <section>
+          {!onSelectPoles && <section>
             <label className="label py-1">
               <span className="label-text font-semibold">
                 File tờ trình BCĐX *
@@ -458,7 +472,7 @@ const ProposalReportUpdateModal = ({
             <div className="mt-2 space-y-2">
               <p className="text-xs text-base-content/60">Tối đa 10 tài liệu PDF hoặc Word. Sau khi gửi duyệt, Word tự chuyển PDF trong nền; không cần chờ chuyển đổi. Nếu lỗi, có thể chuyển lại tại bước Duyệt BCĐX. Luôn giữ bản gốc.</p>
             </div>
-          </section>
+          </section>}
 
           <section className="space-y-2">
             <div>
@@ -675,10 +689,10 @@ const ProposalReportUpdateModal = ({
             type="button"
             className="btn btn-primary gap-1"
             onClick={submit}
-            disabled={saving || uploading || loadingTypes || !files.length}
+            disabled={saving || uploading || loadingTypes || (!onSelectPoles && !files.length)}
           >
-            <Upload size={16} />
-            Tải lên và gửi duyệt
+            {!onSelectPoles && <Upload size={16} />}
+            {onSelectPoles ? "Áp dụng cho bản xem thử" : "Tải lên và gửi duyệt"}
           </button>
         </div>
       </div>

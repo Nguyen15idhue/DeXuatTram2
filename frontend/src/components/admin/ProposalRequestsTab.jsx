@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { proposalRequestService } from '../../services/api';
+import { adminProposalService, proposalRequestService } from '../../services/api';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
+import ConfirmDialog from '../ConfirmDialog';
 import ReviewActionDialog from './ReviewActionDialog';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
@@ -28,7 +29,8 @@ import { appendMultiFilter, hasFilterValue } from '../../utils/proposalMultiFilt
 const REQUEST_TYPES = [
   { value: 'UPDATE_INFO', label: 'Yêu cầu cập nhật thông tin' },
   { value: 'SUPPLEMENT', label: 'Yêu cầu bổ sung thông tin' },
-  { value: 'LAYOUT_SUPPLEMENT', label: 'Yêu cầu bổ sung thông tin để vẽ layout' }
+  { value: 'LAYOUT_SUPPLEMENT', label: 'Yêu cầu bổ sung thông tin để vẽ layout' },
+  { value: 'ENTRY_APPROVAL', label: 'Duyệt đề xuất để chấm điểm' }
 ];
 
 const REQUEST_COLUMNS = [
@@ -76,10 +78,11 @@ const ProposalRequestsTab = ({ token }) => {
   const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], workScopes: [] });
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [completeDialog, setCompleteDialog] = useState({ open: false, row: null });
-  const [completeNote, setCompleteNote] = useState('');
   const [completeSaving, setCompleteSaving] = useState(false);
   const [completeError, setCompleteError] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [approvalRow, setApprovalRow] = useState(null);
+  const [approvalSaving, setApprovalSaving] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -171,24 +174,49 @@ const ProposalRequestsTab = ({ token }) => {
   ].filter(hasFilterValue).length;
 
   const openCompleteDialog = (row) => {
-    setCompleteNote('');
     setCompleteError('');
     setCompleteDialog({ open: true, row });
   };
 
-  const handleComplete = async () => {
+  const handleComplete = async (resolutionNote) => {
     if (!completeDialog.row) return;
     setCompleteSaving(true);
     setCompleteError('');
     try {
-      const res = await proposalRequestService.complete(completeDialog.row.id, { resolution_note: completeNote }, token);
-      setToastMessage(res?.message || 'Đã đánh dấu yêu cầu hoàn thành');
+      const res = await proposalRequestService.complete(completeDialog.row.id, { resolution_note: resolutionNote }, token);
+      if (!res?.success) throw new Error(res?.message || 'Không đánh dấu được yêu cầu');
       setCompleteDialog({ open: false, row: null });
-      load();
+      await load();
+      if (res.data?.infoCompleted?.error) {
+        setError(`Đã hoàn thành yêu cầu; xử lý tiếp theo: ${res.data.infoCompleted.error}`);
+      } else {
+        setToastMessage(res.message || 'Đã đánh dấu yêu cầu hoàn thành');
+      }
     } catch (e) {
       setCompleteError(e?.message || 'Không đánh dấu được yêu cầu');
     } finally {
       setCompleteSaving(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!approvalRow || approvalSaving) return;
+    setApprovalSaving(true);
+    try {
+      const result = await adminProposalService.updateStatus(approvalRow.proposal_id, 'GRADING', token);
+      if (!result?.success) {
+        throw new Error(result?.errors?.length ? result.errors.join(' · ') : (result?.message || 'Không thể duyệt đề xuất'));
+      }
+      setApprovalRow(null);
+      setToastMessage('Đã duyệt đề xuất sang chấm điểm');
+      await load();
+    } catch (e) {
+      setApprovalRow(null);
+      setError(e?.message || 'Không thể duyệt đề xuất');
+      await load();
+      setError(e?.message || 'Không thể duyệt đề xuất');
+    } finally {
+      setApprovalSaving(false);
     }
   };
 
@@ -222,6 +250,11 @@ const ProposalRequestsTab = ({ token }) => {
 
   const renderActions = (row) => (
     <div className="flex flex-wrap gap-1">
+      {row.can_approve && (
+        <button type="button" className="btn btn-xs btn-primary whitespace-nowrap" onClick={() => setApprovalRow(row)}>
+          Duyệt sang chấm điểm
+        </button>
+      )}
       {row.can_update && (
         <button
           type="button"
@@ -338,6 +371,16 @@ const ProposalRequestsTab = ({ token }) => {
         error={completeError}
         onClose={() => setCompleteDialog({ open: false, row: null })}
         onConfirm={handleComplete}
+      />
+
+      <ConfirmDialog
+        isOpen={!!approvalRow}
+        title="Duyệt đề xuất"
+        message={`Chuyển đề xuất ${approvalRow?.ma_de_xuat || ''} sang chấm điểm?`}
+        confirmText="Duyệt"
+        type="success"
+        onCancel={() => { if (!approvalSaving) setApprovalRow(null); }}
+        onConfirm={handleApprove}
       />
 
       {toastMessage && <Toast message={toastMessage} type="success" onClose={() => setToastMessage('')} />}

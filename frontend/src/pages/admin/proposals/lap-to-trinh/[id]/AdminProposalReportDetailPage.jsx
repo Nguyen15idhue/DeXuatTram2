@@ -363,7 +363,11 @@ const AdminProposalReportDetailPage = () => {
         onClose={() => setUploadOpen(false)}
         onSaved={handleUploaded}
       />
-      {previewOpen && <ProposalReportPreviewModal record={proposal} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && <ProposalReportPreviewModal record={proposal} onClose={() => setPreviewOpen(false)} onSaved={async () => {
+        setPreviewOpen(false);
+        setToast('Đã gửi BCĐX sang bước duyệt');
+        await loadDetail();
+      }} />}
       <Toast message={toast} onClose={() => setToast("")} />
     </div>
   );

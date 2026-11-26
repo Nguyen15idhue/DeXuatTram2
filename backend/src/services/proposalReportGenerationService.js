@@ -1,4 +1,8 @@
 const pool = require('../utils/db');
+const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
+const jwt = require('jsonwebtoken');
 const dynamicUtils = require('./dynamicUtils');
 const documentService = require('./documentService');
 const documentTemplateService = require('./documentTemplateService');
@@ -30,7 +34,13 @@ const loadContext = async (proposalId, user) => {
   }
   const fields = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const proposal = dynamicUtils.mergeData(rows[0], fields);
-  return { proposal, fields, model: proposal.mo_hinh_dau_tu || '' };
+  return { proposal, rawProposal: rows[0], fields, model: proposal.mo_hinh_dau_tu || '' };
+};
+
+const snapshotHash = (proposal) => crypto.createHash('sha256').update(JSON.stringify(proposal)).digest('hex');
+const proofSecret = () => {
+  if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required for BCĐX preview');
+  return crypto.createHmac('sha256', process.env.JWT_SECRET).update('proposal-report-preview-v1').digest();
 };
 
 const getAvailableTemplates = async (model) => {
@@ -71,6 +81,7 @@ exports.listPreviewOptions = async ({ proposalId, user } = {}) => {
   const templates = await getAvailableTemplates(model);
   return {
     model,
+    draft: await require('./proposalReportService').getGenerationDraft(proposalId),
     templates: templates.map((template) => ({
       id: template.id,
       name: template.name,
@@ -81,7 +92,7 @@ exports.listPreviewOptions = async ({ proposalId, user } = {}) => {
   };
 };
 
-const preview = async ({ proposalId, templateId, values, inputs = {}, user } = {}) => {
+const preview = async ({ proposalId, templateId, values, inputs = {}, chotSoLuongTru, savedDraftRevision, user } = {}) => {
   const context = await loadContext(proposalId, user);
   const id = Number(templateId);
   if (!Number.isSafeInteger(id) || id <= 0) throw error('Vui lòng chọn mẫu BCĐX');
@@ -109,13 +120,24 @@ const preview = async ({ proposalId, templateId, values, inputs = {}, user } = {
     overrides[key] = field.type === 'number' && value !== '' ? Number(value) : value;
   }
   const mapping = template.mapping || {};
-  validateInputs(mapping, inputs);
+  const resolvedInputs = validateInputs(mapping, inputs);
   if (mapping.signatureAnchors?.length || mapping.signers?.length) {
     throw error('Mẫu có cấu hình chữ ký tự động chưa được hỗ trợ trong bản xem thử');
   }
   const tokens = await documentTemplateService.listTokens(template.id);
   if (tokens.some((item) => /^\{sig_/i.test(item.token))) {
     throw error('Mẫu có vị trí ký tự động chưa được hỗ trợ trong bản xem thử');
+  }
+  if (savedDraftRevision !== undefined) {
+    const draft = await require('./proposalReportService').getGenerationDraft(proposalId);
+    if (draft.revision !== savedDraftRevision) throw error('Trụ chốt hoặc ngày dự kiến ON đã thay đổi, vui lòng tải lại', 409);
+    overrides.chot_so_luong_tru = draft.chot_so_luong_tru;
+    overrides.tong_gia_tri_chot = draft.tong_gia_tri_chot;
+    overrides.ngay_du_kien_on = draft.ngay_du_kien_on;
+  } else if (chotSoLuongTru !== undefined) {
+    const result = await require('./proposalReportService').normalizePreviewChotRows(chotSoLuongTru);
+    overrides.chot_so_luong_tru = result.rows;
+    overrides.tong_gia_tri_chot = result.total;
   }
   const { data, loopInfos, numericData } = await documentService.buildData({ ...context.proposal, ...overrides }, mapping);
   const { zip } = await documentTemplateService.readDocxXml(template.file_id);
@@ -126,7 +148,39 @@ const preview = async ({ proposalId, templateId, values, inputs = {}, user } = {
   }
   const rendered = renderDocument({ zip, data, mapping, inputs, numericData });
   const converted = await libreOfficeService.convertToPdf(rendered.buffer, '.docx');
-  return { ...converted, warnings: rendered.warnings };
+  if (converted.pdfBuffer.length > 20 * 1024 * 1024) throw error('PDF BCĐX vượt quá 20 MB');
+  const blocking = rendered.warnings.filter((warning) =>
+    warning.startsWith('Chưa cấu hình:') || warning.startsWith('Bảng chưa cấu hình:'));
+  for (const field of getInputFields(mapping)) {
+    if (field.required && String(resolvedInputs[field.key] ?? '').trim() === '') {
+      blocking.push(`${field.label}: chưa nhập thông tin bắt buộc`);
+    }
+  }
+  for (const [name, binding] of Object.entries(mapping.tokens || {})) {
+    if (binding?.source !== 'field' || !tokens.some((item) => item.token === `{${name}}`)) continue;
+    const definition = context.fields.find((item) => item.key === binding.key);
+    if (!(definition?.required === true || Number(definition?.required) === 1)) continue;
+    const value = Object.hasOwn(overrides, binding.key) ? overrides[binding.key] : context.proposal[binding.key];
+    if (value == null || (typeof value === 'string' && !value.trim())
+      || (Array.isArray(value) && !value.length)
+      || (value && typeof value === 'object' && !(value instanceof Date) && !Array.isArray(value) && !Object.keys(value).length)
+      || (definition.type === 'user' && typeof value === 'object' && !value?.id)
+      || rendered.warnings.includes(`Chưa có dữ liệu: ${name}`)) {
+      blocking.push(`${definition.label || binding.key}: chưa nhập thông tin bắt buộc`);
+    }
+  }
+  let proof = null;
+  if (savedDraftRevision !== undefined) {
+    proof = jwt.sign({
+      purpose: 'proposal-report-preview', proposalId: Number(proposalId), userId: Number(user.id),
+      tokenVersion: Number(user.tokenVersion || 0), draftRevision: savedDraftRevision,
+      proposalSnapshot: snapshotHash(context.rawProposal),
+      templateId: id, templateSnapshot: snapshotHash(template),
+      pdfHash: crypto.createHash('sha256').update(converted.pdfBuffer).digest('hex'),
+      blocked: blocking.length > 0
+    }, proofSecret(), { algorithm: 'HS256', expiresIn: '1h' });
+  }
+  return { ...converted, warnings: rendered.warnings, blocking, proof };
 };
 
 let pendingPreviews = 0;
@@ -140,7 +194,76 @@ exports.preview = async (input = {}) => {
   }
 };
 
-exports.generate = async ({ proposalId, user } = {}) => {
-  await loadContext(proposalId, user);
-  throw error('Gửi BCĐX từ mẫu chưa hoàn thiện; vui lòng sử dụng chức năng tải tờ trình', 501);
+exports.generate = async ({ proposalId, user, pdfBuffer, proof, ip } = {}) => {
+  let claims;
+  try {
+    claims = jwt.verify(proof, proofSecret(), { algorithms: ['HS256'] });
+  } catch (cause) {
+    if (cause instanceof jwt.JsonWebTokenError || cause instanceof jwt.TokenExpiredError) {
+      throw error('Bản xem thử không hợp lệ hoặc đã hết hạn; vui lòng xem lại', 409);
+    }
+    throw cause;
+  }
+  if (!Buffer.isBuffer(pdfBuffer) || !pdfBuffer.length || claims.purpose !== 'proposal-report-preview'
+    || claims.proposalId !== Number(proposalId) || claims.userId !== Number(user?.id)
+    || claims.tokenVersion !== Number(user?.tokenVersion || 0)
+    || claims.pdfHash !== crypto.createHash('sha256').update(pdfBuffer).digest('hex')
+    || !/^[a-f0-9]{64}$/.test(claims.draftRevision || '')
+    || !/^[a-f0-9]{64}$/.test(claims.proposalSnapshot || '')
+    || !/^[a-f0-9]{64}$/.test(claims.templateSnapshot || '')) {
+    throw error('PDF hoặc thông tin xem thử không khớp; vui lòng xem lại', 409);
+  }
+  if (claims.blocked) throw error('Bản xem thử còn token chưa cấu hình hoặc thiếu thông tin bắt buộc', 400);
+  const context = await loadContext(proposalId, user);
+  if (snapshotHash(context.rawProposal) !== claims.proposalSnapshot) {
+    throw error('Đề xuất đã thay đổi, vui lòng xem lại PDF', 409);
+  }
+  const template = (await getAvailableTemplates(context.model)).find((item) => Number(item.id) === claims.templateId);
+  if (!template || snapshotHash(template) !== claims.templateSnapshot) {
+    throw error('Mẫu BCĐX đã thay đổi, vui lòng xem lại PDF', 409);
+  }
+  const reports = require('./proposalReportService');
+  const draft = await reports.getGenerationDraft(proposalId);
+  if (draft.revision !== claims.draftRevision || !draft.ngay_du_kien_on || !draft.chot_so_luong_tru?.length) {
+    throw error('Trụ chốt hoặc ngày dự kiến ON đã thay đổi, vui lòng xem lại PDF', 409);
+  }
+  const storageKey = `report-generated/${crypto.randomUUID()}.pdf`;
+  const filePath = path.join(__dirname, '../../storage/uploads', storageKey);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, pdfBuffer, { flag: 'wx' });
+  let fileId;
+  let reportSaved = false;
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO files(original_name,storage_key,mime_type,size,uploaded_by,submitter_ip,status)
+       VALUES (?,?,'application/pdf',?,?,?,'active')`,
+      [`BCDX_${Number(proposalId)}.pdf`, storageKey, pdfBuffer.length, user.id, ip || null]
+    );
+    fileId = result.insertId;
+    return await reports.uploadReport({
+      user, id: proposalId, files: [{ id: fileId }], chotSoLuongTru: draft.chot_so_luong_tru,
+      ngayDuKienOn: draft.ngay_du_kien_on, ip,
+      expectedDraftRevision: claims.draftRevision, expectedProposalSnapshot: claims.proposalSnapshot,
+      onReportSaved: () => { reportSaved = true; }
+    });
+  } catch (cause) {
+    try {
+      if (!fileId) await fs.unlink(filePath);
+      else if (!reportSaved) {
+        await pool.query('DELETE FROM proposal_report_documents WHERE source_file_id=? AND is_current=0', [fileId]);
+        const [references] = await pool.query(
+          'SELECT id FROM proposal_report_documents WHERE source_file_id=? OR pdf_file_id=? OR signing_file_id=? OR signed_file_id=? LIMIT 1',
+          [fileId, fileId, fileId, fileId]
+        );
+        if (!references.length) await require('./fileService').deleteFile(fileId);
+      } else {
+        cause.message = `PDF đã được lưu nhưng chưa xác nhận hoàn tất bước duyệt: ${cause.message}. Vui lòng tải lại đề xuất để kiểm tra trạng thái trước khi thử lại.`;
+      }
+    } catch (cleanupError) {
+      console.error('[ProposalReportGeneration] Cannot clean generated PDF:', cleanupError);
+    }
+    throw cause;
+  }
 };
+
+exports.snapshotHash = snapshotHash;

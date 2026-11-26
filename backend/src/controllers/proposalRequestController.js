@@ -139,7 +139,7 @@ exports.complete = async (req, res) => {
       && ['UPDATE_INFO', 'SUPPLEMENT'].includes(request.request_type)) {
       infoCompleted = await require('../services/proposalLifecycle').maybeAutoConfirmInfo(
         request.proposal_id,
-        { actorId: req.user.id, purpose: 'view', ip: req.ip }
+        { actorId: req.user.id, actorRole: req.user.role, purpose: 'view', ip: req.ip, entryFlow: true }
       );
     }
     res.json({ success: true, data: { ...result, infoCompleted }, message: 'Đã đánh dấu yêu cầu hoàn thành' });

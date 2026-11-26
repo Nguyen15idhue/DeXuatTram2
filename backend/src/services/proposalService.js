@@ -194,7 +194,8 @@ exports.finishProposalCreation = async (recordId, userId, initialStatus, postRes
   try {
     const proposalLifecycle = require('./proposalLifecycle');
     finalData.autoInfoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(recordId, {
-      actorId: opts.actorId || userId, purpose: 'create', formId: null, ip: opts.ip || null
+      actorId: opts.actorId || userId, actorRole: opts.actorRole || null,
+      purpose: 'create', formId: null, ip: opts.ip || null, entryFlow: opts.entryFlow === true
     });
   } catch { finalData.autoInfoCompleted = null; }
 

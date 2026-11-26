@@ -34,7 +34,8 @@ exports.create = async (req, res) => {
     const proposal = await proposalService.createProposal(user_id, req.body, {
       actorRole: req.user.role || null,
       ip: req.ip || null,
-      formId
+      formId,
+      entryFlow: true
     });
     const { autoInfoCompleted, ...data } = proposal;
     res.status(201).json({ success: true, data, infoCompleted: autoInfoCompleted || null, message: 'Tạo đề xuất thành công' });
