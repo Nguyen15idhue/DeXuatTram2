@@ -86,9 +86,18 @@ exports.upload = async (req, res) => {
 
 exports.generate = async (req, res) => {
   try {
+    let signaturePositions;
+    if (req.body?.signature_positions !== undefined) {
+      try {
+        signaturePositions = JSON.parse(req.body.signature_positions);
+      } catch {
+        throw Object.assign(new Error('Danh sách ô ký không hợp lệ'), { statusCode: 400 });
+      }
+    }
     const result = await proposalReportGenerationService.generate({
       proposalId: req.params.id,
       proof: req.body?.proof,
+      signaturePositions,
       pdfBuffer: req.file?.buffer,
       user: req.user,
       ip: req.ip
@@ -144,6 +153,7 @@ exports.generationPreview = async (req, res) => {
           pdf: result.pdfBuffer.toString('base64'),
           warnings: [...(result.warnings || []), ...(result.fontWarnings || [])],
           blocking: result.blocking || [],
+          signature_anchors: result.signatureAnchors,
           proof: result.proof
         }
       });

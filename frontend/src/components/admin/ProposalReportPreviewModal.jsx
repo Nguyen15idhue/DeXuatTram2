@@ -5,6 +5,9 @@ import { proposalReportService } from '../../services/api';
 import { ensureDocumentResponse } from '../../utils/proposalDocuments';
 import ProposalReportUpdateModal from './ProposalReportUpdateModal';
 import ConfirmDialog from '../ConfirmDialog';
+import ProposalPreviewSignatureEditor from './ProposalPreviewSignatureEditor';
+import { anchorDetectionMessage, buildSignersFromAnchors, normalizeSignerBox } from '../../utils/proposalSignature';
+import { DEFAULT_SIGNER_BOX } from '../../utils/proposalApproval';
 
 const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
   const { token } = useAuth();
@@ -26,6 +29,11 @@ const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
   const [expectedOnDate, setExpectedOnDate] = useState('');
   const [draftRevision, setDraftRevision] = useState('');
   const [editingPoles, setEditingPoles] = useState(false);
+  const [signers, setSigners] = useState([]);
+  const [candidates, setCandidates] = useState([]);
+  const [selectedUser, setSelectedUser] = useState('');
+  const [pageCount, setPageCount] = useState(0);
+  const [signatureWarning, setSignatureWarning] = useState('');
 
   useEffect(() => {
     mounted.current = true;
@@ -98,6 +106,10 @@ const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
       setBlocking(result.blocking);
       setPreviewBlob(result.blob);
       setProof(result.proof || '');
+      setSigners(buildSignersFromAnchors(result.signatureAnchors).map((signer) => normalizeSignerBox(signer)));
+      setCandidates(result.signatureAnchors?.candidates || []);
+      setSelectedUser('');
+      setSignatureWarning(anchorDetectionMessage(result.signatureAnchors));
     } catch (cause) {
       if (mounted.current) setError(`${saved ? 'Đã lưu trụ chốt và ngày ON. ' : ''}${cause.message || 'Không tạo được bản xem thử'}`);
     } finally {
@@ -105,12 +117,34 @@ const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
     }
   };
 
+  const candidateDetails = (candidate) => ({
+    user_id: candidate.id,
+    full_name: candidate.full_name,
+    signer_title: candidate.chuc_vu || candidate.department || null,
+    signer_department: candidate.department || null,
+    anchor_token: null
+  });
+
+  const addSigner = () => {
+    const candidate = candidates.find((item) => String(item.id) === selectedUser);
+    if (!candidate || signers.some((signer) => Number(signer.user_id) === Number(candidate.id))) return;
+    setSigners((current) => [...current, { ...DEFAULT_SIGNER_BOX, ...candidateDetails(candidate) }]);
+    setSelectedUser('');
+  };
+
+  const replaceSigner = (userId, nextId) => {
+    const candidate = candidates.find((item) => String(item.id) === nextId);
+    if (!candidate || signers.some((signer) => Number(signer.user_id) === Number(candidate.id))) return;
+    setSigners((current) => current.map((signer) => Number(signer.user_id) === Number(userId)
+      ? { ...signer, ...candidateDetails(candidate) } : signer));
+  };
+
   const sendReport = async () => {
     setConfirming(false);
     setRendering(true);
     setError('');
     try {
-      const result = await proposalReportService.generate(record.id, previewBlob, proof, token);
+      const result = await proposalReportService.generate(record.id, previewBlob, proof, token, signers);
       ensureDocumentResponse(result);
       if (mounted.current) onSaved?.(result.data);
     } catch (cause) {
@@ -133,7 +167,7 @@ const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
           </button>
         </div>
         <div className="alert alert-warning my-3 text-sm">
-          Khi xem thử, hệ thống lưu trụ chốt và ngày ON vào đề xuất trước. Các thông tin sửa tạm khác chỉ dùng trong tài liệu. Chữ ký tự động chưa được hỗ trợ.
+          Khi xem thử, hệ thống lưu trụ chốt và ngày ON vào đề xuất trước. Vị trí ký chỉ lưu tạm khi cửa sổ này mở và được gửi cùng PDF khi xác nhận.
         </div>
         {error && <div className="alert alert-error mb-3 text-sm">{error}</div>}
         {loading ? <span className="loading loading-spinner" /> : (
@@ -215,7 +249,47 @@ const ProposalReportPreviewModal = ({ record, onClose, onSaved }) => {
             )}
             {warnings.length > 0 && <div className="alert alert-warning text-sm"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
             {previewUrl && blocking.length > 0 && <div className="alert alert-error text-sm"><div>Không thể gửi duyệt:<ul>{blocking.map((item) => <li key={item}>{item}</li>)}</ul></div></div>}
-            {previewUrl && <iframe title="Xem thử BCĐX" src={previewUrl} className="w-full h-screen border border-base-300" />}
+            {previewUrl && signatureWarning && <div className="alert alert-warning text-sm">{signatureWarning}</div>}
+            {previewUrl && (
+              <section className="space-y-2" aria-label="Cấu hình ô ký">
+                <h4 className="font-semibold">Cấu hình ô ký</h4>
+                <p className="text-sm">Chọn người ký, kéo hoặc đổi kích thước ô trên PDF. Tạo lại PDF sẽ dò lại vị trí.</p>
+                <div className="flex gap-2">
+                  <select aria-label="Chọn người ký" className="select select-bordered select-sm flex-1"
+                    value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)} disabled={rendering}>
+                    <option value="">-- Chọn người ký --</option>
+                    {candidates.filter((candidate) => !signers.some((signer) => Number(signer.user_id) === Number(candidate.id))).map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>{candidate.full_name}{candidate.chuc_vu ? ` (${candidate.chuc_vu})` : ''}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={addSigner} disabled={rendering || !selectedUser || !pageCount}>Thêm người ký</button>
+                </div>
+                {signers.map((signer) => (
+                  <div key={signer.user_id} className="flex flex-wrap items-center gap-2 rounded border p-2 text-sm">
+                    <label className="flex-1">
+                      <span className="sr-only">Người ký {signer.full_name}</span>
+                      <select aria-label={`Người ký ${signer.full_name}`} className="select select-bordered select-sm w-full" value={signer.user_id}
+                        disabled={rendering} onChange={(event) => replaceSigner(signer.user_id, event.target.value)}>
+                        <option value={signer.user_id}>{signer.full_name}</option>
+                        {candidates.filter((candidate) => !signers.some((item) => Number(item.user_id) === Number(candidate.id))).map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>{candidate.full_name}{candidate.chuc_vu ? ` (${candidate.chuc_vu})` : ''}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>Trang <input aria-label={`Trang ký của ${signer.full_name}`} type="number" min="1" max={pageCount || 1}
+                      className="input input-bordered input-sm w-20" value={signer.page} disabled={rendering || !pageCount}
+                      onChange={(event) => {
+                        const page = Math.min(pageCount, Math.max(1, Number.parseInt(event.target.value, 10) || 1));
+                        setSigners((current) => current.map((item) => item.user_id === signer.user_id ? { ...item, page } : item));
+                      }} /></label>
+                    <button type="button" className="btn btn-ghost btn-sm text-error" disabled={rendering}
+                      onClick={() => setSigners((current) => current.filter((item) => item.user_id !== signer.user_id))}
+                      aria-label={`Xóa người ký ${signer.full_name}`}>Xóa</button>
+                  </div>
+                ))}
+                <ProposalPreviewSignatureEditor url={previewUrl} signers={signers} onChange={setSigners} onPageCount={setPageCount} disabled={rendering} />
+              </section>
+            )}
             {previewUrl && <button type="button" className="btn btn-primary" disabled={rendering || !proof || blocking.length > 0} onClick={() => setConfirming(true)}>
               {rendering ? 'Đang gửi duyệt...' : 'Xác nhận gửi duyệt'}
             </button>}

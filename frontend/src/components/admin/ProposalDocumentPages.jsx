@@ -95,7 +95,7 @@ const ProposalDocumentPages = forwardRef(({
     onReadyChange?.(false);
     setPdf(null);
     setError('');
-    if (!file?.id) { setLoading(false); setError('Chưa có file BCĐX'); return undefined; }
+    if (!file?.id && !file?.previewUrl) { setLoading(false); setError('Chưa có file BCĐX'); return undefined; }
     let cancelled = false;
     let loadingTask;
     setLoading(true);
@@ -105,8 +105,8 @@ const ProposalDocumentPages = forwardRef(({
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
         if (cancelled) return;
         loadingTask = pdfjs.getDocument({
-          url: `${import.meta.env.VITE_API_URL || '/api'}/files/${file.id}/preview`,
-          httpHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+          url: file.previewUrl || `${import.meta.env.VITE_API_URL || '/api'}/files/${file.id}/preview`,
+          httpHeaders: !file.previewUrl && token ? { Authorization: `Bearer ${token}` } : {},
         });
         const document = await loadingTask.promise;
         if (!cancelled) setPdf(document);
@@ -117,7 +117,7 @@ const ProposalDocumentPages = forwardRef(({
       }
     })();
     return () => { cancelled = true; loadingTask?.destroy(); };
-  }, [file?.id, token, onReadyChange]);
+  }, [file?.id, file?.previewUrl, token, onReadyChange]);
 
   return (
     <div ref={containerRef} className={containerClassName}>

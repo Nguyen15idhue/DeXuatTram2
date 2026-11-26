@@ -85,6 +85,48 @@ export const normalizeSignerBox = (
   };
 };
 
+export const buildSignersFromAnchors = (anchorData, existing = []) => {
+  const found = (anchorData?.anchors || []).filter((anchor) => anchor.found && anchor.user_id);
+  if (!found.length) return existing;
+  const candidates = anchorData?.candidates || [];
+  const next = [...existing];
+  found.forEach((anchor) => {
+    const candidate = candidates.find((item) => String(item.id) === String(anchor.user_id));
+    const box = {
+      page: anchor.page || 1,
+      pos_x: anchor.pos_x,
+      pos_y: anchor.pos_y,
+      box_width: anchor.box_width,
+      box_height: anchor.box_height,
+      anchor_token: anchor.anchor_token
+    };
+    const index = next.findIndex((signer) => String(signer.user_id) === String(anchor.user_id));
+    if (index >= 0) return;
+    next.push({
+      user_id: anchor.user_id,
+      full_name: anchor.user_name || candidate?.full_name || anchor.label,
+      signer_title: anchor.signer_title || candidate?.chuc_vu || candidate?.department || null,
+      signer_department: candidate?.department || null,
+      ...box
+    });
+  });
+  return next;
+};
+
+export const anchorDetectionMessage = (data) => {
+  if (data?.reason === 'missing_snapshot') return 'Tài liệu không có cấu hình mẫu đã lưu; vui lòng chọn người ký và vị trí thủ công.';
+  if (data?.reason === 'no_anchors') return 'Mẫu không có token ô ký; vui lòng cấu hình thủ công.';
+  const missingPosition = (data?.anchors || []).filter((item) => !item.found).map((item) => item.anchor_token);
+  const missingUser = (data?.anchors || []).filter((item) => item.found && !item.user_id).map((item) => item.anchor_token);
+  const valid = (data?.anchors || []).filter((item) => item.found && item.user_id);
+  const duplicateUsers = valid.filter((item, index) => valid.findIndex((other) => String(other.user_id) === String(item.user_id)) !== index).map((item) => item.anchor_token);
+  return [
+    missingPosition.length && `Không tìm thấy vị trí: ${missingPosition.join(', ')}`,
+    missingUser.length && `Chưa xác định người ký: ${missingUser.join(', ')}`,
+    duplicateUsers.length && `Mỗi người chỉ có một ô trên tài liệu; không tự áp dụng: ${duplicateUsers.join(', ')}`
+  ].filter(Boolean).join(' · ');
+};
+
 const parseRows = (value) => {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string') return [];

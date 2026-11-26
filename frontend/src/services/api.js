@@ -636,11 +636,12 @@ export const proposalReportService = {
   upload(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token));
   },
-  generate(id, blob, proof, token) {
+  generate(id, blob, proof, token, signaturePositions) {
     return runProposalTaskMutation(async () => {
       const body = new FormData();
       body.append('file', blob, 'BCDX.pdf');
       body.append('proof', proof);
+      if (signaturePositions) body.append('signature_positions', JSON.stringify(signaturePositions));
       const response = await fetch(`${API_URL}/admin/proposal-reports/${id}/generate`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body
       });
@@ -674,7 +675,8 @@ export const proposalReportService = {
     const bytes = Uint8Array.from(atob(result.data.pdf), (char) => char.charCodeAt(0));
     return {
       blob: new Blob([bytes], { type: 'application/pdf' }),
-      warnings: result.data.warnings || [], blocking: result.data.blocking || [], proof: result.data.proof
+      warnings: result.data.warnings || [], blocking: result.data.blocking || [], proof: result.data.proof,
+      signatureAnchors: result.data.signature_anchors
     };
   },
   requestRevision(id, data, token) {
@@ -707,6 +709,10 @@ export const proposalApprovalService = {
   },
   getSignerCandidates(id, token) {
     return api.getWithAuth(`/admin/proposal-approvals/${id}/signer-candidates`, token);
+  },
+  getSignatureAnchors(id, token, documentId) {
+    const query = documentId ? `?document_id=${encodeURIComponent(documentId)}` : '';
+    return api.getWithAuth(`/admin/proposal-approvals/${id}/signature-anchors${query}`, token);
   },
   configureSignature(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/signature-config`, data || {}, token));

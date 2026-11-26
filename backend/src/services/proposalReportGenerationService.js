@@ -9,6 +9,8 @@ const documentTemplateService = require('./documentTemplateService');
 const libreOfficeService = require('./libreOfficeService');
 const { SYSTEM_DATE_TOKENS } = require('./documentSystemTokens');
 const { getInputFields, validateInputs, renderDocument } = require('./documentRendering');
+const documentSignatureBoxService = require('./documentSignatureBoxService');
+const documentQrService = require('./documentQrService');
 
 const EDIT_STATUSES = new Set([
   'PROPOSAL_REPORT_CREATING',
@@ -17,7 +19,74 @@ const EDIT_STATUSES = new Set([
 ]);
 const EDITABLE_TYPES = new Set(['text', 'textarea', 'email', 'phone', 'url', 'number', 'date']);
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const SIGN_ANCHOR_RE = /^\{sign_[a-z0-9_]+\}$/i;
+const DEFAULT_SIGNATURE_BOX = { width: 0.30, height: 0.10 };
+const DEFAULT_QR = { size_cm: 4, width_px: 600 };
 const error = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
+
+const tokenNameOf = (raw) => String(raw || '').trim().replace(/^\{|\}$/g, '');
+
+const signatureBoxFor = (mapping) => {
+  const configured = mapping.signatureBox || {};
+  const width = configured.width == null ? DEFAULT_SIGNATURE_BOX.width : Number(configured.width);
+  const height = configured.height == null ? DEFAULT_SIGNATURE_BOX.height : Number(configured.height);
+  if (!Number.isFinite(width) || width <= 0 || width > 1
+      || !Number.isFinite(height) || height <= 0 || height > 1) {
+    throw error('Kích thước ô ký phải lớn hơn 0 và không vượt quá 1');
+  }
+  return { width, height: Math.max(DEFAULT_SIGNATURE_BOX.height, height) };
+};
+
+/** Dong nhat danh sach anchor ky: token {sign_*} trong mau + nhan/size tu mapping.signers. */
+const buildAnchorPlan = (mapping, tokens) => {
+  const configured = new Map();
+  (Array.isArray(mapping.signers) ? mapping.signers : []).forEach((item) => {
+    if (item && item.anchor_token) configured.set(tokenNameOf(item.anchor_token).toLowerCase(), item);
+  });
+
+  const plan = [];
+  const seen = new Set();
+  for (const item of tokens) {
+    const raw = typeof item === 'string' ? item : item?.token;
+    if (typeof raw !== 'string' || !SIGN_ANCHOR_RE.test(raw.trim())) continue;
+    const anchorToken = tokenNameOf(raw);
+    const key = anchorToken.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const binding = configured.get(key) || {};
+    const isAreaManager = key.includes('gdkv');
+    plan.push({
+      anchor_token: anchorToken,
+      label: String(binding.label || '').trim() || `Ký: ${anchorToken.replace(/^sign_/i, '').replace(/_/g, ' ').toUpperCase()}`,
+      signer_title: binding.signer_title || null,
+      user_id: binding.user_id || null,
+      mode: binding.mode || (binding.field || isAreaManager ? 'field' : 'fixed'),
+      field: binding.field === 'sales_quan_ly' && isAreaManager
+        ? 'nguoi_phu_trach'
+        : (binding.field || (isAreaManager && !binding.mode ? 'nguoi_phu_trach' : null))
+    });
+  }
+  return plan;
+};
+
+const resolveQrConfig = (mapping, tokens) => {
+  const cfg = (mapping.qr && typeof mapping.qr === 'object') ? mapping.qr : {};
+  if (cfg.enabled === false) return null;
+  const token = tokenNameOf(cfg.token) || documentQrService.detectQrToken(tokens);
+  if (!token) return null;
+  return {
+    token,
+    sizeCm: Number(cfg.size_cm) > 0 ? Number(cfg.size_cm) : DEFAULT_QR.size_cm,
+    widthPx: Number(cfg.width_px) > 0 ? Number(cfg.width_px) : DEFAULT_QR.width_px,
+    margin: cfg.margin,
+    ecLevel: cfg.ecLevel
+  };
+};
+
+const buildProposalUrl = (proposalId) => {
+  const base = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+  return `${base}/admin/proposals/chi-tiet/${Number(proposalId)}`;
+};
 
 const loadContext = async (proposalId, user) => {
   const id = Number(proposalId);
@@ -121,12 +190,9 @@ const preview = async ({ proposalId, templateId, values, inputs = {}, chotSoLuon
   }
   const mapping = template.mapping || {};
   const resolvedInputs = validateInputs(mapping, inputs);
-  if (mapping.signatureAnchors?.length || mapping.signers?.length) {
-    throw error('Mẫu có cấu hình chữ ký tự động chưa được hỗ trợ trong bản xem thử');
-  }
   const tokens = await documentTemplateService.listTokens(template.id);
-  if (tokens.some((item) => /^\{sig_/i.test(item.token))) {
-    throw error('Mẫu có vị trí ký tự động chưa được hỗ trợ trong bản xem thử');
+  if (tokens.some((item) => /^\{sig_[a-z0-9_]+\}$/i.test(typeof item === 'string' ? item : item?.token || ''))) {
+    throw error('Token vị trí ký {sig_*} chưa được hỗ trợ; sử dụng {sign_*}');
   }
   if (savedDraftRevision !== undefined) {
     const draft = await require('./proposalReportService').getGenerationDraft(proposalId);
@@ -146,9 +212,43 @@ const preview = async ({ proposalId, templateId, values, inputs = {}, chotSoLuon
       documentService.stripEmptyLoopRow(zip, key);
     }
   }
+
+  // O ky tu dong: thay {sign_*} bang box co vien TRUOC khi render -> token bien mat,
+  // khong sinh warning "Chưa cấu hình" va khong bi blocking.
+  const preWarnings = [];
+  const anchorPlan = buildAnchorPlan(mapping, tokens);
+  if (anchorPlan.length) {
+    const boxResult = documentSignatureBoxService.applyAnchorBoxes(zip, anchorPlan, signatureBoxFor(mapping));
+    if (boxResult.missing.length) {
+      preWarnings.push(`Chưa tìm thấy vị trí ký: ${boxResult.missing.map((name) => `{${name}}`).join(', ')}`);
+    }
+  }
+
+  // QR: thay {qr_*} bang anh QR truoc khi render.
+  const qrConfig = resolveQrConfig(mapping, tokens);
+  if (qrConfig) {
+    const qrResult = await documentQrService.applyQrImages(zip, {
+      ...qrConfig,
+      url: buildProposalUrl(proposalId)
+    });
+    if (!qrResult.applied) preWarnings.push(`Chưa tìm thấy vị trí mã QR: {${qrConfig.token}}`);
+  }
+
   const rendered = renderDocument({ zip, data, mapping, inputs, numericData });
+  if (preWarnings.length) rendered.warnings = [...preWarnings, ...rendered.warnings];
   const converted = await libreOfficeService.convertToPdf(rendered.buffer, '.docx');
   if (converted.pdfBuffer.length > 20 * 1024 * 1024) throw error('PDF BCĐX vượt quá 20 MB');
+  const anchorContext = { anchors: anchorPlan, box: signatureBoxFor(mapping) };
+  const signatureAnchors = anchorPlan.length
+    ? await require('./proposalApprovalService').detectAnchorsForPdf(context.rawProposal, anchorContext, converted.pdfBuffer)
+    : { anchors: [], reason: 'no_anchors' };
+  if (savedDraftRevision !== undefined) {
+    signatureAnchors.candidates = await require('./proposalApprovalService').getDocumentSignerCandidates(
+      context.rawProposal, anchorContext, signatureAnchors.candidates
+    );
+  } else {
+    delete signatureAnchors.candidates;
+  }
   const blocking = rendered.warnings.filter((warning) =>
     warning.startsWith('Chưa cấu hình:') || warning.startsWith('Bảng chưa cấu hình:'));
   for (const field of getInputFields(mapping)) {
@@ -180,7 +280,7 @@ const preview = async ({ proposalId, templateId, values, inputs = {}, chotSoLuon
       blocked: blocking.length > 0
     }, proofSecret(), { algorithm: 'HS256', expiresIn: '1h' });
   }
-  return { ...converted, warnings: rendered.warnings, blocking, proof };
+  return { ...converted, warnings: rendered.warnings, blocking, proof, signatureAnchors };
 };
 
 let pendingPreviews = 0;
@@ -194,7 +294,7 @@ exports.preview = async (input = {}) => {
   }
 };
 
-exports.generate = async ({ proposalId, user, pdfBuffer, proof, ip } = {}) => {
+exports.generate = async ({ proposalId, user, pdfBuffer, proof, signaturePositions, ip } = {}) => {
   let claims;
   try {
     claims = jwt.verify(proof, proofSecret(), { algorithms: ['HS256'] });
@@ -227,6 +327,45 @@ exports.generate = async ({ proposalId, user, pdfBuffer, proof, ip } = {}) => {
   if (draft.revision !== claims.draftRevision || !draft.ngay_du_kien_on || !draft.chot_so_luong_tru?.length) {
     throw error('Trụ chốt hoặc ngày dự kiến ON đã thay đổi, vui lòng xem lại PDF', 409);
   }
+  const tokens = await documentTemplateService.listTokens(template.id);
+  const signatureAnchorSnapshot = {
+    template_id: template.id,
+    template_snapshot: claims.templateSnapshot,
+    anchors: buildAnchorPlan(template.mapping || {}, tokens),
+    box: signatureBoxFor(template.mapping || {})
+  };
+  if (signaturePositions !== undefined) {
+    if (!Array.isArray(signaturePositions) || signaturePositions.length > 50) throw error('Danh sách ô ký không hợp lệ');
+    const approval = require('./proposalApprovalService');
+    const detected = await approval.detectAnchorsForPdf(context.rawProposal, signatureAnchorSnapshot, pdfBuffer);
+    const candidates = await approval.getDocumentSignerCandidates(context.rawProposal, signatureAnchorSnapshot, detected.candidates);
+    const byUser = new Map(candidates.map((candidate) => [Number(candidate.id), candidate]));
+    const pageCount = (await require('pdf-lib').PDFDocument.load(pdfBuffer)).getPageCount();
+    const byToken = new Map(detected.anchors.map((anchor) => [anchor.anchor_token, anchor]));
+    const seen = new Set();
+    signatureAnchorSnapshot.draft_signers = signaturePositions.map((item) => {
+      const source = byToken.get(item?.anchor_token);
+      const userId = Number(item?.user_id);
+      const candidate = byUser.get(userId);
+      const page = Number(item?.page);
+      const x = Number(item?.pos_x);
+      const y = Number(item?.pos_y);
+      const width = Number(item?.box_width);
+      const height = Number(item?.box_height);
+      if (!candidate || seen.has(userId)
+          || (item?.anchor_token && (!source?.found || userId !== Number(source.user_id)))
+          || !Number.isInteger(page) || page < 1 || page > pageCount
+          || ![x, y, width, height].every(Number.isFinite)
+          || width <= 0 || height <= 0 || x < 0 || y < 0 || x + width > 1 || y + height > 1) {
+        throw error('Vị trí hoặc người ký không hợp lệ, vui lòng xem lại PDF');
+      }
+      seen.add(userId);
+      return { user_id: userId, full_name: candidate.full_name,
+        signer_title: source?.signer_title || candidate.chuc_vu || candidate.department || null,
+        signer_department: candidate.department || null,
+        anchor_token: source?.anchor_token || null, page, pos_x: x, pos_y: y, box_width: width, box_height: height };
+    });
+  }
   const storageKey = `report-generated/${crypto.randomUUID()}.pdf`;
   const filePath = path.join(__dirname, '../../storage/uploads', storageKey);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -244,6 +383,7 @@ exports.generate = async ({ proposalId, user, pdfBuffer, proof, ip } = {}) => {
       user, id: proposalId, files: [{ id: fileId }], chotSoLuongTru: draft.chot_so_luong_tru,
       ngayDuKienOn: draft.ngay_du_kien_on, ip,
       expectedDraftRevision: claims.draftRevision, expectedProposalSnapshot: claims.proposalSnapshot,
+      signatureAnchorSnapshot,
       onReportSaved: () => { reportSaved = true; }
     });
   } catch (cause) {
@@ -267,3 +407,5 @@ exports.generate = async ({ proposalId, user, pdfBuffer, proof, ip } = {}) => {
 };
 
 exports.snapshotHash = snapshotHash;
+exports.buildAnchorPlan = buildAnchorPlan;
+exports.buildProposalUrl = buildProposalUrl;

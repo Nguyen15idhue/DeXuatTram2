@@ -5,7 +5,7 @@ const { requireAuth, requireProposalReportManager, requireProposalInfoManager } 
 const proposalReportController = require('../controllers/proposalReportController');
 const reportDocuments = require('../controllers/proposalReportDocumentController');
 const generatedPdfUpload = multer({
-  storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 1 }
+  storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 2 }
 }).single('file');
 let pendingGeneratedUploads = 0;
 
@@ -264,6 +264,9 @@ router.put('/:id', requireAuth, requireProposalReportManager, proposalReportCont
  *             properties:
  *               file: { type: string, format: binary }
  *               proof: { type: string }
+ *               signature_positions:
+ *                 type: string
+ *                 description: Mảng JSON người ký hợp lệ và vị trí trên PDF xem thử; lưu cùng tài liệu để duyệt, không trình ký.
  *     responses:
  *       200: { description: Đã lưu tài liệu và chuyển sang duyệt }
  *       400: { description: Bản xem thử còn thiếu thông tin bắt buộc }
@@ -378,7 +381,7 @@ router.put('/:id/generation-draft', requireAuth, requireProposalReportManager, p
  *                     ghi_chu: { type: string }
  *     responses:
  *       200:
- *         description: PDF xem thử hoặc JSON chứa PDF và cảnh báo; không thay đổi đề xuất
+ *         description: PDF xem thử hoặc JSON chứa PDF, cảnh báo, vị trí ký gợi ý và danh sách người ký hợp lệ khi có saved_draft_revision; không thay đổi đề xuất
  *         content:
  *           application/pdf: { schema: { type: string, format: binary } }
  *           application/json: { schema: { type: object } }

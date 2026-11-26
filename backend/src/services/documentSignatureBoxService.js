@@ -27,26 +27,39 @@ const replaceAnchorWithBox = (xml, anchorToken, boxText, boxWidthTwips, boxHeigh
   for (const p of paragraphs) {
     const text = (p.textContent || '');
     if (!text.includes(anchorToken)) continue;
+    if (text.trim() !== anchorToken) {
+      throw Object.assign(new Error(`Token ${anchorToken} phải nằm riêng trong một đoạn Word`), { statusCode: 400 });
+    }
 
     const w = boxWidthTwips || 3000;
     const h = boxHeightTwips || 700;
 
     const tbl = doc.createElementNS(W_NS, 'w:tbl');
     const tblPr = doc.createElementNS(W_NS, 'w:tblPr');
+    // Thu tu element trong CT_TblPr bat buoc: tblW -> tblBorders -> tblCellMar.
+    const tblW = doc.createElementNS(W_NS, 'w:tblW');
+    tblW.setAttribute('w:w', String(w));
+    tblW.setAttribute('w:type', 'dxa');
+    tblPr.appendChild(tblW);
     const tblBorders = doc.createElementNS(W_NS, 'w:tblBorders');
     for (const side of ['top', 'left', 'bottom', 'right']) {
       const e = doc.createElementNS(W_NS, 'w:' + side);
-      e.setAttribute('w:val', 'single');
+      e.setAttribute('w:val', 'nil');
       e.setAttribute('w:sz', '4');
       e.setAttribute('w:space', '0');
       e.setAttribute('w:color', '999999');
       tblBorders.appendChild(e);
     }
     tblPr.appendChild(tblBorders);
-    const tblW = doc.createElementNS(W_NS, 'w:tblW');
-    tblW.setAttribute('w:w', String(w));
-    tblW.setAttribute('w:type', 'dxa');
-    tblPr.appendChild(tblW);
+    // Margin o = 0 -> text bat dau dung tai me trai cua o (phuc vu do toa do o trong PDF).
+    const tblCellMar = doc.createElementNS(W_NS, 'w:tblCellMar');
+    for (const side of ['top', 'left', 'bottom', 'right']) {
+      const m = doc.createElementNS(W_NS, 'w:' + side);
+      m.setAttribute('w:w', '0');
+      m.setAttribute('w:type', 'dxa');
+      tblCellMar.appendChild(m);
+    }
+    tblPr.appendChild(tblCellMar);
     tbl.appendChild(tblPr);
 
     const tblGrid = doc.createElementNS(W_NS, 'w:tblGrid');
@@ -69,17 +82,24 @@ const replaceAnchorWithBox = (xml, anchorToken, boxText, boxWidthTwips, boxHeigh
     tcW.setAttribute('w:w', String(w));
     tcW.setAttribute('w:type', 'dxa');
     tcPr.appendChild(tcW);
+    // Canh giua doc theo chieu cao -> tam cua text == tam cua o (dung de do toa do o trong PDF).
+    const vAlign = doc.createElementNS(W_NS, 'w:vAlign');
+    vAlign.setAttribute('w:val', 'center');
+    tcPr.appendChild(vAlign);
     tc.appendChild(tcPr);
 
     const newP = doc.createElementNS(W_NS, 'w:p');
     const pPr = doc.createElementNS(W_NS, 'w:pPr');
-    const jc = doc.createElementNS(W_NS, 'w:jc');
-    jc.setAttribute('w:val', 'center');
-    pPr.appendChild(jc);
+    // Thu tu element trong CT_PPr: spacing truoc jc.
+    // Canh TRAI: me trai cua text == me trai cua o -> do duoc pos_x chinh xac,
+    // khong phu thuoc vao do rong o (o trong co the bi hep hon box_width cau hinh).
     const spacing = doc.createElementNS(W_NS, 'w:spacing');
     spacing.setAttribute('w:before', '40');
     spacing.setAttribute('w:after', '40');
     pPr.appendChild(spacing);
+    const jc = doc.createElementNS(W_NS, 'w:jc');
+    jc.setAttribute('w:val', 'left');
+    pPr.appendChild(jc);
     newP.appendChild(pPr);
 
     const run = doc.createElementNS(W_NS, 'w:r');
@@ -88,7 +108,7 @@ const replaceAnchorWithBox = (xml, anchorToken, boxText, boxWidthTwips, boxHeigh
     sz.setAttribute('w:val', '16');
     rPr.appendChild(sz);
     const color = doc.createElementNS(W_NS, 'w:color');
-    color.setAttribute('w:val', '808080');
+    color.setAttribute('w:val', 'FFFFFF');
     rPr.appendChild(color);
     const i = doc.createElementNS(W_NS, 'w:i');
     rPr.appendChild(i);
@@ -305,6 +325,41 @@ const insertSignatureIntoDocx = (docxBuffer, boxText, imageBuffer, signerName, s
   return zip.generate({ type: 'nodebuffer' });
 };
 
+/**
+ * Thay moi anchor token {sign_*} trong docx bang box co vien (mutate zip tai cho).
+ * Goi TRUOC khi render docxtemplater -> token bien mat -> khong sinh warning blocking.
+ * @param {object} zip PizZip da doc
+ * @param {Array<{anchor_token:string,label:string}>} signers
+ * @param {{width:number,height:number}} box ty le 0..1 so voi kho A4 (11906 x 16838 twip)
+ * @returns {{applied:number, missing:string[]}}
+ */
+const applyAnchorBoxes = (zip, signers = [], box = {}) => {
+  const docEntry = zip.file('word/document.xml');
+  if (!docEntry) return { applied: 0, missing: [] };
+
+  const widthTwips = Math.max(500, Math.round((Number(box.width) > 0 ? Number(box.width) : 0.30) * 11906));
+  const heightTwips = Math.max(200, Math.round((Number(box.height) > 0 ? Number(box.height) : 0.08) * 16838));
+
+  let xml = docEntry.asText();
+  let applied = 0;
+  const missing = [];
+
+  for (const signer of signers) {
+    const token = `{${signer.anchor_token}}`;
+    const next = replaceAnchorWithBox(xml, token, signer.label || 'Ký: ...', widthTwips, heightTwips);
+    if (next === xml) {
+      missing.push(signer.anchor_token);
+      continue;
+    }
+    xml = next;
+    applied += 1;
+  }
+
+  if (applied) zip.file('word/document.xml', xml);
+  return { applied, missing };
+};
+
 module.exports.replaceAnchorWithBox = replaceAnchorWithBox;
 module.exports.insertSignatureIntoDocx = insertSignatureIntoDocx;
+module.exports.applyAnchorBoxes = applyAnchorBoxes;
 module.exports.readImageDims = readImageDims;

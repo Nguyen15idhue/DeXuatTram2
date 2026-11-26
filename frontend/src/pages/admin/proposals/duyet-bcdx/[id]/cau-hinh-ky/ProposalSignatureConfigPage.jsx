@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Check, FileText, Plus, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Crosshair, FileText, Plus, Send, Trash2 } from "lucide-react";
 import PageHeader from "../../../../../../components/ui/PageHeader";
 import ProposalDocumentPages from "../../../../../../components/admin/ProposalDocumentPages";
 import { useAuth } from "../../../../../../contexts/AuthContext";
@@ -22,6 +22,8 @@ import {
   getReportFiles,
 } from "../../../../../../utils/proposalApproval";
 import {
+  buildSignersFromAnchors,
+  anchorDetectionMessage,
   getSignerBoxMinHeightRatio,
   normalizeSignerBox,
 } from "../../../../../../utils/proposalSignature";
@@ -76,6 +78,11 @@ const ProposalSignatureConfigPage = () => {
   const [documentId, setDocumentId] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [canWithdraw, setCanWithdraw] = useState(false);
+  const [anchorData, setAnchorData] = useState(null);
+  const [anchorResults, setAnchorResults] = useState({});
+  const [detecting, setDetecting] = useState(false);
+  const [detectNote, setDetectNote] = useState("");
+  const [detectError, setDetectError] = useState("");
 
   const legacyFiles = useMemo(() => getReportFiles(proposal), [proposal]);
   const reportFiles = documents.length
@@ -96,6 +103,9 @@ const ProposalSignatureConfigPage = () => {
     if (!token || !id) return;
     setLoading(true);
     setError("");
+    setAnchorData(null);
+    setDetectNote("");
+    setDetectError("");
     try {
       const [proposalResponse, candidateResponse, configResponse] =
         await Promise.all([
@@ -111,23 +121,40 @@ const ProposalSignatureConfigPage = () => {
       setDocuments(nextDocuments);
       setCanWithdraw(!!configResponse?.data?.can_withdraw);
       if (nextDocuments.length) {
+        const anchorResults = await Promise.all(nextDocuments.map(async (document) => {
+          if (document.has_config || document.has_signed) return null;
+          try {
+            return ensureDocumentResponse(await proposalApprovalService.getSignatureAnchors(id, token, document.id)).data;
+          } catch (failure) {
+            return { error: failure.message || "Không dò được ô ký" };
+          }
+        }));
         const nextDrafts = Object.fromEntries(
-          nextDocuments.map((document) => [
-            document.id,
-            getDocumentSigners(document, configResponse.data.signers).map(
-              (signer) =>
-                normalizeSignerBox(
-                  signer,
-                  getSignerBoxMinHeightRatio(documentFile(document)),
-                ),
-            ),
-          ]),
+          nextDocuments.map((document, index) => {
+            const existing = getDocumentSigners(
+              document,
+              configResponse.data.signers,
+            ).map((signer) =>
+              normalizeSignerBox(
+                signer,
+                getSignerBoxMinHeightRatio(documentFile(document)),
+              ),
+            );
+            setAnchorResults(Object.fromEntries(nextDocuments.map((document, index) => [document.id, anchorResults[index]])));
+            return [
+              document.id,
+              existing.length || document.has_signature_draft ? existing : buildSignersFromAnchors(anchorResults[index], existing),
+            ];
+          }),
         );
         setProposal(loadedProposal);
         setCandidates(candidateResponse?.data?.candidates || []);
         setDrafts(nextDrafts);
         setDocumentId(nextDocuments[0].id);
         setSigners(nextDrafts[nextDocuments[0].id]);
+        setAnchorData(anchorResults[0]);
+        setDetectError(anchorResults[0]?.error || "");
+        setDetectNote(anchorDetectionMessage(anchorResults[0]));
         setFileId(documentFile(nextDocuments[0])?.id || null);
         setActivePage(nextDrafts[nextDocuments[0].id][0]?.page || 1);
         setSignatureConfigWarning("");
@@ -192,6 +219,7 @@ const ProposalSignatureConfigPage = () => {
             pos_y: signer.pos_y,
             box_width: signer.box_width,
             box_height: signer.box_height ?? DEFAULT_SIGNER_BOX.box_height,
+            anchor_token: signer.anchor_token || null,
           },
           loadedMinBoxHeightRatio,
         ),
@@ -349,6 +377,37 @@ const ProposalSignatureConfigPage = () => {
     ]);
   };
 
+  const runDetectAndApply = async () => {
+    setDetecting(true);
+    setDetectError("");
+    setDetectNote("");
+    try {
+      const response = ensureDocumentResponse(
+        await proposalApprovalService.getSignatureAnchors(id, token, documentId),
+      );
+      const nextAnchorData = response?.data || null;
+      setAnchorData(nextAnchorData);
+      setAnchorResults((current) => ({ ...current, [documentId]: nextAnchorData }));
+      if (!nextAnchorData?.anchors?.length) {
+        setDetectNote(anchorDetectionMessage(nextAnchorData) || "Mẫu BCĐX chưa có token ô ký ({sign_...}).");
+        return;
+      }
+      const applied = nextAnchorData.anchors.filter(
+        (anchor) => anchor.found && anchor.user_id,
+      ).length;
+      setSigners((current) => buildSignersFromAnchors(nextAnchorData, current));
+      setActivePage(
+        nextAnchorData.anchors.find((anchor) => anchor.found && anchor.page)?.page ||
+          activePage,
+      );
+      setDetectNote([applied ? `Đã dò ${applied} ô ký.` : "", anchorDetectionMessage(nextAnchorData)].filter(Boolean).join(" "));
+    } catch (detectFailure) {
+      setDetectError(detectFailure?.message || "Không dò được vị trí ô ký");
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   const submit = async () => {
     setError("");
     const allDrafts = { ...drafts, [documentId]: signers };
@@ -400,6 +459,7 @@ const ProposalSignatureConfigPage = () => {
                 return {
                   user_id: signer.user_id,
                   signer_title: signer.signer_title,
+                  anchor_token: signer.anchor_token || null,
                   page: signer.page,
                   pos_x: normalized.pos_x,
                   pos_y: normalized.pos_y,
@@ -426,6 +486,10 @@ const ProposalSignatureConfigPage = () => {
     if (nextDocument) {
       setDrafts((current) => ({ ...current, [documentId]: signers }));
       setDocumentId(nextDocument.id);
+      const result = anchorResults[nextDocument.id];
+      setAnchorData(result || null);
+      setDetectError(result?.error || "");
+      setDetectNote(anchorDetectionMessage(result));
       setSigners(drafts[nextDocument.id] || []);
       setActivePage(drafts[nextDocument.id]?.[0]?.page || 1);
     } else {
@@ -546,15 +610,45 @@ const ProposalSignatureConfigPage = () => {
       <fieldset disabled={saving}>
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(500px,1.4fr)]">
           <section className="space-y-3 rounded-lg border bg-base-100 p-4">
-            <div>
-              <h2 className="font-semibold">Danh sách người ký</h2>
-              <p className="mt-1 text-xs text-base-content/60">
-                Chọn Tổng giám đốc thuộc Ban Tổng giám đốc, Phòng Tài chính,
-                Back Office, người đề xuất, người phụ trách hoặc cấp trên của
-                người phụ trách là CTV. Mỗi người chỉ xuất hiện trong nhóm ưu
-                tiên đầu tiên. Người ký mới sẽ được gắn vào trang đang chỉnh.
-              </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="font-semibold">Danh sách người ký</h2>
+                <p className="mt-1 text-xs text-base-content/60">
+                  Chọn Tổng giám đốc thuộc Ban Tổng giám đốc, Phòng Tài chính,
+                  Back Office, người đề xuất, người phụ trách hoặc cấp trên của
+                  người phụ trách là CTV. Mỗi người chỉ xuất hiện trong nhóm ưu
+                  tiên đầu tiên. Người ký mới sẽ được gắn vào trang đang chỉnh.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline btn-primary btn-xs gap-1 shrink-0"
+                disabled={detecting || saving || readOnly}
+                onClick={runDetectAndApply}
+                title="Dò vị trí các ô ký {sign_...} trong file PDF BCĐX và điền vào danh sách"
+              >
+                <Crosshair size={13} />
+                {detecting ? "Đang cập nhật..." : "Cập nhật lại ô ký"}
+              </button>
             </div>
+            {anchorData?.missing?.length > 0 && (
+              <div className="alert alert-warning py-2 text-xs">
+                Chưa thấy ô ký trong file PDF: {anchorData.missing.join(", ")}
+              </div>
+            )}
+            {anchorData?.anchors?.some(
+              (anchor) => anchor.found && anchor.user_id,
+            ) && (
+              <div className="alert alert-success py-2 text-xs">
+                Hệ thống đã gợi ý ô ký từ các token {"{sign_...}"}. Vui lòng kiểm tra vị trí trước khi xác nhận trình ký.
+              </div>
+            )}
+            {detectError && (
+              <div className="alert alert-error py-2 text-xs">{detectError}</div>
+            )}
+            {!detectError && detectNote && (
+              <div className="alert alert-info py-2 text-xs">{detectNote}</div>
+            )}
 
             {candidateGroups.length === 0 ? (
               <div className="alert">Không tìm thấy người ký phù hợp.</div>
@@ -626,6 +720,9 @@ const ProposalSignatureConfigPage = () => {
                         }
                       >
                         {signer.full_name}
+                        {signer.anchor_token && (
+                          <span className="badge badge-ghost badge-xs ml-1">mẫu</span>
+                        )}
                         <span className="ml-1 text-xs text-base-content/60">
                           — trang {signer.page}
                         </span>

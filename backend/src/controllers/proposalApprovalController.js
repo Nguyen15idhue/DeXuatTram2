@@ -120,6 +120,19 @@ exports.getSignerCandidates = async (req, res) => {
   }
 };
 
+exports.detectSignatureAnchors = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.detectSignatureAnchors({
+      user: req.user,
+      id: req.params.id,
+      documentId: req.query.document_id
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.configureSignature = async (req, res) => {
   try {
     const body = req.body || {};
