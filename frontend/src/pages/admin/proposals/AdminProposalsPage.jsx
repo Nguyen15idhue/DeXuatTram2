@@ -5,6 +5,7 @@ import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
   adminProposalService,
   proposalService,
+  proposalRequestService,
   excelService,
   formService,
   documentService,
@@ -108,6 +109,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { notifyBellRefresh } from "../../../components/layout/NotificationBell";
+import { PROPOSAL_TASK_COUNTS_CHANGED_EVENT } from "../../../utils/proposalTaskCounts";
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
@@ -172,6 +174,7 @@ const AdminProposalsPage = () => {
   const provinceOptions = getSelectOptions("province");
   const regionOptions = getSelectOptions("vung_mien");
   const [proposals, setProposals] = useState([]);
+  const [requestCount, setRequestCount] = useState(null);
   const [countdownFlags, setCountdownFlags] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState([]);
@@ -342,6 +345,43 @@ const AdminProposalsPage = () => {
   };
   const dupRef = useRef(null);
   const tableRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let sequence = 0;
+    const refresh = async () => {
+      const current = ++sequence;
+      if (!token) {
+        setRequestCount(null);
+        return;
+      }
+      try {
+        const response = await proposalRequestService.getAll(
+          "status=OPEN&work_scope=all&page=1&limit=1",
+          token,
+        );
+        const count = Number(response?.pagination?.total);
+        if (!response?.success || response.pagination?.total == null
+          || !Number.isFinite(count) || count < 0) {
+          throw new Error(response?.message || "Không tải được số task");
+        }
+        if (!cancelled && current === sequence) setRequestCount(count);
+      } catch (error) {
+        console.error("Load proposal request count error:", error);
+        if (!cancelled && current === sequence) setRequestCount(null);
+      }
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, refresh);
+    const interval = window.setInterval(refresh, 30000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, refresh);
+      window.clearInterval(interval);
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
@@ -679,7 +719,7 @@ const AdminProposalsPage = () => {
         notifyBellRefresh();
         loadProposals(pagination.page);
       } else {
-        setError(res.message || "Cập nhật thất bại");
+        setError(res.errors?.length ? res.errors.join(" · ") : (res.message || "Cập nhật thất bại"));
       }
     } catch {
       setError("Lỗi kết nối server");
@@ -1342,7 +1382,7 @@ const AdminProposalsPage = () => {
       const movedToGrading = res.infoCompleted?.movedTo === "GRADING";
       setToast({
         message: transitionError
-          ? `Đã tạo đề xuất nhưng chưa tự chuyển sang chấm điểm: ${transitionError}`
+          ? `Đã tạo đề xuất; xử lý tiếp theo: ${transitionError}`
           : `Tạo đề xuất thành công${movedToGrading ? " và đã chuyển sang chấm điểm" : ""}`,
         type: transitionError ? "warning" : "success",
       });
@@ -1494,9 +1534,9 @@ const AdminProposalsPage = () => {
         );
       }
       if (
-        row.permissions?.canManageOwner &&
+        row.permissions?.canApproveEntry &&
         row.status === "PENDING" &&
-        row.owner_role === "CTV"
+        ["CTV", "NPP"].includes(row.owner_role)
       ) {
         items.push(
           item(
@@ -2127,6 +2167,11 @@ const AdminProposalsPage = () => {
           title="Các đề xuất đang có yêu cầu cần thực hiện"
         >
           Các đề xuất cần thực hiện
+          {requestCount > 0 && (
+            <span className="badge badge-sm badge-error ml-2">
+              {requestCount > 999 ? "999+" : requestCount}
+            </span>
+          )}
         </button>
         <button
           type="button"

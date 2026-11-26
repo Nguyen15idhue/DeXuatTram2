@@ -68,6 +68,10 @@ const AdminProposalRequestUpdatePage = () => {
       );
       if (!completion?.success)
         throw new Error(completion?.message || "Không xác nhận được yêu cầu");
+      if (completion.data?.infoCompleted?.error) {
+        setError(`Đã lưu và hoàn thành yêu cầu; xử lý tiếp theo: ${completion.data.infoCompleted.error}${completion.data.infoCompleted.confirmed ? "" : ". Hãy mở lại đề xuất và lưu để thử lại."}`);
+        return;
+      }
       navigate("/admin/proposals?tab=requests", { replace: true });
     } catch (e) {
       const message = saved

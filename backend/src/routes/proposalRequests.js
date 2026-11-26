@@ -24,7 +24,7 @@ const proposalRequestController = require('../controllers/proposalRequestControl
  *         name: type
  *         schema:
  *           type: string
- *           enum: [UPDATE_INFO, SUPPLEMENT, RE_GRADE, REVISE_BCDX, TGD_REVIEW, OTHER]
+ *           enum: [UPDATE_INFO, SUPPLEMENT, LAYOUT_SUPPLEMENT, RE_GRADE, REVISE_BCDX, TGD_REVIEW, OTHER, ENTRY_APPROVAL]
  *       - in: query
  *         name: search
  *         schema:

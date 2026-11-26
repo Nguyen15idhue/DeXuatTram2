@@ -597,10 +597,16 @@ const RecordDetailPopup = ({
           }
         }
         let toastMsg = msg;
-        if (res.infoCompleted && res.infoCompleted.confirmed) {
+        if (res.infoCompleted?.error) {
+          toastMsg += ` · Đã lưu; xử lý tiếp theo: ${res.infoCompleted.error}`;
+        } else if (res.infoCompleted?.movedTo === "GRADING") {
+          toastMsg += " · Đã chuyển sang chấm điểm";
+        } else if (res.infoCompleted?.waitingManagerApproval) {
+          toastMsg += " · Đủ thông tin, chờ quản lý duyệt";
+        } else if (res.infoCompleted?.confirmed) {
           toastMsg += " · Đã tự xác nhận đủ thông tin";
         }
-        setToast({ message: toastMsg, type: "success" });
+        setToast({ message: toastMsg, type: res.infoCompleted?.error ? "error" : "success" });
         setRecord({ ...record, ...formData, ...saved });
         setMode("view");
         notifyBellRefresh();

@@ -1,6 +1,38 @@
 const { test, expect } = require('@playwright/test');
 test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 
+test('proposal edit displays a concurrent status conflict without closing the form', async ({ page }) => {
+  const field = { id: 1, key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', type: 'text', visible: true };
+  const record = { id: 77, ma_de_xuat: 'DX-77', status: 'PENDING', user_id: 1, custom_data: {}, permissions: { canEdit: true } };
+  await page.addInitScript(() => localStorage.setItem('token', 'ui-test-token'));
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith('/admin/proposals/77') && route.request().method() === 'PUT') {
+      return route.fulfill({ status: 409, json: {
+        success: false, message: 'Trạng thái đề xuất vừa thay đổi; hãy tải lại trước khi lưu'
+      } });
+    }
+    let data = [];
+    if (path.endsWith('/auth/me')) data = { user: { id: 1, role: 'SUPER_ADMIN', full_name: 'UI Test' } };
+    else if (path.includes('/field-definitions/entity/')) data = [field];
+    else if (path.includes('/dynamic/station_proposals/view/')) data = { fields: [field], allFields: [field] };
+    else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
+    else if (path.endsWith('/forms/by-entity-purpose')) data = null;
+    else if (path.endsWith('/admin/proposals/77')) data = record;
+    else if (path.endsWith('/admin/proposals')) data = [record];
+    else if (path.endsWith('/filter-options')) data = { owners: [], managers: [], workScopes: [] };
+    else if (path.includes('/countdown') || path.endsWith('/assistant/status')) data = {};
+    return route.fulfill({ json: { success: true, data, pagination: { page: 1, total: 0, totalPages: 0, limit: 20 } } });
+  });
+  await page.goto('/admin/proposals/edit=77');
+  const popup = page.locator('.popup-detail');
+  await expect(popup).toBeVisible();
+  await popup.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(popup.getByText('Trạng thái đề xuất vừa thay đổi; hãy tải lại trước khi lưu')).toBeVisible();
+  await expect(popup.getByRole('button', { name: 'Lưu', exact: true })).toBeVisible();
+});
+
 test('proposal page numbers status labels without changing API codes or other pages', async ({ page }) => {
   const errors = [];
   const proposalQueries = [];

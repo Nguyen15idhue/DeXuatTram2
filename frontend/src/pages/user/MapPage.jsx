@@ -190,7 +190,7 @@ const MapPage = () => {
         const movedToGrading = res.infoCompleted?.movedTo === 'GRADING';
         setToast({
           message: transitionError
-            ? `Đã tạo đề xuất nhưng chưa tự chuyển sang chấm điểm: ${transitionError}`
+            ? `Đã tạo đề xuất; xử lý tiếp theo: ${transitionError}`
             : `Tạo đề xuất thành công!${movedToGrading ? ' Đề xuất đã chuyển sang chấm điểm.' : ''} Marker mới xuất hiện trên bản đồ.`,
           type: transitionError ? 'warning' : 'success'
         });

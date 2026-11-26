@@ -65,12 +65,12 @@ function walkLayoutNode(node, visible, data, sectionMap, pathSet, depth, isRefer
 
 // Tra ve tap key field CAN validate: chi gom field CO trong form dang dung va DANG hien thi
 // (bo qua field khong nam trong form, va field bi an theo section.visibleWhen / field.conditions)
-async function getApplicableFieldKeys(entity, data, purpose = 'create', formId = null) {
+async function getApplicableFieldKeys(entity, data, purpose = 'create', formId = null, connection = pool) {
   let form = null;
 
   // formId duoc chi dinh -> whitelist (phai thuoc dung entity + dang active), sai thi bo qua
   if (formId) {
-    const [picked] = await pool.query(
+    const [picked] = await connection.query(
       "SELECT id, layout_config FROM forms WHERE id = ? AND entity = ? AND status = 'active' LIMIT 1",
       [formId, entity]
     );
@@ -78,7 +78,7 @@ async function getApplicableFieldKeys(entity, data, purpose = 'create', formId =
   }
 
   if (!form) {
-    const [forms] = await pool.query(
+    const [forms] = await connection.query(
       "SELECT id, layout_config FROM forms WHERE entity = ? AND status = 'active' ORDER BY (purpose = ?) DESC, is_default DESC, id ASC LIMIT 1",
       [entity, purpose]
     );
@@ -97,7 +97,7 @@ async function getApplicableFieldKeys(entity, data, purpose = 'create', formId =
     walkLayoutNode(sec, true, data, sectionMap, new Set(), 1, false, rowHidden);
   });
 
-  const [ffs] = await pool.query(
+  const [ffs] = await connection.query(
     'SELECT fd.`key` AS field_key, ff.config FROM form_fields ff JOIN field_definitions fd ON fd.id = ff.field_id WHERE ff.form_id = ?',
     [form.id]
   );

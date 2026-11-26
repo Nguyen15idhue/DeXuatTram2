@@ -297,7 +297,7 @@ const MyProposalsPage = () => {
     if (res.success) {
       const warns = [...(res.warnings || [])];
       if (res.infoCompleted?.error) {
-        warns.push(`Đã tạo đề xuất nhưng chưa tự chuyển sang chấm điểm: ${res.infoCompleted.error}`);
+        warns.push(`Xử lý tiếp theo: ${res.infoCompleted.error}`);
       }
       let message = warns.length > 0
         ? `Tạo đề xuất thành công! Lưu ý: ${warns.join('; ')}`
