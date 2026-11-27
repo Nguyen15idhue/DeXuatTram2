@@ -184,16 +184,17 @@ const AdminProposalGradingDetailPage = () => {
   const step = getStep(proposal, detail?.permissions);
   const fields = useMemo(() => {
     const keys = new Set(draftConfig[step] || []);
+    const showAll = keys.size === 0;
     return (detail?.fieldDefinitions || [])
       .filter(
         (field) =>
           field.status !== "inactive" &&
-          keys.has(field.key) &&
+          (showAll || keys.has(field.key)) &&
           !PROPOSAL_PROCESS_FIELD_KEYS.includes(field.key) &&
           isProposalFieldForModel(field.key, proposal),
       )
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
-  }, [detail, draftConfig, step]);
+  }, [detail, draftConfig, step, proposal]);
   const canGradeQH = !!detail?.permissions?.canGradeQH;
   const canGradePL = !!detail?.permissions?.canGradePL;
   const canRequestSupplement = !!detail?.permissions?.canRequestSupplement;

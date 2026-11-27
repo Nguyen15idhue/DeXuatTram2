@@ -401,7 +401,26 @@ const FileViewer = ({
     return fullScreen ? createPortal(missingFileModal, document.body) : missingFileModal;
   }
 
+const getPreviewUrl = (file) => {
+  if (file.url) return file.url;
+  if (file.id) return `${API_URL}/files/${file.id}/preview?token=${encodeURIComponent(token || "")}`;
+  return null;
+};
+
   const renderContent = () => {
+    if (fileType === "pdf" && file?.id) {
+      const src = getPreviewUrl(file);
+      if (src) {
+        return (
+          <iframe
+            src={src}
+            title={name || "Xem PDF"}
+            className="h-full w-full border-0"
+            style={{ minHeight: inline ? "420px" : "70vh" }}
+          />
+        );
+      }
+    }
     if ((fileType === "word" || fileType === "pdf") && file?.id) {
       return <PdfPageViewer fileId={file.id} token={token} initialPage={pdfPage} />;
     }
