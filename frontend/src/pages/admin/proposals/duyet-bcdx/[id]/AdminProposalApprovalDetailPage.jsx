@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -19,6 +19,7 @@ import FileViewer from "../../../../../components/dynamic/FileViewer";
 import { useAuth } from "../../../../../contexts/AuthContext";
 import {
   API_URL,
+  fieldDefinitionService,
   proposalApprovalService,
   proposalReportService,
 } from "../../../../../services/api";
@@ -31,9 +32,11 @@ import useFieldOptions from "../../../../../hooks/useFieldOptions";
 import {
   formatProposalCost,
   formatProposedScale,
+  getLegalDocFiles,
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone,
+  isProposalFieldForModel,
 } from "../../../../../utils/proposalGrading";
 import {
   canConfigureSignature,
@@ -41,9 +44,61 @@ import {
   getReportFiles,
 } from "../../../../../utils/proposalApproval";
 import ProposalProgressiveDetails from "../../components/ProposalProgressiveDetails";
-import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
 import ProposalStaticInfo from "../../components/ProposalStaticInfo";
+import ProposalLocationMapButton from "../../../../../components/admin/ProposalLocationMapButton";
+import { PROPOSAL_PROCESS_FIELD_KEYS } from "../../../../../utils/proposalProgress";
 import ProposalGoogleMapLink from "../../../../../components/admin/ProposalGoogleMapLink";
+
+const displayValue = (value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Có" : "Không";
+  if (typeof value === "object") {
+    const label = value.label || value.name || value.full_name || value.value;
+    return label || JSON.stringify(value, null, 2);
+  }
+  return String(value);
+};
+
+const hasValue = (value) => {
+  if (value === null || value === undefined || value === "") return false;
+  return !Array.isArray(value) || value.length > 0;
+};
+
+const FieldValue = ({ record, field, onViewFile }) => {
+  const value = record?.[field.key];
+  if (field.type === "file") {
+    const files = getLegalDocFiles(record, field.key);
+    if (files.length === 0) return <span className="text-base-content/50">—</span>;
+    return (
+      <div className="flex flex-col gap-1">
+        {files.map((file, index) => (
+          <button
+            key={`${file.id || file.name}-${index}`}
+            type="button"
+            className="link link-primary inline-flex items-center gap-1 text-left"
+            onClick={() => onViewFile(file)}
+          >
+            <FileText size={14} />
+            {file.name || `Tệp #${file.id}`}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (field.type === "table") {
+    return (
+      <span className="whitespace-pre-wrap break-words text-sm">
+        {displayValue(value)}
+      </span>
+    );
+  }
+  const output = displayValue(value);
+  return typeof value === "object" && value !== null ? (
+    <pre className="whitespace-pre-wrap break-words text-sm">{output}</pre>
+  ) : (
+    <span className="whitespace-pre-wrap break-words">{output}</span>
+  );
+};
 
 const AdminProposalApprovalDetailPage = () => {
   const { id } = useParams();
@@ -55,6 +110,7 @@ const AdminProposalApprovalDetailPage = () => {
     "status",
   ]);
   const [proposal, setProposal] = useState(null);
+  const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -76,6 +132,15 @@ const AdminProposalApprovalDetailPage = () => {
         await proposalReportService.getDocuments(id, token),
       );
       setDocuments(documentsResponse?.data?.documents || []);
+      try {
+        const fdRes = await fieldDefinitionService.getAll(
+          "entity=station_proposals&status=active&limit=200",
+          token,
+        );
+        setFields(Array.isArray(fdRes?.data) ? fdRes.data : fdRes?.data?.data || []);
+      } catch {
+        setFields([]);
+      }
     } catch (loadError) {
       setError(loadError?.message || "Không tải được thông tin đề xuất");
     } finally {
@@ -143,6 +208,18 @@ const AdminProposalApprovalDetailPage = () => {
           .filter(Boolean)
           .map((file) => ({ ...file, name: file.name || file.original_name }))
       : getReportFiles(proposal);
+  const detailFields = useMemo(() => {
+    if (!proposal) return [];
+    return (fields || [])
+      .filter(
+        (field) =>
+          field.status !== "inactive" &&
+          hasValue(proposal?.[field.key]) &&
+          !PROPOSAL_PROCESS_FIELD_KEYS.includes(field.key) &&
+          isProposalFieldForModel(field.key, proposal),
+      )
+      .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+  }, [fields, proposal]);
   const previewFileId = searchParams.get("previewFile");
   const previewFile = reportFiles.find(
     (file) => String(file.id) === previewFileId,
@@ -327,6 +404,33 @@ const AdminProposalApprovalDetailPage = () => {
       </section>
 
       <ProposalStaticInfo record={proposal} onViewFile={setFileViewing} />
+
+      <section className="rounded-lg border bg-base-100 p-4">
+        <h2 className="mb-3 font-semibold">Tất cả thông tin đề xuất</h2>
+        {detailFields.length === 0 ? (
+          <p className="text-sm text-base-content/60">
+            Không có dữ liệu đầu vào để hiển thị.
+          </p>
+        ) : (
+          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+            {detailFields.map((field) => (
+              <div
+                key={field.key}
+                className="min-w-0 border-b border-base-200 pb-3"
+              >
+                <p className="text-xs font-semibold text-base-content/60 mb-1">
+                  {field.label || field.key}
+                </p>
+                <FieldValue
+                  record={proposal}
+                  field={field}
+                  onViewFile={setFileViewing}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
       {documents.length > 0 && (
         <section className="space-y-2 rounded-lg border p-4">
           <h2 className="font-semibold">Tài liệu BCĐX và bản gốc</h2>
@@ -358,6 +462,43 @@ const AdminProposalApprovalDetailPage = () => {
                 ...file,
                 original_name: file.name || `Tệp #${file.id || index + 1}`,
               };
+              const isPdf = (file.mime_type || '').toLowerCase().includes('pdf')
+                || String(file.name || file.original_name || '').toLowerCase().endsWith('.pdf');
+              const isDocx = (file.mime_type || '').toLowerCase().includes('word')
+                || String(file.name || file.original_name || '').toLowerCase().endsWith('.docx')
+                || String(file.name || file.original_name || '').toLowerCase().endsWith('.doc');
+              if (isPdf || isDocx) {
+                const viewUrl = file.id
+                  ? `${API_URL}/files/${file.id}/preview?token=${encodeURIComponent(token || '')}`
+                  : file.url;
+                return (
+                  <div key={file.id || file.name || index} className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate">
+                        {file.name || `Tệp #${file.id || index + 1}`}
+                      </span>
+                      {file.id && (
+                        <a
+                          className="btn btn-ghost btn-xs gap-1"
+                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Tải xuống file"
+                        >
+                          <Download size={14} />
+                          <span className="hidden sm:inline">Tải xuống</span>
+                        </a>
+                      )}
+                    </div>
+                    <iframe
+                      src={viewUrl}
+                      title={file.name || `Tệp #${file.id || index + 1}`}
+                      className="w-full rounded border"
+                      style={{ height: '70vh' }}
+                    />
+                  </div>
+                );
+              }
               return (
                 <FileViewer
                   key={file.id || file.name || index}
@@ -378,7 +519,7 @@ const AdminProposalApprovalDetailPage = () => {
                       {file.id && (
                         <a
                           className="btn btn-ghost btn-xs gap-1"
-                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || "")}`}
+                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`}
                           target="_blank"
                           rel="noreferrer"
                           title="Tải xuống file"
@@ -448,6 +589,14 @@ const AdminProposalApprovalDetailPage = () => {
             <XCircle size={16} /> Từ chối duyệt
           </button>
         )}
+        <a
+          className="btn btn-outline btn-primary gap-2"
+          href={`${API_URL}/admin/proposal-approvals/${proposal.id}/download-all-files?token=${encodeURIComponent(token || "")}`}
+          download
+          title="Tải toàn bộ ảnh và file của BCĐX (ZIP)"
+        >
+          <Download size={16} /> Tải toàn bộ file (ZIP)
+        </a>
         <button
           type="button"
           className="btn btn-ghost gap-2"

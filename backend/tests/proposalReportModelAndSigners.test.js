@@ -12,6 +12,77 @@ const user = (id, department, chuc_vu, role = 'SALES') => ({
   id, full_name: `User ${id}`, role, custom_data: { department, chuc_vu }
 });
 
+test('review receives preview signer positions without creating an active signature configuration', async (t) => {
+  const draft = [{ user_id: 7, full_name: 'Người phụ trách', page: 1, pos_x: 0.3 }];
+  t.mock.method(reports, 'resolveScope', async () => ({ isAdmin: true }));
+  t.mock.method(documents, 'listDocuments', async () => [
+    { id: 91, signing_file: { id: 11 }, signature_anchor_snapshot: JSON.stringify({ draft_signers: draft }) },
+    { id: 92, signing_file: { id: 12 }, signature_anchor_snapshot: JSON.stringify({ draft_signers: [] }) }
+  ]);
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('FROM station_proposals')) return [[{ id: 71, status: 'PROPOSAL_REPORT_REVIEWING' }]];
+    if (sql.includes('FROM proposal_signature_configs')) return [[]];
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  const result = await approval.getSignatureConfig({ user: { id: 1 }, id: 71 });
+  assert.deepEqual(result.documents[0].signers, draft);
+  assert.equal(result.documents[0].has_signature_draft, true);
+  assert.equal(result.documents[1].has_signature_draft, true);
+  assert.deepEqual(result.documents[1].signers, []);
+  assert.deepEqual(result.signers, []);
+});
+
+test('preview signer candidates include active template users and reject inactive template users', async (t) => {
+  const proposal = { id: 71, user_id: 7, custom_data: { nguoi_phu_trach: { id: 8 } } };
+  const snapshot = { anchors: [
+    { mode: 'field', field: 'nguoi_phu_trach' },
+    { mode: 'fixed', user_id: 9 },
+    { mode: 'fixed', user_id: 10 }
+  ] };
+  t.mock.method(pool, 'query', async (sql, params) => {
+    assert.match(sql, /status = 'ACTIVE'/);
+    assert.deepEqual(params, [8, 9, 10]);
+    return [[user(8, 'Kinh doanh', 'GĐKV'), user(9, 'Phòng kỹ thuật', 'Giám đốc')]];
+  });
+  const result = await approval.getDocumentSignerCandidates(proposal, snapshot, [user(7, 'Kinh doanh', 'SALES')]);
+  assert.deepEqual(result.map((candidate) => candidate.id), [7, 8, 9]);
+});
+
+test('anchor detection is tied to the selected document and resolves active responsible user', async (t) => {
+  const fs = require('fs/promises');
+  const files = require('../src/services/fileService');
+  const detector = require('../src/services/pdfAnchorDetector');
+  const proposal = { id: 71, user_id: 7, status: 'PROPOSAL_REPORT_REVIEWING', custom_data: { nguoi_phu_trach: { id: 7 } } };
+  const snapshot = { box: { width: 0.3, height: 0.1 }, anchors: [
+    { anchor_token: 'sign_gdkv', label: 'Ký GĐKV', mode: 'field', field: 'nguoi_phu_trach' },
+    { anchor_token: 'sign_tgd', label: 'Ký TGĐ', mode: 'fixed', user_id: 9 }
+  ] };
+  let docs = [
+    { id: 91, conversion_status: 'READY', signing_file: { id: 11, mime_type: 'application/pdf' }, signature_anchor_snapshot: JSON.stringify(snapshot) },
+    { id: 92, conversion_status: 'READY', signing_file: { id: 12, mime_type: 'application/pdf' }, signature_anchor_snapshot: null }
+  ];
+  t.mock.method(reports, 'resolveScope', async () => ({ isAdmin: true }));
+  t.mock.method(documents, 'listDocuments', async () => docs);
+  t.mock.method(files, 'getFilePath', async id => { assert.equal(id, 11); return { filePath: 'mock' }; });
+  t.mock.method(fs, 'readFile', async () => Buffer.from('PDF'));
+  t.mock.method(detector, 'detectAnchors', async (_pdf, anchors) => anchors.map(item => ({ ...item, found: true, page: 2, pos_x: 0.2, pos_y: 0.3 })));
+  t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('FROM station_proposals')) return [[proposal]];
+    if (sql.includes('SELECT id, full_name FROM users')) return [[{ id: 7, full_name: 'Người phụ trách' }]];
+    if (sql.includes('FROM users')) return [[user(7, 'Kinh doanh', 'GĐKV')]];
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  await assert.rejects(approval.detectSignatureAnchors({ user: { id: 1 }, id: 71 }), { statusCode: 400 });
+  const result = await approval.detectSignatureAnchors({ user: { id: 1 }, id: 71, documentId: 91 });
+  assert.equal(result.anchors[0].user_id, 7);
+  assert.equal(result.anchors[1].user_id, null);
+  assert.equal(result.anchors[0].page, 2);
+  assert.equal((await approval.detectSignatureAnchors({ user: { id: 1 }, id: 71, documentId: 92 })).reason, 'missing_snapshot');
+  await assert.rejects(approval.detectSignatureAnchors({ user: { id: 1 }, id: 71, documentId: 93 }), { statusCode: 404 });
+  proposal.custom_data.nguoi_phu_trach = null;
+  assert.equal((await approval.detectSignatureAnchors({ user: { id: 1 }, id: 71, documentId: 91 })).anchors[0].user_id, null);
+});
+
 test('signer groups prioritize department/title, then owner, assignee and all CTV ancestors without duplicates', async (t) => {
   const rows = [
     user(1, 'Ban Tổng giám đốc', 'Tổng giám đốc'),

@@ -42,6 +42,30 @@ exports.list = async (req, res) => {
   }
 };
 
+exports.downloadLayoutFiles = async (req, res) => {
+  try {
+    const result = await proposalDesignService.downloadLayoutFiles({
+      user: req.user,
+      tab: req.query.tab || 'all',
+      search: req.query.search || '',
+      filters: {
+        proposalStatus: req.query.proposal_status,
+        model: req.query.model,
+        province: req.query.province,
+        region: req.query.region,
+        ownerUserId: req.query.owner_user_id,
+        managerUserId: req.query.manager_user_id,
+        dateFrom: req.query.date_from,
+        dateTo: req.query.date_to
+      }
+    });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    res.send(result.buffer);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
 exports.filterOptions = async (req, res) => {
   try {
     const data = await proposalDesignService.getFilterOptions({ user: req.user });

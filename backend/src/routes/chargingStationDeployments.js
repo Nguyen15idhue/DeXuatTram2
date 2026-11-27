@@ -28,7 +28,7 @@ router.use(requireAuth);
  *     tags: [Charging Stations]
  *     summary: Tiến hành lắp đặt, nghiệm thu hoặc ON một phần trụ đã nhận
  *     description: >
- *       Chỉ SUPER_ADMIN và Setup/Vận hành, kể cả ADMIN thuộc phòng này.
+ *       Chỉ Back Office, SUPER_ADMIN và Setup/Vận hành, kể cả ADMIN thuộc phòng này.
  *       request_id duy nhất theo trạm bảo đảm không lặp ghi log/thông báo.
  *       Lắp xong mở hai công việc nghiệm thu và ON song song.
  *       Nghiệm thu đạt yêu cầu equipment và infrastructure, mỗi bộ có file PDF/Word và ít nhất 2 ảnh.
@@ -94,7 +94,7 @@ router.get('/:id/deployments', controller.list);
  *   put:
  *     tags: [Charging Stations]
  *     summary: Lưu đồng thời trạng thái và ghi chú các phần trụ đã nhận
- *     description: Setup/Vận hành và SUPER_ADMIN được tiến/lùi NOT/DOING/DONE; lùi giữ ghi chú và kết quả nghiệm thu/cấu hình/ON. Mỗi dòng cần id, status, note, expected_version. request_id bảo đảm idempotency.
+ *     description: Back Office, Setup/Vận hành và SUPER_ADMIN được tiến/lùi NOT/DOING/DONE; lùi giữ ghi chú và kết quả nghiệm thu/cấu hình/ON. Mỗi dòng cần id, status, note, expected_version. request_id bảo đảm idempotency.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -130,7 +130,7 @@ router.put('/:id/installation', controller.installation);
  *     tags: [Charging Stations]
  *     summary: Cập nhật nghiệm thu nhiều phần trụ bằng một bộ hồ sơ chung
  *     description: >
- *       Setup/Vận hành hoặc SUPER_ADMIN. Lưu nguyên tử, chống gửi lặp.
+ *       Back Office, Setup/Vận hành hoặc SUPER_ADMIN. Lưu nguyên tử, chống gửi lặp.
  *       Mỗi phần cần id và expected_version; lỗi một phần hủy toàn bộ lần lưu.
  *       Nghiệm thu đạt yêu cầu đã lắp xong và hai bộ hồ sơ thiết bị/hạ tầng,
  *       mỗi bộ có file PDF/Word cùng từ 2 đến 100 ảnh. Hồ sơ dùng chung cho nhóm.
@@ -188,7 +188,7 @@ router.put('/:id/acceptance', controller.acceptance);
  *     tags: [Charging Stations]
  *     summary: Cập nhật số lượng ON một hoặc nhiều phần trụ, không cần chờ nghiệm thu
  *     description: >
- *       Chỉ Setup/Vận hành và SUPER_ADMIN. Lưu nguyên tử, chống lặp bằng request_id.
+ *       Chỉ Back Office, Setup/Vận hành và SUPER_ADMIN. Lưu nguyên tử, chống lặp bằng request_id.
  *       Không đóng công việc nghiệm thu. Ngày ON chung giữ theo lần xác nhận đầu tiên;
  *       khi chọn nhiều phần trong lần đầu, lấy ngày của phần có ID nhỏ nhất.
  *       on_quantity là tổng ON của phần trụ, số nguyên từ 0 đến quantity; không truyền giữ API ON toàn phần cũ.

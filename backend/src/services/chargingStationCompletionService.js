@@ -86,6 +86,7 @@ const mutate = async (stationId, body, payload, operation, user, ctx, apply) => 
   stationId = idOf(stationId);
   await access.assertSetup(user);
   await access.assertView(stationId, user);
+  const fullControl = await access.hasFullControl(user);
   const requestId = text(body.request_id);
   if (!/^[\w.:-]{1,100}$/.test(requestId)) throw fail('request_id không hợp lệ');
   const connection = await pool.getConnection();
@@ -106,7 +107,7 @@ const mutate = async (stationId, body, payload, operation, user, ctx, apply) => 
       return json(events[0].result);
     }
     if (station.status === 'CANCELLED' || (json(station.workflow_override)?.completed
-      && !(['ACCEPTANCE_UPDATE', 'ACCEPTANCE_BATCH'].includes(operation) && user.role === 'SUPER_ADMIN'))) {
+      && !(['ACCEPTANCE_UPDATE', 'ACCEPTANCE_BATCH'].includes(operation) && fullControl))) {
       throw fail('Trạm đã hủy hoặc hoàn tất bằng ghi đè; hãy điều chỉnh tại Thông tin chung', 409);
     }
     await apply(connection, station);
@@ -139,11 +140,12 @@ const updateAcceptanceItems = async (stationId, body, items, user, ctx, operatio
     action: body.action, reason: noteOf(body.reason),
     reports: passed ? { EQUIPMENT: reportOf(body.equipment), INFRASTRUCTURE: reportOf(body.infrastructure) } : null };
   if (!passed && !payload.reason) throw fail('Bắt buộc lý do đổi trạng thái nghiệm thu');
+  const fullControl = await access.hasFullControl(user);
   return mutate(stationId, body, payload, operation, user, ctx, async (connection, station) => {
     const portions = [];
     for (const item of items) {
       const portion = await lockPortion(connection, station.id, item.id, item.expected_version);
-      if (portion.installation_status !== 'DONE' && user.role !== 'SUPER_ADMIN'
+      if (portion.installation_status !== 'DONE' && !fullControl
         && (passed || (!reset && portion.acceptance_status !== 'PASSED'))) {
         throw fail('Phần trụ chưa lắp xong; hãy tải lại', 409);
       }
@@ -265,7 +267,7 @@ const updateOn = async (stationId, body, user, ctx = {}) => {
   });
 };
 const overridePortions = async (connection, station, values, user, ctx, reason) => {
-  if (user.role !== 'SUPER_ADMIN') throw fail('Chỉ SUPER_ADMIN được điều chỉnh hồ sơ phần trụ', 403);
+  await access.assertFullControl(user);
   if (!Array.isArray(values) || !values.length || values.length > 1000) throw fail('Danh sách điều chỉnh không hợp lệ');
   for (const value of values) {
     assertObject(value);

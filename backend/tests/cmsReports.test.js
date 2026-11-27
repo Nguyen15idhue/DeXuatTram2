@@ -79,7 +79,6 @@ test("calendar-month age, Vietnam dates, positive-cost and cross-midnight sessio
     2,
   ]);
   assert.equal(row.length, reports.HEADERS.length);
-  assert.equal(row[24], 11);
   assert.equal(reports.monthCutoff("2026-03-31"), "2026-02-28");
   assert.equal(reports.monthCutoff("2024-03-31"), "2024-02-29");
   assert.equal(reports.monthCutoff("2026-01-31"), "2025-12-31");
@@ -322,10 +321,10 @@ test("Sheet retries write the same explicit row; reruns update dates and new day
   assert.deepEqual(
     writes.map((item) => item.range),
     [
-      "'CMS''s report'!A3:Y3",
-      "'CMS''s report'!A3:Y3",
-      "'CMS''s report'!B3:Y3",
-      "'CMS''s report'!B2:Y2",
+      "'CMS''s report'!A3:X3",
+      "'CMS''s report'!A3:X3",
+      "'CMS''s report'!B3:X3",
+      "'CMS''s report'!B2:X2",
     ],
   );
   assert.ok(writes.every((item) => item.valueInputOption === "RAW"));
@@ -335,7 +334,7 @@ test("a failed or ambiguous date write reserves its own row and the grid grows f
   const { config, writes, requests } = fakeSheets(
     t,
     [reports.HEADERS, ["2026-11-15"]],
-    { failRange: "'CMS''s report'!A3:Y3", rowCount: 2 },
+    { failRange: "'CMS''s report'!A3:X3", rowCount: 2 },
   );
   const writer = await reports.createSheetWriter(config);
   const row = reports.aggregate(fixture());
@@ -343,7 +342,7 @@ test("a failed or ambiguous date write reserves its own row and the grid grows f
   await writer.write(["2026-11-17", ...row.slice(1)]);
   assert.deepEqual(
     writes.map((item) => item.range),
-    ["'CMS''s report'!A3:Y3", "'CMS''s report'!A4:Y4"],
+    ["'CMS''s report'!A3:X3", "'CMS''s report'!A4:X4"],
   );
   assert.equal(
     requests[0].requestBody.requests[0].updateSheetProperties.properties
@@ -359,11 +358,11 @@ test("empty destination gets a dedicated tab and the full header", async (t) => 
     requests[0].requestBody.requests[0].addSheet.properties.title,
     config.tabName,
   );
-  assert.equal(writes[0].range, "'CMS''s report'!A1:Y1");
+  assert.equal(writes[0].range, "'CMS''s report'!A1:X1");
   assert.deepEqual(writes[0].requestBody.values, [reports.HEADERS]);
 });
 
-test("mixed Sheet dates reconcile by calendar day and new rows use a native date plus the numeric month", async (t) => {
+test("mixed Sheet dates reconcile by calendar day and new rows use a native date", async (t) => {
   const { config, writes, reads, requests } = fakeSheets(t, [
     reports.HEADERS, ["01/10/2026"], [], [46318], ["2026-11-18"],
   ]);
@@ -371,13 +370,13 @@ test("mixed Sheet dates reconcile by calendar day and new rows use a native date
   for (const date of ["2026-10-01", "2026-10-23", "2026-11-18", "2026-11-19"]) {
     await writer.write(reports.aggregate({ ...fixture(), date, transactions: [] }));
   }
-  assert.equal(reads[0].range, "'CMS''s report'!A:Y");
+  assert.equal(reads[0].range, "'CMS''s report'!A:Z");
   assert.equal(reads[0].dateTimeRenderOption, "SERIAL_NUMBER");
   assert.deepEqual(writes.map(item => item.range), [
-    "'CMS''s report'!B2:Y2", "'CMS''s report'!B4:Y4",
-    "'CMS''s report'!B5:Y5", "'CMS''s report'!A6:Y6",
+    "'CMS''s report'!B2:X2", "'CMS''s report'!B4:X4",
+    "'CMS''s report'!B5:X5", "'CMS''s report'!A6:X6",
   ]);
-  assert.deepEqual(writes.map(item => item.requestBody.values[0].at(-1)), [10, 10, 11, 11]);
+  assert.deepEqual(writes.map(item => item.requestBody.values[0].length), [23, 23, 23, 24]);
   assert.equal(writes[3].requestBody.values[0][0], 46345);
   const format = requests[0].requestBody.requests[0].repeatCell;
   assert.equal(format.range.startRowIndex, 5);
@@ -385,23 +384,35 @@ test("mixed Sheet dates reconcile by calendar day and new rows use a native date
   assert.deepEqual(format.cell.userEnteredFormat.numberFormat, { type: "DATE", pattern: "dd/MM/yyyy" });
 });
 
-test("a legacy A:X report grows to Y without rewriting its header or existing report rows", async (t) => {
+test("an A:X report is used without extending columns or rewriting its header", async (t) => {
   const { config, writes, reads, requests } = fakeSheets(
-    t, [reports.HEADERS.slice(0, -1), ["01/10/2026"]], { columnCount: 24 },
+    t, [reports.HEADERS, ["01/10/2026"]], { columnCount: 24 },
   );
   await reports.createSheetWriter(config);
   assert.equal(reads[0].range, "'CMS''s report'!A:X");
-  assert.equal(requests[0].requestBody.requests[0].updateSheetProperties.properties.gridProperties.columnCount, 25);
-  assert.deepEqual(writes.map(item => [item.range, item.requestBody.values]), [
-    ["'CMS''s report'!Y1", [["Tháng báo cáo"]]],
+  assert.deepEqual(requests, []);
+  assert.deepEqual(writes, []);
+});
+
+test("summary updates and new rows preserve occupied Y and Z columns", async (t) => {
+  const { config, writes, reads } = fakeSheets(t, [
+    [...reports.HEADERS, "Tháng báo cáo", "Số khách hàng mới"],
+    ["2026-11-15", ...Array(23).fill(""), 11, 5],
+    [...Array(24).fill(""), "dữ liệu khác", 7]
   ]);
+  const writer = await reports.createSheetWriter(config);
+  const row = reports.aggregate(fixture());
+  await writer.write(["2026-11-15", ...row.slice(1), "không ghi Y", "không ghi Z"]);
+  await writer.write([...row, "không ghi Y", "không ghi Z"]);
+  assert.equal(reads[0].range, "'CMS''s report'!A:Z");
+  assert.deepEqual(writes.map(item => item.range), [
+    "'CMS''s report'!B2:X2", "'CMS''s report'!A4:X4",
+  ]);
+  assert.deepEqual(writes.map(item => item.requestBody.values[0].length), [23, 24]);
 });
 
 for (const { label, rows, message } of [
   { label: "foreign header", rows: [["Another report"]], message: /Header Google Sheet/ },
-  { label: "occupied column Y without header", rows: [
-    reports.HEADERS.slice(0, -1), ["2026-11-16", ...Array(23).fill(""), 11],
-  ], message: /Header Google Sheet/ },
   { label: "duplicate across text and serial", rows: [
     reports.HEADERS, ["01/10/2026"], [], [46296],
   ], message: /2026-10-01 bị trùng tại ô A2 và A4/ },

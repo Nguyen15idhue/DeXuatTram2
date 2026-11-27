@@ -4,12 +4,14 @@ import { proposalApprovalService, proposalReportService } from '../../services/a
 import { documentFile, ensureDocumentResponse, fileName, getDocumentSigners, isDocumentAwaitingConversion, isUnsupportedSigningFile } from '../../utils/proposalDocuments';
 import ProposalDocumentConversionList from './ProposalDocumentConversionList';
 import FileViewer from '../dynamic/FileViewer';
-import { Eye, FileText, Plus, Send, Trash2, X } from 'lucide-react';
+import { Crosshair, Eye, FileText, Plus, Send, Trash2, X } from 'lucide-react';
 import {
   DEFAULT_SIGNER_BOX,
   getReportFiles
 } from '../../utils/proposalApproval';
 import {
+  buildSignersFromAnchors,
+  anchorDetectionMessage,
   getSignerBoxMinHeightRatio,
   normalizeSignerBox
 } from '../../utils/proposalSignature';
@@ -34,6 +36,11 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
   const [documentId, setDocumentId] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [canWithdraw, setCanWithdraw] = useState(false);
+  const [anchorData, setAnchorData] = useState(null);
+  const [anchorResults, setAnchorResults] = useState({});
+  const [detecting, setDetecting] = useState(false);
+  const [detectNote, setDetectNote] = useState('');
+  const [detectError, setDetectError] = useState('');
 
   const legacyFiles = useMemo(() => (record ? getReportFiles(record) : []), [record]);
   const reportFiles = documents.length ? documents.map(documentFile).filter(Boolean) : legacyFiles;
@@ -50,6 +57,9 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
     setSelectedUser('');
     setRevisionText('');
     setShowRevision(false);
+    setAnchorData(null);
+    setDetectNote('');
+    setDetectError('');
     setFileId(reportFiles[0] ? reportFiles[0].id : null);
     (async () => {
       try {
@@ -63,15 +73,27 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
         setDocuments(nextDocuments);
         setCanWithdraw(configRes?.data?.can_withdraw ?? ((configRes?.data?.signers || []).length > 0 && !(configRes?.data?.signers || []).some((signer) => signer.status === 'SIGNED')));
         if (nextDocuments.length) {
-          const nextDrafts = Object.fromEntries(nextDocuments.map((document) => [
-            document.id,
-            getDocumentSigners(document, configRes.data.signers).map((signer) => normalizeSignerBox(signer, getSignerBoxMinHeightRatio(documentFile(document))))
-          ]));
+          const anchorResults = await Promise.all(nextDocuments.map(async (document) => {
+            if (document.has_config || document.has_signed) return null;
+            try {
+              return ensureDocumentResponse(await proposalApprovalService.getSignatureAnchors(record.id, token, document.id)).data;
+            } catch (failure) {
+              return { error: failure.message || 'Không dò được ô ký' };
+            }
+          }));
+          const nextDrafts = Object.fromEntries(nextDocuments.map((document, index) => {
+            const existing = getDocumentSigners(document, configRes.data.signers).map((signer) => normalizeSignerBox(signer, getSignerBoxMinHeightRatio(documentFile(document))));
+            return [document.id, existing.length || document.has_signature_draft ? existing : buildSignersFromAnchors(anchorResults[index], existing)];
+          }));
+          setAnchorResults(Object.fromEntries(nextDocuments.map((document, index) => [document.id, anchorResults[index]])));
           setCandidates(candRes?.data?.candidates || []);
           setDrafts(nextDrafts);
           setDocumentId(nextDocuments[0].id);
           setFileId(documentFile(nextDocuments[0])?.id || null);
           setSigners(nextDrafts[nextDocuments[0].id]);
+          setAnchorData(anchorResults[0]);
+          setDetectError(anchorResults[0]?.error || '');
+          setDetectNote(anchorDetectionMessage(anchorResults[0]));
           return;
         }
         setDocumentId(null);
@@ -84,7 +106,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
         );
         const configuredMinHeightRatio = getSignerBoxMinHeightRatio(configuredFile);
         setCandidates(candRes?.data?.candidates || []);
-        setSigners((configRes?.data?.signers || []).map((signer) => normalizeSignerBox({
+        const configuredSigners = (configRes?.data?.signers || []).map((signer) => normalizeSignerBox({
           user_id: signer.user_id,
           full_name: signer.full_name,
           signer_title: signer.signer_title,
@@ -93,8 +115,10 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           pos_x: signer.pos_x,
           pos_y: signer.pos_y,
           box_width: signer.box_width,
-          box_height: signer.box_height
-        }, configuredMinHeightRatio)));
+          box_height: signer.box_height,
+          anchor_token: signer.anchor_token || null
+        }, configuredMinHeightRatio));
+        setSigners(configuredSigners);
         setFileId(configuredFileId);
       } catch (err) {
         setError(err?.message || 'Không tải được danh sách người ký');
@@ -173,6 +197,29 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
     )));
   };
 
+  const runDetectAndApply = async () => {
+    setDetecting(true);
+    setDetectError('');
+    setDetectNote('');
+    try {
+      const res = ensureDocumentResponse(await proposalApprovalService.getSignatureAnchors(record.id, token, documentId));
+      const data = res?.data || null;
+      setAnchorData(data);
+      setAnchorResults((current) => ({ ...current, [documentId]: data }));
+      if (!data?.anchors?.length) {
+        setDetectNote(anchorDetectionMessage(data) || 'Mẫu BCĐX chưa có token ô ký ({sign_...}).');
+        return;
+      }
+      const applied = data.anchors.filter((anchor) => anchor.found && anchor.user_id).length;
+      setSigners((prev) => buildSignersFromAnchors(data, prev));
+      setDetectNote([applied ? `Đã dò ${applied} ô ký.` : '', anchorDetectionMessage(data)].filter(Boolean).join(' '));
+    } catch (err) {
+      setDetectError(err?.message || 'Không dò được vị trí ô ký');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   const submit = async () => {
     setError('');
     const allDrafts = { ...drafts, [documentId]: signers };
@@ -194,6 +241,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
             user_id: signer.user_id,
             signer_title: signer.signer_title,
             signer_department: signer.signer_department,
+            anchor_token: signer.anchor_token || null,
             page: signer.page,
             pos_x: normalized.pos_x,
             pos_y: normalized.pos_y,
@@ -219,6 +267,10 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
   const selectDocument = (document) => {
     setDrafts((current) => ({ ...current, [documentId]: signers }));
     setDocumentId(document.id);
+    const result = anchorResults[document.id];
+    setAnchorData(result || null);
+    setDetectError(result?.error || '');
+    setDetectNote(anchorDetectionMessage(result));
     setFileId(documentFile(document)?.id || null);
     setSigners(drafts[document.id] || []);
     setSelectedUser('');
@@ -357,7 +409,6 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
                       Hủy
                     </button>
                   </div>
-                  </fieldset>
                 </div>
               )}
             </div>
@@ -365,7 +416,26 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
 
           {/* Người ký + vị trí ký */}
           <div className="space-y-2">
-            <p className="font-semibold text-sm">Người ký</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-semibold text-sm">Người ký</p>
+              <button
+                type="button"
+                className="btn btn-outline btn-primary btn-xs gap-1"
+                onClick={runDetectAndApply}
+                disabled={detecting || saving}
+                title="Dò vị trí các ô ký {sign_...} trong file PDF BCĐX và điền vào danh sách"
+              >
+                <Crosshair size={13} />
+                {detecting ? 'Đang dò...' : 'Dò ô ký trong mẫu'}
+              </button>
+            </div>
+            {anchorData && Array.isArray(anchorData.missing) && anchorData.missing.length > 0 && (
+              <div className="alert alert-warning text-xs py-1.5">
+                Chưa thấy ô ký trong file PDF: {anchorData.missing.join(', ')}
+              </div>
+            )}
+            {detectError && <div className="alert alert-error text-xs py-1.5">{detectError}</div>}
+            {!detectError && detectNote && <div className="alert alert-info text-xs py-1.5">{detectNote}</div>}
             <div className="flex gap-2">
               <select
                 className="select select-bordered select-sm flex-1"
@@ -389,7 +459,10 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
               <ul className="space-y-1 max-h-40 overflow-y-auto">
                 {signers.map((signer) => (
                   <li key={signer.user_id} className="flex items-center gap-2 border rounded p-2 text-sm">
-                    <span className="flex-1 truncate">{signer.full_name}</span>
+                    <span className="flex-1 truncate" title={signer.anchor_token ? `Ô ký tự động theo mẫu: {${signer.anchor_token}}` : undefined}>
+                      {signer.full_name}
+                      {signer.anchor_token && <span className="badge badge-ghost badge-xs ml-1">mẫu</span>}
+                    </span>
                     <input
                       type="number"
                       min={1}
@@ -469,6 +542,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
             </div>
           </div>
         </div>
+        </fieldset>
 
         {loading && <p className="text-sm text-base-content/60 mt-2">Đang tải dữ liệu...</p>}
         {error ? <div className="alert alert-error text-sm py-2 mt-2">{error}</div> : null}

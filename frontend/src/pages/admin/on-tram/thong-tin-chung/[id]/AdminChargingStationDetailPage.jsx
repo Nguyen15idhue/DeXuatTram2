@@ -41,7 +41,7 @@ const ACTION_LABELS = {
   progress_deleted: "Xóa tiến độ ON trạm",
   created: "Khởi tạo ON trạm",
   updated: "Cập nhật thông tin",
-  overview_overridden: "SUPER_ADMIN điều chỉnh hồ sơ ON trạm",
+  overview_overridden: "Điều chỉnh hồ sơ ON trạm",
   installation_updated: "Cập nhật trạng thái và ghi chú lắp trụ",
   portion_documents_overridden:
     "Điều chỉnh hồ sơ nghiệm thu / ON từng phần trụ",
@@ -49,7 +49,7 @@ const ACTION_LABELS = {
   contract_signing_started: "Bắt đầu ký hợp đồng",
   contract_status_changed: "Cập nhật trạng thái hợp đồng",
   contract_completed: "Hoàn tất hợp đồng",
-  manual_marked_active: "SUPER_ADMIN xác nhận ON trạm trực tiếp",
+  manual_marked_active: "Xác nhận ON trạm trực tiếp",
   infrastructure_status_changed: "Cập nhật trạng thái hạ tầng",
   early_delivery_requested: "Đề xuất giao trụ sớm",
   poles_exported: "Xuất trụ khỏi kho",
@@ -238,7 +238,7 @@ const AdminChargingStationDetailPage = ({ stage = "khoi-tao-hop-dong" }) => {
     <div className="space-y-5">
       {record.workflow_override?.completed && (
         <div className="alert alert-info">
-          Hoàn tất quy trình bằng ghi đè của SUPER_ADMIN. Số liệu kho/tài chính
+          Hoàn tất quy trình bằng ghi đè của Back Office hoặc SUPER_ADMIN. Số liệu kho/tài chính
           giữ nguyên; hồ sơ chưa đính kèm không được tự tạo.
         </div>
       )}

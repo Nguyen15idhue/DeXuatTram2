@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { documentService, fieldDefinitionService } from '../../services/api';
+import { documentService, fieldDefinitionService, adminUserService } from '../../services/api';
 import { X, Save, Eye, GripVertical, Plus, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import Toast from '../Toast';
 import Loading from '../Loading';
@@ -37,7 +37,7 @@ const normalizeMapping = (m) => {
     loops,
     signatureAnchors: Array.isArray(src.signatureAnchors) ? src.signatureAnchors : [],
     signers: Array.isArray(src.signers) ? src.signers : [],
-    signatureBox: src.signatureBox || { width: 0.30, height: 0.08 },
+    signatureBox: src.signatureBox || { width: 0.30, height: 0.10 },
   };
 };
 
@@ -50,6 +50,25 @@ const parseSourceConfig = (sc) => {
 };
 
 const stripToken = (tok) => tok.replace(/[{}#/]/g, '');
+const tokenNameOf = (value) => String(value || '').trim().replace(/^\{|\}$/g, '');
+
+const anchorDefaults = (name) => {
+  const key = String(name || '').toLowerCase();
+  if (key.includes('gdkv')) return { mode: 'field', field: 'nguoi_phu_trach', signer_title: 'GĐKV quản lý' };
+  return {
+    mode: 'fixed',
+    user_id: null,
+    signer_title: key.includes('tgd') ? 'Tổng giám đốc' : null
+  };
+};
+
+const anchorTitle = (name) => {
+  const key = String(name || '').toLowerCase();
+  if (key.includes('tgd')) return 'Tổng giám đốc';
+  if (key.includes('sale') || key.includes('admin')) return 'Back Office (Sale Admin)';
+  if (key.includes('gdkv')) return 'GĐKV quản lý';
+  return name;
+};
 
 const matchSearch = (term, ...texts) => {
   const t = normalizeForSearch(term || '').trim();
@@ -72,6 +91,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   const [fields, setFields] = useState([]);
   const [datalists, setDatalists] = useState([]);
   const [constants, setConstants] = useState([]);
+  const [userOptions, setUserOptions] = useState([]);
   const [mapping, setMapping] = useState({ tokens: {}, loops: {} });
   const [tab, setTab] = useState('fields');
   const [dragItem, setDragItem] = useState(null);
@@ -94,15 +114,39 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
     tokens.filter((item) => item.system_label).map((item) => [stripToken(item.token), item.system_label])
   ), [tokens]);
 
+  const signTokens = useMemo(() => {
+    const names = tokens.map((item) => tokenNameOf(item?.token)).filter((name) => /^sign_/i.test(name));
+    return names.filter((name, index) => names.indexOf(name) === index);
+  }, [tokens]);
+  const qrTokens = useMemo(() => tokens.map((item) => tokenNameOf(item?.token)).filter((name) => /^qr_/i.test(name)), [tokens]);
+  const signerConfigOf = (name) => {
+    const found = (mapping.signers || []).find((item) => tokenNameOf(item?.anchor_token) === name);
+    const config = found ? { ...anchorDefaults(name), ...found } : anchorDefaults(name);
+    return /gdkv/i.test(name) && config.field === 'sales_quan_ly'
+      ? { ...config, field: 'nguoi_phu_trach' } : config;
+  };
+  const updateSignerConfig = (name, patch) => {
+    setMapping((prev) => {
+      const list = [...(prev.signers || [])];
+      const index = list.findIndex((item) => tokenNameOf(item?.anchor_token) === name);
+      const base = index >= 0 ? list[index] : { anchor_token: `{${name}}`, ...anchorDefaults(name) };
+      const next = { ...base, ...patch };
+      if (index >= 0) list[index] = next;
+      else list.push(next);
+      return { ...prev, signers: list };
+    });
+  };
+
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
-      const [tRes, tkRes, fRes, dlRes, cRes] = await Promise.all([
+      const [tRes, tkRes, fRes, dlRes, cRes, uRes] = await Promise.all([
         documentService.getTemplate(templateId, token),
         documentService.listTokens(templateId, token),
         fieldDefinitionService.getAll('entity=station_proposals&status=active&limit=200', token),
         documentService.listDatalists(token),
         documentService.listConstants(token),
+        adminUserService.getOptions(token).catch(() => ({ success: false }))
       ]);
       if (!tRes.success) throw new Error(tRes.message || 'Lỗi tải template');
       setTpl(tRes.data);
@@ -111,6 +155,7 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
       if (fRes.success) setFields(fRes.data || []);
       if (dlRes.success) setDatalists(dlRes.data || []);
       if (cRes.success) setConstants(cRes.data || []);
+      if (uRes?.success) setUserOptions(Array.isArray(uRes.data) ? uRes.data : (uRes.data?.options || []));
     } catch {
       setToast({ message: 'Lỗi tải dữ liệu editor', type: 'error' });
     } finally {
@@ -502,8 +547,15 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const res = await documentService.updateTemplate(templateId, { mapping }, token);
+      const activeNames = new Set(signTokens.map((name) => name.toLowerCase()));
+      const signers = [
+        ...(mapping.signers || []).filter((item) => !activeNames.has(tokenNameOf(item?.anchor_token).toLowerCase())),
+        ...signTokens.map((name) => ({ ...signerConfigOf(name), anchor_token: `{${name}}` }))
+      ];
+      const nextMapping = { ...mapping, signers };
+      const res = await documentService.updateTemplate(templateId, { mapping: nextMapping }, token);
       if (res.success) {
+        setMapping(nextMapping);
         setToast({ message: 'Đã lưu mapping', type: 'success' });
         if (onSaved) onSaved();
       } else {
@@ -640,7 +692,90 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
         </div>
       </div>
 
-<details className="collapse collapse-arrow bg-base-100 border border-base-300 rounded-lg mb-3"><summary className="collapse-title text-sm font-medium">Cau hinh chu ky (anchor + signer)</summary><div className="collapse-content space-y-2"><div><label className="text-xs font-medium">signatureAnchors (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={4} value={JSON.stringify(mapping.signatureAnchors || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signatureAnchors: v })); } catch { } }} /></div><div><label className="text-xs font-medium">signers (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={6} value={JSON.stringify(mapping.signers || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signers: v })); } catch { } }} /></div></div></details>
+<details className="collapse collapse-arrow bg-base-100 border border-base-300 rounded-lg mb-3" open>
+  <summary className="collapse-title text-sm font-medium">Cấu hình chữ ký &amp; QR (anchor trong mẫu)</summary>
+  <div className="collapse-content space-y-3">
+    <p className="text-xs text-base-content/60">
+      Token <code>{'{sign_*}'}</code> trong Word được thay bằng ô ký có viền trong PDF; vị trí ô ký được dò tự động khi cấu hình trình ký.
+    </p>
+    {signTokens.length === 0 ? (
+      <div className="alert alert-info text-xs py-2">Mẫu chưa có token ô ký <code>{'{sign_...}'}</code>. Chèn token vào Word rồi tải lại mẫu.</div>
+    ) : (
+      <div className="space-y-2">
+        {signTokens.map((name) => {
+          const cfg = signerConfigOf(name);
+          const isField = cfg.mode === 'field';
+          return (
+            <div key={name} className="border rounded-lg p-2 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold">
+                  {anchorTitle(name)} <code className="font-mono">{'{'}{name}{'}'}</code>
+                </span>
+                <select
+                  aria-label={`Chế độ người ký ${name}`}
+                  className="select select-bordered select-xs"
+                  value={cfg.mode || 'fixed'}
+                  onChange={(e) => updateSignerConfig(name, { mode: e.target.value, ...(e.target.value === 'field' ? { field: 'nguoi_phu_trach' } : { field: null }) })}
+                >
+                  <option value="fixed">Người cố định</option>
+                  <option value="field">Theo đề xuất</option>
+                </select>
+              </div>
+              {isField ? (
+                <div className="text-xs text-base-content/70">
+                  Trường đề xuất: <code>{cfg.field || 'nguoi_phu_trach'}</code> — người phụ trách lấy từ hồ sơ đề xuất (chỉ đọc).
+                </div>
+              ) : (
+                <select
+                  aria-label={`Người ký ${name}`}
+                  className="select select-bordered select-xs w-full"
+                  value={cfg.user_id || ''}
+                  onChange={(e) => updateSignerConfig(name, { user_id: Number(e.target.value) || null })}
+                >
+                  <option value="">-- Chọn người ký --</option>
+                  {userOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.full_name}{option.chuc_vu ? ` (${option.chuc_vu})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <input
+                aria-label={`Nhãn ô ký ${name}`}
+                className="input input-bordered input-xs w-full"
+                placeholder={`Ký: ${name.replace(/^sign_/i, '').replace(/_/g, ' ').toUpperCase()}`}
+                value={cfg.label || ''}
+                onChange={(e) => updateSignerConfig(name, { label: e.target.value })}
+              />
+            </div>
+          );
+        })}
+      </div>
+    )}
+    <div className="border rounded-lg p-2 space-y-2">
+      <p className="text-xs font-semibold">Kích thước ô ký (tỷ lệ trang A4)</p>
+      <div className="flex items-center gap-2">
+        <span className="text-xs">Rộng</span>
+        <input type="number" step="0.01" min="0.05" max="1" aria-label="Chiều rộng ô ký" className="input input-bordered input-xs w-20" value={mapping.signatureBox?.width ?? 0.30} onChange={(e) => setMapping((prev) => ({ ...prev, signatureBox: { ...(prev.signatureBox || {}), width: Number(e.target.value) } }))} />
+        <span className="text-xs">Cao</span>
+        <input type="number" step="0.01" min="0.05" max="1" aria-label="Chiều cao ô ký" className="input input-bordered input-xs w-20" value={mapping.signatureBox?.height ?? 0.10} onChange={(e) => setMapping((prev) => ({ ...prev, signatureBox: { ...(prev.signatureBox || {}), height: Number(e.target.value) } }))} />
+      </div>
+    </div>
+    {qrTokens.length > 0 && (
+      <div className="alert alert-success text-xs py-2">
+        Mã QR đề xuất <code>{qrTokens.map((name) => `{${name}}`).join(', ')}</code> — tự sinh 4×4 cm khi tạo BCĐX từ mẫu, nội dung là link chi tiết đề xuất.
+      </div>
+    )}
+    <details className="collapse collapse-arrow bg-base-200 rounded-lg">
+      <summary className="collapse-title text-xs">Nâng cao (JSON)</summary>
+      <div className="collapse-content space-y-2">
+        <div><label className="text-xs font-medium">signatureAnchors (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={4} value={JSON.stringify(mapping.signatureAnchors || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signatureAnchors: v })); } catch { } }} /></div>
+        <div><label className="text-xs font-medium">signers (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={6} value={JSON.stringify(mapping.signers || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signers: v })); } catch { } }} /></div>
+        <div><label className="text-xs font-medium">qr / signatureBox (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={4} value={JSON.stringify({ qr: mapping.qr || {}, signatureBox: mapping.signatureBox || {} }, null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, qr: v.qr || {}, signatureBox: v.signatureBox || {} })); } catch { } }} /></div>
+      </div>
+    </details>
+  </div>
+</details>
 
             {unusedLoopKeys.length > 0 && (
               <div className="alert alert-warning mb-3 text-sm">

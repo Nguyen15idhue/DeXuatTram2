@@ -54,7 +54,7 @@ test('shipment failure checks version and receipt state without restocking or ch
     });
     const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
       '../utils/db': { getConnection: async () => connection },
-      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
+      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {}, hasFullControl: async () => true },
       './chargingStationService': { writeActivity: async () => {} },
       './chargingStationDeploymentService': { refreshStationProgress: async () => {} }
     });
@@ -353,7 +353,7 @@ for (const [historical, stockExempt] of [[0, 0], [1, 0], [0, 1]]) {
     });
     const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
       '../utils/db': { getConnection: async () => connection },
-      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
+      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {}, hasFullControl: async () => true },
       './chargingStationService': { writeActivity: async () => {} }
     });
     try {
@@ -385,7 +385,7 @@ for (const [historical, stockExempt] of [[0, 0], [1, 0], [0, 1]]) {
     });
     const { service, restore } = loadWithMocks('chargingStationShippingService.js', {
       '../utils/db': { getConnection: async () => connection },
-      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {} },
+      './chargingStationAccessService': { assertBackOffice: async () => {}, assertView: async () => {}, hasFullControl: async () => true },
       './chargingStationService': { writeActivity: async () => {} },
       './chargingStationDeploymentService': { refreshStationProgress: async () => {} }
     });

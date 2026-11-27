@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import { Button, Dialog, Input } from '../ui';
-import { portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
+import { isOnStationFullManager, portionUnavailable, requestKeyForIntent } from '../../utils/chargingFulfillment';
 import ChargingStationStepHistory from './ChargingStationStepHistory';
 
 export const INSTALLATION_LABELS = { NOT: 'Chưa lắp trụ', DOING: 'Đang lắp trụ', DONE: 'Đã lắp xong' };
@@ -32,7 +32,7 @@ const ChargingStationInstallationModal = ({ station, onClose, onChanged }) => {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [station.id, token]);
-  const canEdit = user?.role === 'SUPER_ADMIN' || (permissions.setup && !overridden);
+  const canEdit = isOnStationFullManager(user) || (permissions.setup && !overridden);
   const patch = (id, values) => setRows(current => current.map(row => row.id === id ? { ...row, ...values } : row));
   const save = async () => {
     if (saving.current) return;

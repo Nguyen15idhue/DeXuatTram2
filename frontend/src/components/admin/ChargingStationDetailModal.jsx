@@ -52,7 +52,7 @@ const ACTION_LABELS = {
   shipment_status_changed: 'Cập nhật trạng thái đơn vận chuyển',
   portion_acceptance_reset: 'Chuyển phần trụ về Chưa nghiệm thu',
   contract_completed: 'Hoàn tất hợp đồng',
-  manual_marked_active: 'SUPER_ADMIN xác nhận ON trạm trực tiếp',
+  manual_marked_active: 'Xác nhận ON trạm trực tiếp',
   infrastructure_status_changed: 'Cập nhật trạng thái hạ tầng',
   status_changed: 'Chuyển trạng thái',
   status_rolled_back: 'Lùi bước',

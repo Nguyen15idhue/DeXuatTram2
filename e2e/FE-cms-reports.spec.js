@@ -36,7 +36,7 @@ const setup = async (page, { role = 'ADMIN', configured = true, runError = false
           rows: completed && !sheetError && !rawOnly ? [['2026-11-16', '2026-11-17T00:00:00Z',
             10, 5, 15, 12, 3, 20, 10, 30, 2, 2, 2, 30, 15, 3, 3, 3,
             100000, 50000, 150000, 100, '2026-11-17T00:00:05Z',
-            'Đã loại 1 phiên FINISHED thiếu thời gian kết thúc khỏi tất cả chỉ số phiên sạc', 11]] : [],
+            'Đã loại 1 phiên FINISHED thiếu thời gian kết thúc khỏi tất cả chỉ số phiên sạc']] : [],
           rawResults: raw && completed ? [{ date: '2026-11-16', count: 32 }] : [],
           errors: !completed ? [] : sheetError
             ? [{ message: 'Ngày báo cáo 2026-10-01 bị trùng tại ô A2 và A4.' }]
@@ -127,8 +127,8 @@ for (const role of ['ADMIN', 'SUPER_ADMIN']) {
     expect(posts).toEqual([{ from: role === 'SUPER_ADMIN' ? '2026-11-10' : '2026-11-16', to: '2026-11-16' }]);
     await expect(page.getByRole('cell', { name: '2026-11-16', exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: /Đã loại 1 phiên FINISHED/ })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Tháng báo cáo' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: '11', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Tháng báo cáo' })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Số khách hàng mới' })).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 }

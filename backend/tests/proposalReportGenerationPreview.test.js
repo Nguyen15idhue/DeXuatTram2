@@ -41,6 +41,42 @@ const createDocx = (text = '{name}: {quantity}') => {
 
 test.after(() => pool.end());
 
+test('signature anchors use the responsible user and preserve explicit signer settings', () => {
+  const plan = generation.buildAnchorPlan({ signers: [
+    { anchor_token: 'sign_gdkv', field: 'sales_quan_ly', mode: 'field' },
+    { anchor_token: 'sign_tgd', mode: 'fixed', user_id: 8, label: 'TGĐ' }
+  ] }, ['{sign_gdkv}', '{sign_tgd}']);
+  assert.equal(plan[0].field, 'nguoi_phu_trach');
+  assert.equal(plan[0].mode, 'field');
+  assert.equal(plan[1].user_id, 8);
+  assert.equal(generation.buildAnchorPlan({}, ['{sign_gdkv}'])[0].field, 'nguoi_phu_trach');
+});
+
+test('signature boxes preserve split Word tokens and reject mixed paragraphs', () => {
+  const boxes = require('../src/services/documentSignatureBoxService');
+  const xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{sign_</w:t></w:r><w:r><w:t>gdkv}</w:t></w:r></w:p></w:body></w:document>';
+  const result = boxes.replaceAnchorWithBox(xml, '{sign_gdkv}', 'Ký GĐKV', 3000, 1000);
+  assert.match(result, /Ký GĐKV/);
+  assert.match(result, /w:val="nil"/);
+  assert.match(result, /w:val="FFFFFF"/);
+  const mixed = xml.replace('{sign_', 'Chú thích {sign_');
+  assert.throws(() => boxes.replaceAnchorWithBox(mixed, '{sign_gdkv}', 'Ký', 3000, 1000), /nằm riêng/);
+});
+
+test('QR image is embedded with the proposal URL', async (t) => {
+  const qr = require('../src/services/documentQrService');
+  const helper = require('../src/utils/qrHelper');
+  const generate = helper.generateQrPngBuffer;
+  const spy = t.mock.method(helper, 'generateQrPngBuffer', (...args) => generate(...args));
+  const zip = createDocx('{qr_de_xuat}');
+  const url = generation.buildProposalUrl(4);
+  assert.equal((await qr.applyQrImages(zip, { token: 'qr_de_xuat', url })).applied, true);
+  assert.equal(spy.mock.calls[0].arguments[0], url);
+  assert.match(zip.file('word/document.xml').asText(), /w:drawing/);
+  const image = Object.keys(zip.files).find((name) => name.startsWith('word/media/qr-'));
+  assert.deepEqual([...zip.file(image).asNodeBuffer().subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+});
+
 test('saving finalized poles and ON date preserves data and rejects a stale draft', async (t) => {
   let proposal = {
     id: 4, status: 'PROPOSAL_REPORT_CREATING', custom_data: {},
@@ -153,7 +189,9 @@ test('only the unchanged, complete preview PDF may be sent for review', async (t
       ...template.mapping.tokens, extra: { source: 'input', type: 'text', label: 'Thông tin thêm', required: true }
     } }
   };
-  const pdf = Buffer.from('%PDF-test');
+  const pdfDocument = await require('pdf-lib').PDFDocument.create();
+  pdfDocument.addPage([600, 800]);
+  const pdf = Buffer.from(await pdfDocument.save());
   let submitted;
   t.mock.method(pool, 'query', async (sql) => {
     if (sql.startsWith('SELECT * FROM station_proposals')) return [[proposal]];
@@ -170,6 +208,14 @@ test('only the unchanged, complete preview PDF may be sent for review', async (t
   t.mock.method(templates, 'readDocxXml', async () => ({ zip: createDocx() }));
   t.mock.method(documents, 'buildData', async () => ({ data: { name: 'Tên mới', quantity: 3 } }));
   t.mock.method(converter, 'convertToPdf', async () => ({ pdfBuffer: pdf, fontWarnings: [] }));
+  t.mock.method(require('../src/services/proposalApprovalService'), 'detectAnchorsForPdf', async () => ({
+    anchors: [{ anchor_token: 'sign_gdkv', found: true, user_id: 7, user_name: 'Người phụ trách' }]
+  }));
+  let candidates = [
+    { id: 7, full_name: 'Người phụ trách', chuc_vu: 'GĐKV' },
+    { id: 8, full_name: 'Back Office', department: 'Back Office' }
+  ];
+  t.mock.method(require('../src/services/proposalApprovalService'), 'getDocumentSignerCandidates', async () => candidates);
   t.mock.method(require('fs/promises'), 'mkdir', async () => {});
   t.mock.method(require('fs/promises'), 'writeFile', async () => {});
 
@@ -178,11 +224,36 @@ test('only the unchanged, complete preview PDF may be sent for review', async (t
   assert.ok(incomplete.blocking.length);
   await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: incomplete.proof }), { statusCode: 400 });
   const complete = await generation.preview({ ...input, inputs: { extra: 'Đã nhập' } });
+  assert.deepEqual(complete.signatureAnchors.candidates, candidates);
   await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: Buffer.from('other'), proof: complete.proof }), { statusCode: 409 });
-  const result = await generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof });
+  const positions = [{ anchor_token: 'sign_gdkv', user_id: 7, page: 1, pos_x: 0.3, pos_y: 0.2, box_width: 0.3, box_height: 0.1 }];
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [{ ...positions[0], user_id: 8 }] }), /người ký không hợp lệ/);
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [{ ...positions[0], anchor_token: null, user_id: 9 }] }), /người ký không hợp lệ/);
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [positions[0], positions[0]] }), /người ký không hợp lệ/);
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [{ ...positions[0], page: 2 }] }), /người ký không hợp lệ/);
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [{ ...positions[0], pos_x: 0.9 }] }), /người ký không hợp lệ/);
+  candidates = candidates.filter((candidate) => candidate.id !== 8);
+  await assert.rejects(generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [{ ...positions[0], anchor_token: null, user_id: 8 }] }), /người ký không hợp lệ/);
+  candidates.push({ id: 8, full_name: 'Back Office', department: 'Back Office' });
+  await generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof,
+    signaturePositions: [{ ...positions[0], anchor_token: null, user_id: 8, full_name: 'Giả mạo' }] });
+  assert.equal(submitted.signatureAnchorSnapshot.draft_signers[0].full_name, 'Back Office');
+  assert.equal(submitted.signatureAnchorSnapshot.draft_signers[0].anchor_token, null);
+  await generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof, signaturePositions: [] });
+  assert.deepEqual(submitted.signatureAnchorSnapshot.draft_signers, []);
+  const result = await generation.generate({ proposalId: 4, user, pdfBuffer: pdf, proof: complete.proof, signaturePositions: positions });
   assert.equal(result.status, 'PROPOSAL_REPORT_REVIEWING');
   assert.equal(submitted.files[0].id, 99);
   assert.equal(submitted.expectedDraftRevision, draft.revision);
+  assert.equal(submitted.signatureAnchorSnapshot.template_id, reportTemplate.id);
+  assert.deepEqual(submitted.signatureAnchorSnapshot.box, { width: 0.3, height: 0.1 });
+  assert.equal(submitted.signatureAnchorSnapshot.draft_signers[0].pos_x, 0.3);
 });
 
 test('preview rejects unauthorized users, wrong status and unsupported signature anchors', async (t) => {
@@ -200,6 +271,29 @@ test('preview rejects unauthorized users, wrong status and unsupported signature
   await assert.rejects(generation.listPreviewOptions({ proposalId: 4, user }), { statusCode: 409 });
   status = 'PROPOSAL_REPORT_CREATING';
   await assert.rejects(generation.preview({ proposalId: 4, templateId: 10, values: {}, user }), /chữ ký|vị trí ký/);
+});
+
+test('GĐKV can obtain preview options only for a proposal in the permitted branch', async (t) => {
+  const proposal = { id: 4, user_id: 7, status: 'PROPOSAL_REPORT_CREATING', custom_data: { mo_hinh_dau_tu: 'NQ_LK' } };
+  t.mock.method(pool, 'query', async () => [[proposal]]);
+  t.mock.method(reports, 'resolveScope', async () => ({ role: 'SALES', userId: 44 }));
+  t.mock.method(adminProposals, 'getBranchUserIds', async () => [7]);
+  t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => fields);
+  t.mock.method(templates, 'listTemplates', async () => [template]);
+  t.mock.method(reports, 'getGenerationDraft', async () => ({ revision: 'r' }));
+  assert.equal((await generation.listPreviewOptions({ proposalId: 4, user: { id: 44, role: 'SALES' } })).templates.length, 1);
+  proposal.user_id = 8;
+  await assert.rejects(generation.listPreviewOptions({ proposalId: 4, user: { id: 44, role: 'SALES' } }), { statusCode: 403 });
+});
+
+test('Back Office can obtain preview options for an unrelated proposal', async (t) => {
+  const proposal = { id: 4, user_id: 7, status: 'PROPOSAL_REPORT_CREATING', custom_data: { mo_hinh_dau_tu: 'NQ_LK' } };
+  t.mock.method(pool, 'query', async () => [[proposal]]);
+  t.mock.method(reports, 'resolveScope', async () => ({ role: 'SALES', userId: 44, isBackOffice: true }));
+  t.mock.method(dynamic, 'getFieldDefinitionsByEntity', async () => fields);
+  t.mock.method(templates, 'listTemplates', async () => [template]);
+  t.mock.method(reports, 'getGenerationDraft', async () => ({ revision: 'r' }));
+  assert.equal((await generation.listPreviewOptions({ proposalId: 4, user: { id: 44, role: 'SALES' } })).templates.length, 1);
 });
 
 test('preview uses temporary finalized poles and current catalogue prices without saving', async (t) => {

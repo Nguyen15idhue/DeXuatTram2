@@ -242,7 +242,7 @@ const getDeletePreview = async (id) => {
 };
 
 const deleteChargingStation = async (id, { reason, preview_token: previewToken } = {}, user, ctx = {}) => {
-  if (user?.role !== 'SUPER_ADMIN') throw fail('Chỉ SUPER_ADMIN được xóa ON trạm', 403);
+  await require('./chargingStationAccessService').assertFullControl(user);
   const stationId = toId(id, 'Mã ON trạm');
   const cleanReason = String(reason || '').trim();
   if (cleanReason.length < 3 || cleanReason.length > 5000) {

@@ -51,6 +51,7 @@ const FIELD_LABELS = {
   contract_status: 'Trạng thái hợp đồng',
   contract_file_id: 'File hợp đồng',
   contract_files: 'Các file hợp đồng',
+  contract_number: 'Số hợp đồng',
   contract_effective_date: 'Ngày hiệu lực hợp đồng',
   contract_expiry_date: 'Ngày hết hạn hợp đồng',
   contract_note: 'Ghi chú hợp đồng',
@@ -330,7 +331,7 @@ const assertCanViewChargingStation = async (id, user) => {
 
 const resolveOnStationStatusManager = async (user) => {
   const scope = await require('./proposalReportService').resolveScope(user);
-  if (user?.role === 'SUPER_ADMIN') return scope;
+  if (user?.role === 'SUPER_ADMIN' || scope.isBackOffice) return scope;
   if (user?.role === 'SALES' && scope.roleKey === 'GDTTKD') return scope;
   throw err('Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD được hủy/khôi phục ON trạm', 403);
 };
@@ -579,6 +580,13 @@ const buildStationListQuery = async ({ stage, tab, search, user }) => {
   return { whereClause, params, orderBy };
 };
 
+const proposalPersonValueSql = (key) => `NULLIF(CASE
+  WHEN JSON_TYPE(JSON_EXTRACT(p.custom_data, '$.${key}')) = 'OBJECT' THEN
+    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.${key}.id')),
+             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.${key}.user_id')),
+             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.${key}.value')))
+  ELSE JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.${key}')) END, 'null')`;
+
 const listChargingStations = async ({
   stage = '', tab = 'need', search = '', page = 1, limit = 20, user = null
 } = {}) => {
@@ -594,15 +602,38 @@ const listChargingStations = async ({
   );
   const total = Number(countRows[0]?.total || 0);
   const [rows] = await pool.query(
-    `${CS_SELECT} ${whereClause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+    `${selectChargingStations(`,
+       p.latitude, p.longitude,
+       ${proposalPersonValueSql('nguoi_de_xuat')} AS proposer_value,
+       JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_de_xuat.label')) AS proposer_label,
+       ${proposalPersonValueSql('nguoi_phu_trach')} AS responsible_value,
+       JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.label')) AS responsible_label,
+       ${proposalPersonValueSql('nguoi_giao_phu_trach')} AS director_value,
+       JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_giao_phu_trach.label')) AS director_label`)}
+     ${whereClause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
   );
 
+  const personId = value => /^[1-9]\d*$/.test(String(value || '')) ? Number(value) : null;
+  const userIds = [...new Set(rows.flatMap(row => [
+    row.proposal_user_id, row.proposer_value, row.responsible_value, row.director_value
+  ]).map(personId).filter(Boolean))];
+  const [people] = userIds.length
+    ? await pool.query(`SELECT id, full_name, JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) AS department
+                        FROM users WHERE id IN (?)`, [userIds])
+    : [[]];
+  const peopleById = new Map(people.map(person => [Number(person.id), person]));
+  const personValue = (value, label) => {
+    const id = personId(value);
+    if (id) return { id, label: peopleById.get(id)?.full_name || label || `User #${id}` };
+    return value || label || null;
+  };
   const userScope = await require('./proposalReportService').resolveScope(user);
   const permissions = await stationAccess.permissions(user);
+  const fullControl = user?.role === 'SUPER_ADMIN' || userScope.isBackOffice;
   const ownerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user);
   const earlyOwnerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user, { includeAssigned: true });
-  const canManageOnStationStatus = user?.role === 'SUPER_ADMIN'
+  const canManageOnStationStatus = fullControl
     || (user?.role === 'SALES' && userScope.roleKey === 'GDTTKD');
 
   return {
@@ -616,8 +647,14 @@ const listChargingStations = async ({
       const contractFiles = stage === 'khoi-tao-hop-dong' ? await getContractFiles(row.id) : undefined;
       return {
         ...record,
+        user_id: row.proposal_user_id,
+        user_name: peopleById.get(Number(row.proposal_user_id))?.full_name || null,
+        owner_department: peopleById.get(Number(row.proposal_user_id))?.department || null,
+        nguoi_de_xuat: personValue(row.proposer_value, row.proposer_label),
+        nguoi_phu_trach: personValue(row.responsible_value, row.responsible_label),
+        nguoi_giao_phu_trach: personValue(row.director_value, row.director_label),
         ...(contractFiles ? { contract_files: contractFiles } : {}),
-        edit_token: user?.role === 'SUPER_ADMIN' ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined,
+        edit_token: fullControl ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined,
         permissions: await stationAccess.recordPermissions(row.id, user, permissions),
         fulfillment,
         deployments,
@@ -629,18 +666,18 @@ const listChargingStations = async ({
         deadline_active: deadlineActive,
         can_extend_deadline: deadlineActive
           && Number(record.deadline_extension_count || 0) < readiness.MAX_DEADLINE_EXTENSIONS
-          && user?.role !== 'ADMIN' && ownerMatcher(record.proposal_user_id),
+          && (fullControl || (user?.role !== 'ADMIN' && ownerMatcher(record.proposal_user_id))),
         can_request_early_delivery: [STATUS.ONBOARDING, STATUS.DELIVERING].includes(record.status)
           && record.contract_status === 'DONE'
           && readiness.evaluateDeliveryReadiness(record, record.mo_hinh_dau_tu).missing
             .some(item => item !== 'infrastructure_confirmation')
           && !Number(record.early_delivery_requested)
           && !Number(record.delivery_complete)
-          && earlyOwnerMatcher(record.proposal_user_id, record.proposal_assignee_id, record.proposal_manager_id),
+          && (fullControl || earlyOwnerMatcher(record.proposal_user_id, record.proposal_assignee_id, record.proposal_manager_id)),
         can_cancel_on_station: canManageOnStationStatus
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
-        can_mark_on_station_active: user?.role === 'SUPER_ADMIN'
+        can_mark_on_station_active: fullControl
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status)
           && !(record.status === STATUS.OPERATING
@@ -807,7 +844,7 @@ const getChargingStationDetail = async (id, user = null) => {
     images,
     delivery_export: deliveryExport,
     timeline: timeline.map((row) => ({ ...row, changed_fields: parseJson(row.changed_fields) })),
-    edit_token: user?.role === 'SUPER_ADMIN' ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined
+    edit_token: await stationAccess.hasFullControl(user) ? await require('./chargingStationOverrideService').getEditToken(record.id) : undefined
   };
 };
 
@@ -1297,7 +1334,7 @@ const completeContract = async (id, body, user, ctx = {}) => {
     transactionStarted = true;
     const [rows] = await connection.query(
       `SELECT id, proposal_id, ma_tram, status, contract_status, contract_file_id, infra_power_status,
-              infra_site_status, payment_status, contract_effective_date, contract_expiry_date, contract_note, expected_on_days
+              infra_site_status, payment_status, contract_number, contract_effective_date, contract_expiry_date, contract_note, expected_on_days
          FROM charging_stations
         WHERE id = ? FOR UPDATE`,
       [stationId]
@@ -1311,6 +1348,12 @@ const completeContract = async (id, body, user, ctx = {}) => {
     if (current.status === 'CANCELLED' || !['NOT', 'DOING', 'DONE'].includes(current.contract_status)) {
       throw err('Không thể hoàn tất hợp đồng của trạm đã hủy', 400);
     }
+    const rawContractNumber = body.contract_number === undefined ? current.contract_number : body.contract_number;
+    if (typeof rawContractNumber !== 'string' || !rawContractNumber.trim()) {
+      throw err('Vui lòng nhập số hợp đồng', 400);
+    }
+    const contractNumber = rawContractNumber.trim();
+    if (Array.from(contractNumber).length > 255) throw err('Số hợp đồng không được vượt quá 255 ký tự', 400);
     let previousExpectedOnDate = null;
     if (expectedOnDate !== undefined) {
       const [proposals] = await connection.query(
@@ -1343,9 +1386,9 @@ const completeContract = async (id, body, user, ctx = {}) => {
 
     await connection.query(
       `UPDATE charging_stations SET contract_status = 'DONE', contract_file_id = ?,
-       contract_effective_date = ?, contract_expiry_date = ?, contract_note = ?,
+       contract_number = ?, contract_effective_date = ?, contract_expiry_date = ?, contract_note = ?,
        payment_status=CASE WHEN payment_status='NOT' THEN 'DOING' ELSE payment_status END WHERE id = ?`,
-      [normalizedFileId, contractDates.contract_effective_date, contractDates.contract_expiry_date, contractNote || null, stationId]
+      [normalizedFileId, contractNumber, contractDates.contract_effective_date, contractDates.contract_expiry_date, contractNote || null, stationId]
     );
     if (expectedOnDate !== undefined) {
       await connection.query('UPDATE charging_stations SET expected_on_days = ? WHERE id = ?', [body.expected_on_days, stationId]);
@@ -1368,7 +1411,7 @@ const completeContract = async (id, body, user, ctx = {}) => {
       }
     };
     contractChanges.contract_files = { label: FIELD_LABELS.contract_files, old: '', new: fileIds.join(', ') };
-    for (const [key, value] of Object.entries({ ...contractDates, contract_note: contractNote })) {
+    for (const [key, value] of Object.entries({ contract_number: contractNumber, ...contractDates, contract_note: contractNote })) {
       contractChanges[key] = { label: FIELD_LABELS[key], old: toText(current[key]), new: value };
     }
     if (expectedOnDate !== undefined) {
@@ -1432,6 +1475,7 @@ const completeContract = async (id, body, user, ctx = {}) => {
 
 const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
   await stationAccess.assertInfrastructure(id, user);
+  const fullControl = await stationAccess.hasFullControl(user);
   const field = INFRA_FIELD_BY_TYPE[type];
   if (!field) throw err('Loại hạ tầng không hợp lệ', 400);
   const isStatusUpdate = action !== null && typeof action === 'object';
@@ -1501,7 +1545,7 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
       },
       actorId: ctx.actorId,
       actorRole: ctx.actorRole,
-      source: isStatusUpdate && user.role === 'SUPER_ADMIN' && statuses.indexOf(next) !== statuses.indexOf(current[field]) + 1
+      source: isStatusUpdate && fullControl && statuses.indexOf(next) !== statuses.indexOf(current[field]) + 1
         ? 'admin_override' : 'user',
       ip: ctx.ip
     });
@@ -1590,7 +1634,8 @@ const updateInfrastructureConfirmation = async (id, body = {}, user, ctx = {}) =
 };
 
 const extendOnboardingDeadline = async (id, { reason } = {}, user, ctx = {}) => {
-  if (user?.role === 'ADMIN') throw err('ADMIN chỉ được xem ON trạm', 403);
+  const fullControl = await stationAccess.hasFullControl(user);
+  if (user?.role === 'ADMIN' && !fullControl) throw err('ADMIN chỉ được xem ON trạm', 403);
   const stationId = normalizeId(id, 'Mã bản ghi');
   const cleanReason = toText(reason).trim();
   if (!cleanReason) throw err('Vui lòng nhập lý do gia hạn', 400);
@@ -1611,7 +1656,7 @@ const extendOnboardingDeadline = async (id, { reason } = {}, user, ctx = {}) => 
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
-    if (!await require('./proposalAccessService').canActAsProposalOwner(user, { user_id: current.proposal_user_id })) {
+    if (!fullControl && !await require('./proposalAccessService').canActAsProposalOwner(user, { user_id: current.proposal_user_id })) {
       throw err('Chỉ người đề xuất, cấp trên trong nhánh hoặc quản trị viên được gia hạn', 403);
     }
     if (!readiness.isDeadlineActive(current)) {
@@ -1765,6 +1810,7 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
   }
   if (acceptMissing !== true) throw err('Phải xác nhận cảnh báo các điều kiện chưa hoàn thành', 400);
   await assertCanViewChargingStation(stationId, user);
+  const fullControl = await stationAccess.hasFullControl(user);
   const ownerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user, { includeAssigned: true });
 
   const connection = await pool.getConnection();
@@ -1789,7 +1835,7 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
-    if (!ownerMatcher(current.proposal_user_id, current.proposal_assignee_id, current.proposal_manager_id)) {
+    if (!fullControl && !ownerMatcher(current.proposal_user_id, current.proposal_assignee_id, current.proposal_manager_id)) {
       throw err('Chỉ người đề xuất, người phụ trách hoặc quản lý cấp trên hợp lệ được đề xuất giao trụ sớm', 403);
     }
     if (![STATUS.ONBOARDING, STATUS.DELIVERING].includes(current.status) || current.contract_status !== 'DONE' || Number(current.early_delivery_requested)) {
@@ -2004,7 +2050,7 @@ const updateAcceptanceResult = async (id, result, user, ctx = {}) => {
 };
 
 const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_date: onDate, reason, expected_token: expectedToken } = {}, user, ctx = {}) => {
-  if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
+  await stationAccess.assertFullControl(user);
   const cleanReason = String(reason || '').trim();
   if (cleanReason.length < 3 || cleanReason.length > 5000) {
     throw err('Vui lòng nhập lý do đánh dấu ON trạm (3–5000 ký tự)', 400);
@@ -2278,7 +2324,7 @@ const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_
 
 const changeStatus = async (id, body = {}, ctx = {}) => {
   const { to_status: toStatus, sub_status: subStatus, reason } = body;
-  if (ctx.actorRole !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được điều chỉnh trạng thái trực tiếp', 403);
+  await stationAccess.assertFullControl({ id: ctx.actorId, role: ctx.actorRole });
   const overrides = require('./chargingStationOverrideService');
   const cleanReason = overrides.reasonOf(reason);
   if (!body.expected_token) throw err('Thiếu phiên bản dữ liệu; hãy tải lại', 409);

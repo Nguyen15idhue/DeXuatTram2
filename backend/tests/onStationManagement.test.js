@@ -111,6 +111,7 @@ test('direct delivery delegates receipts, preserves existing JSON and advanced p
 
 test('delivery override rejects cancelled stations, invalid values, forged JSON and blank reasons without writes', async t => {
   const { calls, connection } = deliveryFixture(t, { status: 'CANCELLED' });
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({ isBackOffice: false }));
   const request = { delivery_completed: true, reason: 'Confirm delivery',
     expected_token: await override.getEditToken(1, connection) };
   await assert.rejects(override.update(1, request, ctx), { statusCode: 409 });
@@ -140,10 +141,72 @@ test('delivery completion is rolled back when its audit cannot be saved', async 
   assert.equal(calls.some(([sql]) => sql === 'commit'), false);
 });
 
-test('HTTP delivery override uses the existing SUPER_ADMIN-only update route', async t => {
+test('Back Office can perform direct delivery with the same token and reason safeguards and its real actor', async t => {
+  const { calls, connection } = deliveryFixture(t);
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({ isBackOffice: true }));
+  const actor = { actorId: 42, actorRole: 'SALES' };
+  const token = await override.getEditToken(1, connection);
+  await assert.rejects(override.update(1, { delivery_completed: true, reason: '', expected_token: token }, actor), { statusCode: 400 });
+  await assert.rejects(override.update(1, { delivery_completed: true, reason: 'Confirm delivery', expected_token: 'stale' }, actor), { statusCode: 409 });
+  await override.update(1, { delivery_completed: true, reason: 'Confirm delivery', expected_token: token }, actor);
+  const log = calls.find(([sql]) => sql.startsWith('INSERT INTO charging_station_activity_logs'));
+  assert.ok(log);
+  assert.ok(log[1].includes(42));
+  assert.ok(log[1].includes('SALES'));
+});
+
+test('Back Office ON permissions and task filters match SUPER_ADMIN without expanding finance rights', async t => {
+  const access = require('../src/services/chargingStationAccessService');
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({
+    isBackOffice: user.id === 8 || user.id === 9, department: user.id === 7 ? 'Setup và Vận hành' : '',
+    isFinance: false
+  }));
+  const expected = await work.actionable(superUser);
+  for (const user of [{ id: 8, role: 'ADMIN' }, { id: 9, role: 'SALES' }]) {
+    assert.equal(await access.hasFullControl(user), true);
+    const actual = await work.actionable(user);
+    for (const key of ['contract', 'infrastructure', 'delivery', 'installation', 'acceptance', 'on_station']) {
+      assert.equal(actual.expressions[key], expected.expressions[key], `${user.role}: ${key}`);
+    }
+    assert.deepEqual(await work.getFilter('xay-dung-ha-tang', 'need', user),
+      await work.getFilter('xay-dung-ha-tang', 'need', superUser));
+  }
+  assert.equal((await access.permissions({ id: 8, role: 'ADMIN' })).finance, false);
+  for (const user of [{ id: 10, role: 'ADMIN' }, { id: 11, role: 'SALES' },
+    { id: 7, role: 'SALES' }, { id: 8, role: 'CTV' }, { id: 8, role: 'NPP' }, { id: 8, role: 'MKT' }]) {
+    assert.equal(await access.hasFullControl(user), false, user.role);
+  }
+});
+
+test('Back Office direct ON transition retains real actor and rejects outsiders', async t => {
+  const lifecycle = require('../src/services/proposalLifecycle');
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async user => ({ isBackOffice: user.id === 8 }));
+  const writes = [];
+  const connection = { query: async (sql, params) => {
+    if (sql.includes('FROM station_proposals WHERE id')) return [[{ id: 1, status: 'DEPLOYING' }]];
+    writes.push({ sql, params });
+    return [{ affectedRows: 1 }];
+  } };
+  await assert.rejects(lifecycle.transitionOnStation(connection, 1, 'ACTIVE', {
+    directActivation: true, reason: 'Confirm ON', actorId: 9, actorRole: 'SALES'
+  }), { statusCode: 403 });
+  assert.equal(writes.length, 0);
+  const result = await lifecycle.transitionOnStation(connection, 1, 'ACTIVE', {
+    directActivation: true, reason: 'Confirm ON', actorId: 8, actorRole: 'ADMIN'
+  });
+  assert.equal(result.actorRole, 'ADMIN');
+  assert.equal(result.source, 'admin_override');
+  const log = writes.find(item => item.sql.includes('INSERT INTO proposal_activity_logs'));
+  assert.ok(log.params.includes(8));
+  assert.ok(log.params.includes('ADMIN'));
+});
+
+test('HTTP delivery override allows Back Office and SUPER_ADMIN, without changing actor role', async t => {
   let role = 'SUPER_ADMIN';
+  let department = '';
   const updates = [];
   t.mock.method(pool, 'query', async sql => {
+    if (sql.includes('SELECT custom_data FROM users')) return [[{ custom_data: JSON.stringify({ department }) }]];
     assert.match(sql, /SELECT id, email, role, status, token_version/);
     return [[{ id: 1, email: 'fixture@example.invalid', role, status: 'ACTIVE', token_version: 0 }]];
   });
@@ -169,9 +232,18 @@ test('HTTP delivery override uses the existing SUPER_ADMIN-only update route', a
       assert.equal(response.status, role === 'SUPER_ADMIN' ? 200 : 403, role);
       assert.equal((await response.json()).success, role === 'SUPER_ADMIN');
     }
-    assert.equal(updates.length, 1);
+    department = 'Back Office';
+    for (role of ['ADMIN', 'SALES', 'CTV', 'NPP', 'MKT']) {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/charging-stations/1`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      assert.equal(response.status, ['ADMIN', 'SALES'].includes(role) ? 200 : 403, role);
+    }
+    assert.equal(updates.length, 3);
     assert.deepEqual(updates[0].body, body);
     assert.equal(updates[0].actor.actorRole, 'SUPER_ADMIN');
+    assert.deepEqual(updates.slice(1).map(item => item.actor.actorRole), ['ADMIN', 'SALES']);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
@@ -198,6 +270,7 @@ const rollbackFixture = t => {
   t.mock.method(pool, 'getConnection', async () => connection);
   t.mock.method(access, 'assertSetup', async () => {});
   t.mock.method(access, 'assertView', async () => {});
+  t.mock.method(require('../src/services/proposalReportService'), 'resolveScope', async () => ({ isBackOffice: false }));
   return { calls, portion, connection };
 };
 

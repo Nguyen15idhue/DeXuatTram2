@@ -50,7 +50,6 @@ const HEADERS = [
   "Khách đăng ký lũy kế",
   "Cập nhật lúc",
   "Cảnh báo dữ liệu",
-  "Tháng báo cáo",
 ];
 let currentRun = null;
 const error = (message, statusCode = 400) =>
@@ -221,7 +220,6 @@ const aggregate = ({ date, points, customers, transactions, fetchedAt }) => {
     excludedMissingEnd
       ? `Đã loại ${excludedMissingEnd} phiên FINISHED thiếu thời gian kết thúc khỏi tất cả chỉ số phiên sạc`
       : "",
-    Number(date.slice(5, 7)),
   ];
 };
 
@@ -319,19 +317,17 @@ const createSheetWriter = async (config) => {
   const existing = await sheetCall(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A:${columnCount === 24 ? "X" : "Y"}`,
+      range: `${tab}!A:${String.fromCharCode(64 + Math.min(columnCount, 26))}`,
       valueRenderOption: "UNFORMATTED_VALUE",
       dateTimeRenderOption: "SERIAL_NUMBER",
     }),
   );
   const rows = existing.data.values || [];
-  const header = rows[0] || [];
-  const legacyHeader = rows.length > 0 && header.length === HEADERS.length - 1
-    && rows.every((row) => String(row[24] ?? "").trim() === "");
+  const header = (rows[0] || []).slice(0, HEADERS.length);
   if (
     rows.length &&
-    ((!legacyHeader && header.length !== HEADERS.length) ||
-      !HEADERS.slice(0, header.length).every((value, i) => header[i] === value))
+    (header.length !== HEADERS.length ||
+      !HEADERS.every((value, i) => header[i] === value))
   ) {
     throw error(
       "Header Google Sheet không khớp báo cáo CMS; hãy dùng tab riêng, không ghi đè tab dữ liệu khác.",
@@ -340,7 +336,7 @@ const createSheetWriter = async (config) => {
   }
   const rowByDate = new Map();
   for (let index = 1; index < rows.length; index++) {
-    if (rows[index].every((cell) => String(cell ?? "").trim() === "")) continue;
+    if (rows[index].slice(0, HEADERS.length).every((cell) => String(cell ?? "").trim() === "")) continue;
     const raw = rows[index][0];
     const rowNumber = index + 1;
     const date = normalizeSheetDate(raw);
@@ -359,28 +355,13 @@ const createSheetWriter = async (config) => {
     rowByDate.set(date, { rowNumber, existing: true });
   }
 
-  if (columnCount === 24) {
-    await sheetCall(() =>
-      sheets.spreadsheets.batchUpdate({
-        spreadsheetId: config.spreadsheetId,
-        requestBody: {
-          requests: [{
-            updateSheetProperties: {
-              properties: { sheetId: properties.sheetId, gridProperties: { columnCount: 25 } },
-              fields: "gridProperties.columnCount",
-            },
-          }],
-        },
-      }),
-    );
-  }
-  if (!rows.length || legacyHeader) {
+  if (!rows.length) {
     await sheetCall(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
-        range: legacyHeader ? `${tab}!Y1` : `${tab}!A1:Y1`,
+        range: `${tab}!A1:X1`,
         valueInputOption: "RAW",
-        requestBody: { values: [legacyHeader ? HEADERS.slice(-1) : HEADERS] },
+        requestBody: { values: [HEADERS] },
       }),
     );
   }
@@ -442,12 +423,12 @@ const createSheetWriter = async (config) => {
       await sheetCall(() =>
         sheets.spreadsheets.values.update({
           spreadsheetId: config.spreadsheetId,
-          range: `${tab}!${entry.existing ? "B" : "A"}${rowNumber}:Y${rowNumber}`,
+          range: `${tab}!${entry.existing ? "B" : "A"}${rowNumber}:X${rowNumber}`,
           valueInputOption: "RAW",
           requestBody: {
             values: [entry.existing
-              ? row.slice(1)
-              : [(Date.parse(`${date}T00:00:00Z`) - SHEET_EPOCH) / DAY_MS, ...row.slice(1)]],
+              ? row.slice(1, HEADERS.length)
+              : [(Date.parse(`${date}T00:00:00Z`) - SHEET_EPOCH) / DAY_MS, ...row.slice(1, HEADERS.length)]],
           },
         }),
       );

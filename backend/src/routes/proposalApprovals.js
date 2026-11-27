@@ -217,6 +217,45 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
 
 /**
  * @swagger
+ * /api/admin/proposal-approvals/{id}/signature-anchors:
+ *   get:
+ *     tags: [Proposal Approvals]
+ *     summary: Dò vị trí ô ký tự động từ PDF BCĐX
+ *     description: >
+ *       Đọc cấu hình đã lưu cùng tài liệu BCĐX để dò vị trí trong PDF ký.
+ *       rồi dò tọa độ tuyệt đối (page, pos_x, pos_y chuẩn hóa 0..1, pos_y tính từ mép trên).
+ *       Trả về danh sách anchor kèm user đã gán (user_id cố định hoặc lấy từ trường đề xuất),
+ *       thiếu anchor thì nằm trong missing. Chỉ chạy khi đề xuất đang ở PROPOSAL_REPORT_REVIEWING
+ *       và đã có file PDF ký.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: document_id
+ *         description: Bắt buộc nếu đề xuất có nhiều tài liệu.
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Đề xuất không ở trạng thái duyệt BCĐX
+ *       409:
+ *         description: Chưa có PDF ký
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id/signature-anchors', requireAuth, requireUserManager, proposalApprovalController.detectSignatureAnchors);
+
+router.get('/:id/download-all-files', requireAuth, requireUserManager, proposalApprovalController.downloadAllFiles);
+
+/**
+ * @swagger
  * /api/admin/proposal-approvals/{id}/signature-config:
  *   put:
  *     tags: [Proposal Approvals]

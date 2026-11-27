@@ -170,6 +170,70 @@ exports.listProposals = async ({
   };
 };
 
+exports.downloadLayoutFiles = async ({
+  user,
+  tab = 'all',
+  search = '',
+  filters = {}
+} = {}) => {
+  const scope = await resolveScope(user);
+  if (!scope.isAdmin && scope.roleKey !== LAYOUT_ROLE) {
+    throw Object.assign(new Error('Không có quyền xem hoặc quản lý đánh giá layout'), { statusCode: 403 });
+  }
+
+  const fileEntries = [];
+  let page = 1;
+  const pageSize = 200;
+  let total = 0;
+  do {
+    const result = await exports.listProposals({
+      user,
+      tab,
+      search,
+      page,
+      limit: pageSize,
+      filters
+    });
+    const proposals = Array.isArray(result?.proposals) ? result.proposals : [];
+    for (const proposal of proposals) {
+      const code = proposal.ma_de_xuat || `#${proposal.id}`;
+      const files = Array.isArray(proposal.layout_files) ? proposal.layout_files : [];
+      for (const file of files) {
+        const numericId = Number(file?.id);
+        if (!Number.isInteger(numericId) || numericId <= 0) continue;
+        fileEntries.push({ proposalId: proposal.id, proposalCode: code, fileId: numericId, originalName: file.original_name || file.name || `file_${numericId}` });
+      }
+    }
+    total = Number(result?.pagination?.total || 0);
+    page += 1;
+    if (proposals.length < pageSize) break;
+  } while ((page - 1) * pageSize < total);
+
+  if (fileEntries.length === 0) throw Object.assign(new Error('Không có file bản vẽ layout nào để tải'), { statusCode: 400 });
+
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  const usedNames = new Set();
+  for (const entry of fileEntries) {
+    const located = await require('../services/fileService').getFilePath(entry.fileId);
+    if (!located) continue;
+    const data = await require('fs/promises').readFile(located.filePath);
+    let baseName = `${entry.proposalCode}_${entry.originalName}`.replace(/[\\/:*?"<>|]/g, '_');
+    if (usedNames.has(baseName)) {
+      const ext = baseName.includes('.') ? baseName.slice(baseName.lastIndexOf('.')) : '';
+      const stem = baseName.includes('.') ? baseName.slice(0, baseName.lastIndexOf('.')) : baseName;
+      let suffix = 2;
+      while (usedNames.has(`${stem}_${suffix}${ext}`)) suffix += 1;
+      baseName = `${stem}_${suffix}${ext}`;
+    }
+    usedNames.add(baseName);
+    zip.file(baseName, data);
+  }
+
+  const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const fileName = `ban_ve_layout_${tab || 'all'}.zip`;
+  return { buffer, fileName };
+};
 exports.getFilterOptions = async ({ user } = {}) => {
   const scope = await resolveScope(user);
   if (!scope.isAdmin) assertCanManage(scope);

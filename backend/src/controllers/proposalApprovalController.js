@@ -120,6 +120,32 @@ exports.getSignerCandidates = async (req, res) => {
   }
 };
 
+exports.detectSignatureAnchors = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.detectSignatureAnchors({
+      user: req.user,
+      id: req.params.id,
+      documentId: req.query.document_id
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.downloadAllFiles = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.downloadAllProposalFiles({
+      user: req.user,
+      id: req.params.id
+    });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    res.send(result.buffer);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
 exports.configureSignature = async (req, res) => {
   try {
     const body = req.body || {};

@@ -40,13 +40,15 @@ for (const [label, user, options, allowed] of [
   ['ancestor', { id: 30, role: 'SALES' }, {}, true],
   ['unrelated administrator', { id: 40, role: 'ADMIN' }, {}, false],
   ['unrelated sales director', { id: 40, role: 'SALES' }, {}, false],
-  ['Back Office only', { id: 40, role: 'SALES' }, { department: 'Back Office' }, false],
+  ['Back Office', { id: 40, role: 'SALES' }, { department: 'Back Office' }, true],
   ['Setup department', { id: 40, role: 'SALES' }, { department: 'Phòng Setup và Vận hành' }, true],
   ['super administrator', superUser, {}, true]
 ]) {
   test(`progress create permission: ${label}`, async t => {
     setup(t, options);
-    assert.deepEqual(await care.permissions(50, user), { create: allowed, manage: user.role === 'SUPER_ADMIN' });
+    assert.deepEqual(await care.permissions(50, user), {
+      create: allowed, manage: user.role === 'SUPER_ADMIN' || options.department === 'Back Office'
+    });
     if (!allowed) await assert.rejects(care.createCareLog(50, value, user), { statusCode: 403 });
   });
 }

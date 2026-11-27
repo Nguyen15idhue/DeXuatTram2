@@ -92,7 +92,7 @@ test('ADMIN and SALES outside Back Office cannot update infrastructure', async t
   }
 });
 
-test('infrastructure tasks include owners, ancestors and Setup but not unrelated Back Office', async t => {
+test('infrastructure tasks include owners, ancestors, Setup and Back Office', async t => {
   const { calls } = setup(t);
   const owners = new Set([5, 6, 7]);
   const originalQuery = pool.query;
@@ -111,7 +111,7 @@ test('infrastructure tasks include owners, ancestors and Setup but not unrelated
   for (const user of [{ id: 2, role: 'ADMIN' }, { id: 8, role: 'SALES' }]) {
     const permission = await access.recordPermissions(1, user);
     assert.equal(permission.infrastructure, true);
-    assert.equal(permission.infrastructure_task, user.id === 8);
+    assert.equal(permission.infrastructure_task, true);
     await service.updateInfrastructureStatus(1, 'power', body, user);
   }
   for (const role of ['CTV', 'NPP', 'SALES', 'ADMIN']) {

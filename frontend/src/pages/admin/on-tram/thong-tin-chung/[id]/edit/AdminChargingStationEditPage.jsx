@@ -212,7 +212,7 @@ const AdminChargingStationEditPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Sửa ON trạm · ${record?.ma_tram || id}`}
-        subtitle="SUPER_ADMIN điều chỉnh hồ sơ; không sửa đề xuất nguồn, giao dịch kho hoặc hóa đơn."
+        subtitle="Back Office hoặc SUPER_ADMIN điều chỉnh hồ sơ; không sửa đề xuất nguồn, giao dịch kho hoặc hóa đơn."
       />
       {error && (
         <div role="alert" className="alert alert-error">

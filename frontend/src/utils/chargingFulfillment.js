@@ -1,7 +1,10 @@
 import { isBackOfficeDept, isFinanceDept } from './proposalAccess.js';
 
+export const isOnStationFullManager = (user) => user?.role === 'SUPER_ADMIN'
+  || (['ADMIN', 'SALES'].includes(user?.role) && isBackOfficeDept(user));
+
 export const canOperateStation = (user, station, permission) => {
-  if (user?.role === 'SUPER_ADMIN') return true;
+  if (user?.role === 'SUPER_ADMIN' || (permission !== 'finance' && isOnStationFullManager(user))) return true;
   if (user?.role === 'ADMIN' && !['back_office', 'setup', 'infrastructure'].includes(permission)) return false;
   if (station?.permissions) return station.permissions[permission] === true;
   if (permission === 'back_office') return isBackOfficeDept(user);

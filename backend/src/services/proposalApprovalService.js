@@ -365,10 +365,12 @@ exports.tgdReject = async ({ user, id, reason, ip } = {}) => {
 const normalizeSigners = (signers) => {
   const list = Array.isArray(signers) ? signers : [];
   return list.map((item) => {
-    const posX = Math.min(1, Math.max(0, Number(item?.pos_x) || 0));
+    const anchorToken = item?.anchor_token ? String(item.anchor_token).trim().slice(0, 64) : null;
+    const anchored = !!anchorToken;
+    const clamp01 = (value) => Math.min(1, Math.max(0, Number(value) || 0));
     const requestedWidth = Number(item?.box_width);
     const boxWidth = Math.min(
-      1 - posX,
+      1,
       Math.max(
         0,
         item?.box_width !== null
@@ -390,14 +392,18 @@ const normalizeSigners = (signers) => {
           : 0.25
       )
     );
-    const posY = Math.min(
-      1 - boxHeight,
-      Math.max(0, Number(item?.pos_y) || 0)
-    );
+    const hasPosition = item?.pos_x !== null && item?.pos_x !== undefined
+      && item?.pos_y !== null && item?.pos_y !== undefined;
+    const posX = hasPosition ? clamp01(item.pos_x) : (anchored ? null : 0);
+    const posY = hasPosition ? Math.min(1 - boxHeight, clamp01(item.pos_y)) : (anchored ? null : 0);
+    const page = item?.page
+      ? Math.max(1, parseInt(item?.page, 10) || 1)
+      : (anchored ? null : 1);
     return {
       user_id: Number(item?.user_id),
       signer_title: item?.signer_title ? String(item.signer_title).trim() : null,
-      page: Math.max(1, parseInt(item?.page, 10) || 1),
+      anchor_token: anchorToken,
+      page,
       pos_x: posX,
       pos_y: posY,
       box_width: boxWidth,
@@ -450,10 +456,17 @@ exports.getSignatureConfig = async ({ user, id } = {}) => {
     proposal_id: proposal.id,
     status: proposal.status,
     can_withdraw: canWithdraw,
-    documents: documents.map((document) => ({
-      ...document,
-      signers: signers.filter((signer) => Number(signer.document_id) === documentIdOf(document))
-    })),
+    documents: documents.map((document) => {
+      const current = signers.filter((signer) => Number(signer.document_id) === documentIdOf(document));
+      const snapshot = document.signature_anchor_snapshot && parseCustomData(document.signature_anchor_snapshot);
+      const draft = proposal.status === REVIEWING_STATUS && Array.isArray(snapshot?.draft_signers)
+        ? snapshot.draft_signers : [];
+      return {
+        ...document,
+        has_signature_draft: proposal.status === REVIEWING_STATUS && Array.isArray(snapshot?.draft_signers),
+        signers: current.length ? current : draft
+      };
+    }),
     signers
   };
 };
@@ -589,6 +602,201 @@ exports.getSignerCandidates = async ({ user, id } = {}) => {
   return { proposal_id: proposal.id, status: proposal.status, candidates };
 };
 
+const resolveTemplateSignerIds = (proposal, document) => {
+  const ids = new Set();
+  const context = document.signature_anchor_snapshot && parseCustomData(document.signature_anchor_snapshot);
+  if (!context) return ids;
+  const custom = parseCustomData(proposal.custom_data);
+  (context.anchors || []).forEach((anchor) => {
+    const fixedId = Number(anchor.user_id);
+    if (Number.isInteger(fixedId) && fixedId > 0) ids.add(fixedId);
+    if (anchor.mode === 'field' && anchor.field) {
+      const value = custom[anchor.field];
+      const fieldId = Number(value && typeof value === 'object' ? value.id : value);
+      if (Number.isInteger(fieldId) && fieldId > 0) ids.add(fieldId);
+    }
+  });
+  return ids;
+};
+
+exports.getDocumentSignerCandidates = async (proposal, snapshot, candidates) => {
+  const result = [...(candidates || await getSignerCandidatesForProposal(proposal))];
+  const existing = new Set(result.map((candidate) => Number(candidate.id)));
+  const additionalIds = [...resolveTemplateSignerIds(proposal, { signature_anchor_snapshot: snapshot })]
+    .filter((id) => !existing.has(id));
+  if (additionalIds.length) {
+    const [rows] = await pool.query(
+      `SELECT id, full_name, role, custom_data FROM users
+       WHERE status = 'ACTIVE' AND id IN (${additionalIds.map(() => '?').join(',')})`,
+      additionalIds
+    );
+    rows.forEach((row) => {
+      const custom = parseCustomData(row.custom_data);
+      result.push({
+        id: Number(row.id), full_name: row.full_name, role: row.role,
+        department: custom.department || null, chuc_vu: custom.chuc_vu || null,
+        category: 'Theo mẫu', is_owner: Number(row.id) === Number(proposal.user_id)
+      });
+    });
+  }
+  return result;
+};
+
+const inferAnchorUserId = (anchor, candidates = []) => {
+  const key = String(anchor?.anchor_token || '').toLowerCase();
+  let category = null;
+  if (/tgd|chu_tich|ceo/.test(key)) category = 'Tổng giám đốc';
+  else if (/sale.?admin|back.?office|admin/.test(key)) category = 'Back Office';
+  if (!category) return null;
+  const candidate = candidates.find((item) =>
+    `${item.category || ''} ${item.chuc_vu || ''}`.toLowerCase().includes(category.toLowerCase())
+  );
+  return candidate ? Number(candidate.id) || null : null;
+};
+
+/**
+ * Du doan vi tri o ky tu dong: doc PDF dang ky, tim chuoi nhan da chen trong mau.
+ */
+const detectAnchorsForPdf = async (proposal, context, pdfBuffer) => {
+  const candidates = await getSignerCandidatesForProposal(proposal);
+  if (!Array.isArray(context.anchors) || !context.box) throw err('Cấu hình ô ký của tài liệu không hợp lệ', 409);
+  if (!context.anchors.length) {
+    return { anchors: [], missing: [], candidates, reason: 'no_anchors' };
+  }
+
+  const { detectAnchors } = require('./pdfAnchorDetector');
+  const detected = await detectAnchors(pdfBuffer, context.anchors.map((anchor) => ({
+    anchor_token: anchor.anchor_token,
+    label: anchor.label,
+    box_width: context.box.width,
+    box_height: context.box.height
+  })));
+
+  const custom = parseCustomData(proposal.custom_data);
+  const resolved = context.anchors.map((anchor) => {
+    const match = detected.find((item) => item.anchor_token === anchor.anchor_token) || {};
+    let userId = Number(anchor.user_id) || null;
+    let autoResolved = false;
+    if (anchor.mode === 'field' && anchor.field) {
+      const value = custom[anchor.field];
+      userId = Number(value && typeof value === 'object' ? value.id : value) || null;
+    }
+    if (!userId && anchor.mode !== 'field') {
+      const inferredId = inferAnchorUserId(anchor, candidates);
+      if (inferredId) {
+        userId = inferredId;
+        autoResolved = true;
+      }
+    }
+    return {
+      anchor_token: anchor.anchor_token,
+      label: anchor.label,
+      signer_title: anchor.signer_title,
+      mode: anchor.mode,
+      field: anchor.field,
+      user_id: userId,
+      auto_resolved: autoResolved,
+      page: match.page || null,
+      pos_x: match.pos_x ?? null,
+      pos_y: match.pos_y ?? null,
+      box_width: match.box_width ?? context.box.width,
+      box_height: match.box_height ?? context.box.height,
+      reason: match.reason || null,
+      found: !!match.found
+    };
+  });
+
+  const signerIds = [...new Set(resolved.map((item) => item.user_id).filter(Boolean))];
+  const names = new Map();
+  if (signerIds.length) {
+    const [rows] = await pool.query(
+      `SELECT id, full_name FROM users WHERE status = 'ACTIVE' AND id IN (${signerIds.map(() => '?').join(',')})`,
+      signerIds
+    );
+    rows.forEach((row) => names.set(Number(row.id), row.full_name));
+  }
+
+  return {
+    proposal_id: proposal.id,
+    status: proposal.status,
+    box: context.box,
+    missing: resolved.filter((item) => !item.found).map((item) => item.anchor_token),
+    anchors: resolved.map((item) => ({
+      ...item,
+      user_id: names.has(Number(item.user_id)) ? item.user_id : null,
+      user_name: names.get(Number(item.user_id)) || null
+    })),
+    candidates
+  };
+};
+
+exports.detectAnchorsForPdf = detectAnchorsForPdf;
+
+exports.detectSignatureAnchors = async ({ user, id, documentId } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
+  const proposal = await loadProposal(id);
+  if (proposal.status !== REVIEWING_STATUS) throw err('Chỉ dò vị trí ô ký khi đề xuất đang duyệt BCĐX', 400);
+  const documents = await proposalReportDocumentService.listDocuments(proposal.id);
+  if (!documentId && documents.length > 1) throw err('Vui lòng chọn tài liệu cần dò ô ký', 400);
+  const document = documentId ? documents.find((item) => Number(item.id) === Number(documentId)) : documents[0];
+  if (!document) throw err('Không tìm thấy tài liệu BCĐX hiện hành', 404);
+  const context = document.signature_anchor_snapshot && parseCustomData(document.signature_anchor_snapshot);
+  if (!context) return { proposal_id: proposal.id, document_id: document.id, status: proposal.status, anchors: [], missing: [], reason: 'missing_snapshot' };
+  if (document.conversion_status !== 'READY' || document.signing_file?.mime_type !== 'application/pdf') {
+    throw err('Chưa có PDF ký để dò vị trí ô ký', 409);
+  }
+  const located = await require('./fileService').getFilePath(documentFileIdOf(document));
+  if (!located) throw err('Không đọc được file PDF ký', 409);
+  const pdfBuffer = await require('fs/promises').readFile(located.filePath);
+  return { ...(await detectAnchorsForPdf(proposal, context, pdfBuffer)), document_id: document.id };
+};
+
+exports.downloadAllProposalFiles = async ({ user, id } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
+  const proposal = await loadProposal(id);
+
+  const fileIds = new Set();
+  const documents = await proposalReportDocumentService.listDocuments(proposal.id);
+  for (const document of documents || []) {
+    [document.source_file_id, document.pdf_file_id, document.signing_file_id].forEach((value) => {
+      const numeric = Number(value);
+      if (Number.isInteger(numeric) && numeric > 0) fileIds.add(numeric);
+    });
+  }
+
+  const [fieldRows] = await pool.query(
+    "SELECT `key` FROM field_definitions WHERE entity = 'station_proposals' AND type = 'file' AND status = 'active'"
+  );
+  const fileKeys = (fieldRows || []).map((row) => row.key);
+  const custom = parseCustomData(proposal.custom_data);
+  const collectFileId = (value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const numeric = Number(value.id ?? value.file_id);
+      if (Number.isInteger(numeric) && numeric > 0) fileIds.add(numeric);
+      return;
+    }
+    if (Array.isArray(value)) value.forEach(collectFileId);
+  };
+  for (const key of fileKeys) collectFileId(custom[key]);
+
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  let count = 0;
+  for (const fileId of fileIds) {
+    const located = await require('./fileService').getFilePath(fileId);
+    if (!located) continue;
+    const data = await require('fs/promises').readFile(located.filePath);
+    const baseName = located.file.original_name || `file_${fileId}`;
+    zip.file(baseName, data);
+    count += 1;
+  }
+  if (count === 0) throw err('Đề xuất chưa có file nào để tải', 400);
+  const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const fileName = `BCDX_${proposal.ma_de_xuat_gen || proposal.id}_files.zip`;
+  return { buffer, fileName };
+};
 const configureSignature = async ({ user, id, fileId, signers, documents: requestedDocuments, ip, mutationConnection } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
   assertApprovalAccess(scope);
@@ -650,7 +858,11 @@ const configureSignature = async ({ user, id, fileId, signers, documents: reques
 
   const signerIds = [...new Set(normalizedDocuments.flatMap((document) => document.signers.map((signer) => signer.user_id)))];
   const eligibleIds = new Set((await getSignerCandidatesForProposal(proposal)).map((candidate) => candidate.id));
-  if (signerIds.some((signerId) => !eligibleIds.has(signerId))) {
+  if (normalizedDocuments.some((document) => {
+    const source = activeDocuments.find((item) => documentIdOf(item) === document.document_id);
+    const templateIds = resolveTemplateSignerIds(proposal, source);
+    return document.signers.some((signer) => !eligibleIds.has(signer.user_id) && !templateIds.has(signer.user_id));
+  })) {
     throw err('Chỉ được chọn người ký thuộc các nhóm được phép', 400);
   }
   const signerPlaceholders = signerIds.map(() => '?').join(', ');
@@ -723,8 +935,8 @@ const configureSignature = async ({ user, id, fileId, signers, documents: reques
       for (const signer of document.signers) {
         await connection.query(
           `INSERT INTO proposal_signature_configs
-            (proposal_id, document_id, file_id, user_id, signer_title, signer_department, page, pos_x, pos_y, box_width, box_height, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (proposal_id, document_id, file_id, user_id, signer_title, signer_department, anchor_token, page, pos_x, pos_y, box_width, box_height, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             proposal.id,
             document.document_id,
@@ -732,6 +944,7 @@ const configureSignature = async ({ user, id, fileId, signers, documents: reques
             signer.user_id,
             signer.signer_title,
             signerDepartments.get(signer.user_id),
+            signer.anchor_token || null,
             signer.page,
             signer.pos_x,
             signer.pos_y,

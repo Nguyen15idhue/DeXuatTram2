@@ -223,6 +223,17 @@ const requireChargingStationViewer = (req, res, next) => {
   next();
 };
 
+const requireChargingStationManager = async (req, res, next) => {
+  try {
+    await require('../services/chargingStationAccessService').assertFullControl(req.user);
+    next();
+  } catch (error) {
+    if (error.statusCode === 403) return res.status(403).json({ success: false, message: error.message });
+    console.error('[ChargingStation] Kiểm tra quyền:', error);
+    return res.status(500).json({ success: false, message: 'Không thể kiểm tra quyền ON trạm' });
+  }
+};
+
 const requireChargingStationEditor = (req, res, next) => {
   if (!CHARGING_STATION_EDITOR_ROLES.includes(req.user.role)) {
     return res.status(403).json({
@@ -302,6 +313,7 @@ module.exports = {
   requireReportViewer,
   requireReportConfigurator,
   requireChargingStationViewer,
+  requireChargingStationManager,
   requireWarehouseManager,
   optionalAuth,
   JWT_SECRET

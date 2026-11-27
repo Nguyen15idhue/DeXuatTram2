@@ -126,6 +126,8 @@ const reportUploadUsers = async (proposal) => {
   return users
     .filter((user) => {
       if (user.role === 'SUPER_ADMIN') return true;
+      if (['ADMIN', 'SALES'].includes(user.role)
+        && require('./proposalReportService').isBackOffice(user.department)) return true;
       const roleKey = proposalReviewService.resolveRoleKey({
         role: user.role,
         department: user.department,

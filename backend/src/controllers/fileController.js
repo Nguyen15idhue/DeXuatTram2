@@ -279,6 +279,8 @@ const canAccessFile = async (file, req) => {
       for (const p of props) {
         if (!containsFileId(p.custom_data, fid)) continue;
         const proposalCustom = parseUserCustomData(p.custom_data);
+        if (isBackOfficeUser && ['ADMIN', 'SALES'].includes(requesterRole)
+          && ['PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_UPDATING'].includes(p.status)) return true;
         if (isGdttkdUser
           && reportService.TAB_STATUSES.all.includes(p.status)
           && containsFileId({ files: proposalCustom.file_bc_dx, sources: proposalCustom.file_bc_dx_sources }, fid)

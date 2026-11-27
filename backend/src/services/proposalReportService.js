@@ -113,7 +113,7 @@ const scopeClause = async (scope, params) => {
 };
 
 const canUploadReport = async (scope, proposal) => {
-  if (scope.role === 'SUPER_ADMIN') return true;
+  if (scope.role === 'SUPER_ADMIN' || scope.isBackOffice) return true;
   if (scope.roleKey === 'TGD') return false;
   if (scope.roleKey === 'GDTTKD') {
     return require('./proposalReviewScope').matches(await getManagementScope(scope), proposal);
@@ -564,7 +564,7 @@ exports.saveGenerationDraft = async ({ user, id, chotSoLuongTru, ngayDuKienOn, r
   }
 };
 
-const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip, expectedDraftRevision, expectedProposalSnapshot, onReportSaved } = {}) => {
+const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip, expectedDraftRevision, expectedProposalSnapshot, signatureAnchorSnapshot, onReportSaved } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -647,6 +647,14 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip,
       mo_hinh_dau_tu: nextModel, loai_uu_tien: nextPriority
     };
     await documentService.activateDocuments(proposal.id, documents, connection);
+    if (signatureAnchorSnapshot) {
+      if (!expectedDraftRevision || documents.length !== 1) throw err('Không thể gắn cấu hình mẫu cho tài liệu BCĐX', 409);
+      const [snapshotResult] = await connection.query(
+        'UPDATE proposal_report_documents SET signature_anchor_snapshot=? WHERE id=? AND proposal_id=? AND signing_file_id=?',
+        [JSON.stringify(signatureAnchorSnapshot), documents[0].id, proposal.id, canonicalFiles[0].id]
+      );
+      if (snapshotResult.affectedRows !== 1) throw err('Không thể gắn cấu hình mẫu cho tài liệu BCĐX', 409);
+    }
     await connection.query(
     `UPDATE station_proposals
      SET custom_data = ?, chot_so_luong_tru = ?, tong_gia_tri_chot = ?, ngay_du_kien_on = ?, updated_at = NOW()

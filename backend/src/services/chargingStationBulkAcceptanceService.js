@@ -5,9 +5,7 @@ const OPERATION = 'BULK_ACCEPTANCE_PASS';
 const BATCH_SIZE = 20;
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
-const assertSuperAdmin = user => {
-  if (user?.role !== 'SUPER_ADMIN') throw fail('Chỉ SUPER_ADMIN được nghiệm thu hàng loạt', 403);
-};
+const assertFullControl = user => require('./chargingStationAccessService').assertFullControl(user);
 
 const findCandidates = async (executor, stationId) => {
   const [rows] = await executor.query(`
@@ -54,7 +52,7 @@ const findCandidates = async (executor, stationId) => {
 };
 
 const preview = async user => {
-  assertSuperAdmin(user);
+  await assertFullControl(user);
   const candidates = await findCandidates(pool);
   return {
     request_id: randomUUID(),
@@ -134,7 +132,7 @@ const applyStation = async (target, requestId, reason, user, ctx) => {
 };
 
 const execute = async (body, user, ctx = {}) => {
-  assertSuperAdmin(user);
+  await assertFullControl(user);
   const { reason, request_id: requestId, stations } = body || {};
   const cleanReason = typeof reason === 'string' ? reason.trim() : '';
   if (cleanReason.length < 3 || cleanReason.length > 5000) throw fail('Lý do bắt buộc từ 3–5000 ký tự');
